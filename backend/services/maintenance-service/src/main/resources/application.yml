@@ -1,0 +1,50 @@
+server:
+  port: ${SERVER_PORT:8088}
+
+spring:
+  application:
+    name: maintenance-service
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/maintenance_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${MYSQL_USER:rental_user}
+    password: ${MYSQL_PASSWORD:rental_secret}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_DEFAULT_USER:rental_rabbit}
+    password: ${RABBITMQ_DEFAULT_PASS:rental_rabbit_secret}
+
+rental:
+  rabbitmq:
+    exchange: rental.topic.exchange
+    routing-key:
+      maintenance-created: maintenance.created
+      maintenance-completed: maintenance.completed
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${server.port}:${random.value}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,actuator
+  endpoint:
+    health:
+      show-details: always

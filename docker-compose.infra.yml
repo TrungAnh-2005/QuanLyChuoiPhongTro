@@ -1,0 +1,63 @@
+services:
+  # ==========================================================
+  # MySQL 8.0 - Khởi tạo các Database riêng biệt cho từng service
+  # ==========================================================
+  mysql:
+    image: mysql:8.0
+    container_name: rental-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_USER: rental_user
+      MYSQL_PASSWORD: rental_secret
+      MYSQL_DATABASE: auth_db
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+      - mysql_data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rental-network
+
+  # ==========================================================
+  # RabbitMQ Message Broker - Async Domain Events
+  # ==========================================================
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: rental-rabbitmq
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: rental_rabbit
+      RABBITMQ_DEFAULT_PASS: rental_rabbit_secret
+    ports:
+      - "5672:5672"    # AMQP protocol
+      - "15672:15672"  # RabbitMQ Management Web Dashboard
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rental-network
+
+networks:
+  rental-network:
+    name: rental-network
+    driver: bridge
+
+volumes:
+  mysql_data:
+    name: rental_mysql_data
+  rabbitmq_data:
+    name: rental_rabbitmq_data

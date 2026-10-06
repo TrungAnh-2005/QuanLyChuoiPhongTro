@@ -1,0 +1,907 @@
+import PaymentModal from '../components/payment/PaymentModal';
+import React, { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  Building2,
+  Home,
+  Users,
+  DollarSign,
+  AlertTriangle,
+  TrendingUp,
+  ArrowUpRight,
+  PlusCircle,
+  Receipt,
+  Zap,
+  CheckCircle2,
+  Clock,
+  Phone,
+  Droplets,
+  Calendar,
+  CreditCard,
+  Wrench,
+  ExternalLink,
+  ShieldCheck,
+  AlertCircle,
+  X,
+  LogOut,
+  UserPlus,
+  FileText,
+  QrCode,
+  Sparkles
+} from 'lucide-react';
+import {
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend
+} from 'recharts';
+import { useAuth } from '../contexts/AuthContext';
+import { useData } from '../contexts/DataContext';
+import Modal from '../components/common/Modal';
+import ResidentContractModal from '../components/tenant/ResidentContractModal';
+import RoommateRequestModal from '../components/tenant/RoommateRequestModal';
+
+const revenueData = [
+  { month: 'T1', revenue: 42000000, target: 40000000 },
+  { month: 'T2', revenue: 45500000, target: 42000000 },
+  { month: 'T3', revenue: 48000000, target: 45000000 },
+  { month: 'T4', revenue: 47200000, target: 46000000 },
+  { month: 'T5', revenue: 51800000, target: 48000000 },
+  { month: 'T6', revenue: 54000000, target: 50000000 },
+  { month: 'T7', revenue: 53200000, target: 52000000 },
+  { month: 'T8', revenue: 58600000, target: 54000000 },
+  { month: 'T9', revenue: 62400000, target: 56000000 },
+];
+
+export default function Dashboard() {
+  const { user, tenantRooms } = useAuth();
+  const {
+    invoices = [],
+    payInvoice,
+    tickets = [],
+    rooms = [],
+    tenants = [],
+    contracts = [],
+    roomMembers = [],
+    resetRoomPaymentStatus,
+    signContractElectronically
+  } = useData();
+
+  const role = user?.role || 'ADMIN';
+  const isTenant = role === 'TENANT';
+
+  // Modals state for Tenant
+  const [showContractModal, setShowContractModal] = useState(false);
+  const [showRoommateModal, setShowRoommateModal] = useState(false);
+  const [payingInvoice, setPayingInvoice] = useState(null);
+  const [paySuccessToast, setPaySuccessToast] = useState(null);
+
+  // Khách thuê: Quy tắc Single Active Lease (1 Khách - 1 Phòng duy nhất)
+  const myRoomNumber = useMemo(() => {
+    if (!isTenant) return 'P.101';
+
+    // Ưu tiên 1: Đọc chính xác phòng gán cho từng tài khoản demo
+    if (user?.username === 'tenant2' || user?.fullName?.includes('Cường')) {
+      const stored = tenantRooms?.tenant2 || tenantRooms?.['Phạm Minh Cường'] || user?.room || user?.rooms?.[0];
+      return (Array.isArray(stored) ? stored[0] : stored) || 'P.103';
+    }
+    if (user?.username === 'tenant' || user?.username === 'tenant1' || user?.fullName?.includes('An')) {
+      const stored = tenantRooms?.tenant1 || tenantRooms?.['Nguyễn Văn An'] || user?.room || user?.rooms?.[0];
+      return (Array.isArray(stored) ? stored[0] : stored) || 'P.101';
+    }
+    if (user?.username === 'tenant_new' || user?.fullName?.includes('Nam')) {
+      const stored = tenantRooms?.tenant_new || tenantRooms?.['Hoàng Văn Nam'] || user?.room || user?.rooms?.[0];
+      return (Array.isArray(stored) && stored.length > 0 ? stored[0] : (typeof stored === 'string' && stored ? stored : null));
+    }
+
+    if (user?.room) return user.room;
+    if (user?.rooms && user.rooms.length > 0) return user.rooms[0];
+
+    const found = tenants.find(
+      (t) =>
+        (user?.fullName && t.fullName?.toLowerCase().includes(user.fullName.toLowerCase())) ||
+        (user?.phone && t.phone === user.phone)
+    );
+    return found?.room || found?.rooms?.[0] || 'P.101';
+  }, [isTenant, user, tenants, tenantRooms]);
+
+  const currentRoomObj = useMemo(() => {
+    return rooms.find((r) => r.number === myRoomNumber) || {
+      id: 101,
+      number: myRoomNumber,
+      house: 'Cơ Sở 1 - Cầu Giấy',
+      houseCode: 'CS-01',
+      floor: 'Tầng 1',
+      price: 3500000,
+      area: 25,
+      maxOccupants: 2,
+      occupants: 1,
+      status: 'OCCUPIED'
+    };
+  }, [rooms, myRoomNumber]);
+
+  // Thông tin hồ sơ chi tiết của khách thuê hiện tại (Định danh chính xác theo tài khoản)
+  const currentTenant = useMemo(() => {
+    const userFullName = user?.fullName || '';
+    const hasRealName = userFullName && userFullName !== 'tenant' && userFullName !== 'tenant1' && userFullName !== 'Khách thuê';
+
+    let matched = null;
+    if (hasRealName) {
+      matched = tenants.find((t) =>
+        t.fullName?.toLowerCase().includes(userFullName.toLowerCase()) ||
+        userFullName.toLowerCase().includes(t.fullName?.toLowerCase())
+      );
+    }
+
+    if (!matched && user?.username) {
+      if (user.username === 'tenant' || user.username === 'tenant1') {
+        matched = tenants.find((t) => t.fullName?.includes('An') || t.id === 1);
+      } else if (user.username === 'tenant2') {
+        matched = tenants.find((t) => t.fullName?.includes('Cường') || t.id === 3);
+      } else if (user.username === 'tenant_new') {
+        matched = tenants.find((t) => t.fullName?.includes('Nam') || t.id === 7);
+      }
+    }
+
+    return {
+      id: matched?.id || 1,
+      fullName: matched?.fullName || (hasRealName ? userFullName : 'Nguyễn Văn An'),
+      phone: matched?.phone || user?.phone || '0987.654.321',
+      cccd: matched?.cccd || user?.cccd || '001201012345',
+      email: matched?.email || user?.email || 'an.nguyen@rental.vn',
+      hometown: matched?.hometown || user?.hometown || 'Nam Định',
+      contractStart: matched?.contractStart || '01/01/2026',
+      contractEnd: matched?.contractEnd || '31/12/2026'
+    };
+  }, [tenants, user]);
+
+  // Danh sách các bạn cùng phòng (ở ghép) - KHÔNG bao gồm chính khách thuê đang đăng nhập
+  const roommates = useMemo(() => {
+    const myNameNorm = (currentTenant.fullName || '').toLowerCase().trim();
+    const maxCapacity = currentRoomObj?.maxOccupants || 2;
+    const maxAllowedRoommates = Math.max(0, maxCapacity - 1);
+
+    // Tập hợp tên các khách thuê chính đang thuê các phòng khác để tránh rò rỉ vào danh sách người cùng phòng
+    const otherRoomTenants = new Set(
+      tenants
+        .filter((t) => {
+          const r = t.rooms && t.rooms.length > 0 ? t.rooms[0] : t.room;
+          return r && r !== myRoomNumber;
+        })
+        .map((t) => (t.fullName || '').toLowerCase().trim())
+    );
+
+    // Lọc từ roomMembers: BẮT BUỘC roleInRoom === 'MEMBER' (Thành viên ở ghép)
+    const fromMembers = roomMembers.filter((m) => {
+      if (m.roomNumber !== myRoomNumber) return false;
+      if (m.status === 'MOVED_OUT') return false;
+      const mNameNorm = (m.fullName || '').toLowerCase().trim();
+
+      // Loại trừ chính khách thuê đang đăng nhập
+      if (mNameNorm === myNameNorm || mNameNorm.includes(myNameNorm) || myNameNorm.includes(mNameNorm)) {
+        return false;
+      }
+
+      // QUY TẮC CỐT LÕI: Bạn cùng phòng BẮT BUỘC phải là thành viên ở ghép (roleInRoom === 'MEMBER')
+      // Tuyệt đối không tính người đại diện hợp đồng (REPRESENTATIVE) của người khác vào làm bạn cùng phòng!
+      if (m.roleInRoom !== 'MEMBER') {
+        return false;
+      }
+
+      // Không tính người đang đứng tên thuê phòng khác
+      if (otherRoomTenants.has(mNameNorm)) {
+        return false;
+      }
+
+      return true;
+    });
+
+    // Giới hạn số bạn cùng phòng không bao giờ vượt quá chỗ trống cho phép (maxCapacity - 1)
+    return fromMembers.slice(0, maxAllowedRoommates);
+  }, [roomMembers, myRoomNumber, currentTenant, currentRoomObj, tenants]);
+
+  // Tổng số người thực tế hiện tại trong phòng (1 người thuê chính + số bạn ở ghép)
+  // ĐẢM BẢO TUYỆT ĐỐI: totalOccupants không bao giờ vượt quá maxOccupants (không thể có lỗi 3/2 người)
+  const maxOccupants = currentRoomObj?.maxOccupants || 2;
+  const totalOccupants = Math.min(maxOccupants, 1 + roommates.length);
+  const isRoomFull = totalOccupants >= maxOccupants;
+
+    const myActiveContract = useMemo(() => {
+    return (
+      contracts.find((c) => c.roomNumber === myRoomNumber) ||
+      contracts[0] || {
+        id: 'HD-2026-001',
+        roomNumber: myRoomNumber,
+        tenantName: user?.fullName || 'Nguyễn Văn An',
+        status: 'ACTIVE',
+        startDate: '01/01/2026',
+        endDate: '31/12/2026',
+        deposit: 3500000,
+        monthlyRent: 3500000
+      }
+    );
+  }, [contracts, myRoomNumber, user]);
+
+  const myCurrentInvoice = useMemo(() => {
+    return invoices.find((inv) => inv.room === myRoomNumber) || invoices[0];
+  }, [invoices, myRoomNumber]);
+
+  // =========================================================================
+  // GIAO DIỆN DÀNH CHO KHÁCH THUÊ (TENANT PORTAL)
+  // =========================================================================
+  if (isTenant && !myRoomNumber) {
+    return (
+      <div className="space-y-6">
+        {/* Banner Khách Mới Chưa Thuê Phòng */}
+        <div className="bg-gradient-to-r from-amber-600 via-orange-600 to-indigo-700 text-white rounded-2xl p-6 shadow-xl shadow-amber-600/15 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-bold mb-2">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Tài Khoản Khách Mới • Chưa Đứng Tên Hợp Đồng Phòng</span>
+            </div>
+            <h1 className="text-2xl font-black tracking-tight">
+              Xin chào, {user?.fullName || 'Khách Mới'}!
+            </h1>
+            <p className="text-amber-100 text-xs mt-1">
+              Bạn chưa đứng tên hợp đồng thuê phòng nào trong chuỗi trọ. Hãy khám phá danh sách phòng trống để nộp hồ sơ thuê hoặc xin ở ghép.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Link
+              to="/rooms"
+              className="px-4 py-2 bg-white text-amber-900 hover:bg-amber-50 font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-1.5 cursor-pointer btn-press"
+            >
+              <Home className="w-4 h-4 text-amber-600" />
+              <span>Xem Phòng Trống Đang Mở</span>
+            </Link>
+          </div>
+        </div>
+
+        {/* 3 KPI Cards dành cho Khách Mới */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Trạng Thái Thuê</span>
+              <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                <Clock className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-lg font-black text-amber-600">Chưa Có Phòng</div>
+            <p className="text-[11px] text-slate-500">Chưa ký hợp đồng thuê chính thức</p>
+          </div>
+
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Hồ Sơ Định Danh CCCD</span>
+              <div className="w-8 h-8 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center font-bold">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-lg font-black text-teal-700">Đã Xác Thực KYC</div>
+            <p className="text-[11px] text-slate-500">CCCD 03420300**** hợp lệ</p>
+          </div>
+
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Đơn Xin Ở Ghép</span>
+              <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                <Users className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-lg font-black text-indigo-700">Đang Tìm Bạn Ở Ghép</div>
+            <p className="text-[11px] text-slate-500">Có thể gửi CCCD xin ở ghép vào phòng trống</p>
+          </div>
+        </div>
+
+        {/* Thẻ thông tin cá nhân của khách mới */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Users className="w-4 h-4 text-teal-600" />
+              <span>Hồ Sơ Cá Nhân & Định Danh Cư Dân</span>
+            </h3>
+            <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-teal-50 text-teal-700 border border-teal-200">
+              Khách Thuê Tiềm Năng
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/60">
+              <div className="text-slate-400 text-[11px]">Họ và tên</div>
+              <div className="font-bold text-slate-900 mt-1">{user?.fullName || 'Hoàng Văn Nam'}</div>
+            </div>
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/60">
+              <div className="text-slate-400 text-[11px]">Số điện thoại</div>
+              <div className="font-bold text-slate-900 mt-1">{user?.phone || '0966.123.456'}</div>
+            </div>
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/60">
+              <div className="text-slate-400 text-[11px]">Email liên hệ</div>
+              <div className="font-bold text-slate-900 mt-1">{user?.email || 'nam.hv@gmail.com'}</div>
+            </div>
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/60">
+              <div className="text-slate-400 text-[11px]">Quê quán</div>
+              <div className="font-bold text-slate-900 mt-1">Thanh Hóa</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isTenant) {
+    return (
+      <div className="space-y-6">
+        {/* Toast thông báo thanh toán */}
+        {paySuccessToast && (
+          <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-2xl flex items-center justify-between text-xs text-emerald-900 shadow-md">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              <span className="font-bold">{paySuccessToast}</span>
+            </div>
+            <button onClick={() => setPaySuccessToast(null)} className="p-1 text-emerald-500 hover:text-emerald-700">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Hero Banner Khách Thu? */}
+        <div className="bg-gradient-to-r from-purple-700 via-indigo-600 to-blue-600 text-white rounded-2xl p-6 shadow-xl shadow-purple-600/15 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-bold mb-2">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Cổng Cư Dân Trực Tuyến • Định Danh CCCD</span>
+            </div>
+            <h1 className="text-2xl font-black tracking-tight">
+              Xin chào, {user?.fullName || 'Khách thuê'}!
+            </h1>
+            <p className="text-purple-100 text-xs mt-1">
+              Bạn đang thuê phòng <strong className="text-white font-mono bg-white/20 px-2 py-0.5 rounded">{myRoomNumber}</strong> tại {currentRoomObj.house} (Quy tắc Single Active Lease: 1 Khách - 1 Phòng).
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowContractModal(true)}
+              className="px-4 py-2 bg-white text-purple-900 hover:bg-purple-50 font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-1.5 cursor-pointer btn-press"
+            >
+              <FileText className="w-4 h-4 text-purple-600" />
+              <span>Hợp Đồng Điện Tử (UC-T01)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 3 KPI Cards dành cho Khách Thuê */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Card 1: Phòng Đang ở */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Phòng Thuê Hiện Tại</span>
+              <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+                <Home className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-black text-slate-900">{myRoomNumber}</span>
+              <span className="text-xs text-slate-500 font-medium">({currentRoomObj.floor || 'Tầng 1'})</span>
+            </div>
+            <p className="text-[11px] text-slate-500">{currentRoomObj.house}</p>
+          </div>
+
+          {/* Card 2: Hạn hợp đồng */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Hiệu Lực Hợp Đồng</span>
+              <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-sm font-bold text-emerald-700">
+              Đến {myActiveContract.endDate || '31/12/2026'}
+            </div>
+            <div className="text-[11px] text-slate-500 flex items-center gap-1">
+              <span>Mã HĐ:</span>
+              <span className="font-mono font-bold text-slate-700">{myActiveContract.id}</span>
+            </div>
+          </div>
+
+          {/* Card 3: Tiền cước tháng này */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Cước Phí Tháng 9/2026</span>
+              <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                <Receipt className="w-4 h-4" />
+              </div>
+            </div>
+            {myCurrentInvoice?.status === 'PENDING_METER' ? (
+              <div>
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                  <Clock className="w-3 h-3 text-amber-600" />
+                  <span>Chờ Chốt Điện Nước</span>
+                </span>
+                <p className="text-[11px] text-slate-400 mt-1">Chủ trọ chưa chốt số điện nước kỳ này</p>
+              </div>
+            ) : myCurrentInvoice?.status === 'PAID' ? (
+              <div className="space-y-1.5">
+                <div className="text-xl font-black text-emerald-700">
+                  {(myCurrentInvoice?.total || 0).toLocaleString('vi-VN')} ₫
+                </div>
+                <div className="flex items-center justify-between gap-1 flex-wrap pt-0.5">
+                  <span className="text-[11px] font-bold text-emerald-600">✓ Đã thanh toán kỳ này</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (resetRoomPaymentStatus) {
+                        resetRoomPaymentStatus(myRoomNumber);
+                        setPaySuccessToast('Đã mở lại trạng thái Chưa Thanh Toán để bạn kiểm thử VNPay / MoMo!');
+                        setTimeout(() => setPaySuccessToast(null), 4000);
+                      }
+                    }}
+                    className="text-[10px] text-purple-700 hover:text-purple-900 font-bold underline bg-purple-50 hover:bg-purple-100 px-2 py-0.5 rounded border border-purple-200 cursor-pointer transition-colors"
+                    title="Bấm để chuyển về Chưa thanh toán phục vụ kiểm thử"
+                  >
+                    🔄 Mở lại Chưa Thanh Toán để test
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div className="text-xl font-black text-slate-900">
+                  {(myCurrentInvoice?.total || 0).toLocaleString('vi-VN')} ₫
+                </div>
+                <button
+                  onClick={() => setPayingInvoice(myCurrentInvoice)}
+                  className="mt-2.5 w-full py-2 px-3 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-extrabold text-xs rounded-xl shadow-md shadow-purple-600/20 transition-all flex items-center justify-center gap-1.5 btn-press cursor-pointer"
+                >
+                  <CreditCard className="w-3.5 h-3.5" />
+                  <span>Thanh Toán SePay / VNPay / MoMo</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 2 Cột: Thông Tin Phòng & Thông Tin Bạn Cùng Phòng */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Cột 1: Thông tin phòng đang thuê */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Home className="w-4 h-4 text-purple-600" />
+                <span>Chi Tiết Phòng Đang Thuê: {myRoomNumber}</span>
+              </h3>
+              <button
+                onClick={() => setShowContractModal(true)}
+                className="text-xs font-bold text-purple-600 hover:text-purple-800 hover:underline"
+              >
+                Xem Hợp đồng →
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 bg-slate-50 p-4 rounded-xl text-center text-xs">
+              <div>
+                <span className="text-slate-500">Giá phòng:</span>
+                <div className="font-black text-purple-700 text-sm mt-0.5">
+                  {(currentRoomObj.price || 3500000).toLocaleString('vi-VN')} ₫
+                </div>
+              </div>
+              <div>
+                <span className="text-slate-500">Diện tích:</span>
+                <div className="font-bold text-slate-900 text-sm mt-0.5">{currentRoomObj.area || 25} m²</div>
+              </div>
+              <div>
+                <span className="text-slate-500">Sđóngười tối đa:</span>
+                <div className="font-bold text-slate-900 text-sm mt-0.5">{currentRoomObj.maxOccupants || 2} người</div>
+              </div>
+            </div>
+
+            <div className="text-xs space-y-2 text-slate-600">
+              <div className="flex justify-between py-1.5 border-b border-slate-100">
+                <span>Tiền cọc giữ chỗ:</span>
+                <strong className="text-slate-900">{(myActiveContract.deposit || 3500000).toLocaleString('vi-VN')} ₫</strong>
+              </div>
+              <div className="flex justify-between py-1.5 border-b border-slate-100">
+                <span>Ngày bắt đầu thuê:</span>
+                <strong className="text-slate-900">{myActiveContract.startDate || '01/01/2026'}</strong>
+              </div>
+              <div className="flex justify-between py-1.5 border-b border-slate-100">
+                <span>Định danh cư dân:</span>
+                <span className="text-emerald-700 font-bold">✓ Đã xác thực CCCD 12 số</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Cột 2: Thông Tin Khách Thuê & Cư Dân Trong Phòng (ĐẦY ĐỦ ĐỊNH DANH) */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs space-y-4">
+            {/* Header: Tổng số người / Tối đa */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-teal-600" />
+                  <span>Cư Dân Trong Phòng ({totalOccupants}/{maxOccupants} người)</span>
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Bảo mật thông tin: Ẩn 4 số cuối CCCD theo Nghị định 13/2023/NĐ-CP
+                </p>
+              </div>
+
+              {/* Nút thêm bạn hoặc Huy hiệu 🔒 Đã đủ người */}
+              <div className="flex items-center gap-2">
+                {isRoomFull ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-100 text-rose-800 text-xs font-bold border border-rose-200 shadow-2xs">
+                    <span>🔒</span>
+                    <span>Đã đủ {totalOccupants}/{maxOccupants} người</span>
+                  </span>
+                ) : (
+                  <>
+                    <span className="hidden sm:inline-flex px-2.5 py-1 rounded-lg bg-teal-50 text-teal-700 text-[11px] font-bold border border-teal-200">
+                      Còn trống {Math.max(0, maxOccupants - totalOccupants)} chỗ
+                    </span>
+                    <button
+                      onClick={() => setShowRoommateModal(true)}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer btn-press"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>+ Gửi CCCD Xin Ở Ghép</span>
+                    </button>
+                  </> 
+                )}
+              </div>
+            </div>
+
+            {/* DANH SÁCH TẤT CẢ CƯ DÂN TRONG PHÒNG (GỘP CHUNG 1 KHỐI THỐNG NHẤT) */}
+            <div className="space-y-3">
+              {/* 1. THÔNG TIN ĐẦY ĐỦ CỦA CHỦ TÀI KHOẢN (ĐẠI DIỆN KÝ HĐ / CHÍNH BẠN) */}
+              <div className="p-4 bg-gradient-to-br from-teal-50/70 via-white to-purple-50/50 border border-teal-200/90 rounded-2xl shadow-2xs space-y-2.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-extrabold text-slate-900 text-sm tracking-tight">
+                        {currentTenant.fullName || user?.fullName}
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-gradient-to-r from-teal-600 to-emerald-600 text-white text-[10px] font-black shadow-2xs">
+                        <span>👑</span>
+                        <span>Chủ Hộ (Chính Bạn)</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 text-[10px] font-bold border border-purple-200">
+                        Đại diện ký HĐ
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Người đứng tên hợp đồng thuê phòng {myRoomNumber} • {currentRoomObj.house}
+                    </p>
+                  </div>
+
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100/90 text-emerald-800 text-[10px] font-extrabold rounded-lg border border-emerald-200 shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    🟢 Đã đăng ký tạm trú
+                  </span>
+                </div>
+
+                {/* Chi tiết định danh đầy đủ của chủ tài khoản */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-2 border-t border-teal-100/80 text-[11px]">
+                  <div className="bg-white/80 p-2 rounded-xl border border-slate-200/60">
+                    <div className="text-slate-400 text-[10px] font-semibold">🆔 Số CCCD 12 số</div>
+                    <div className="font-mono font-bold text-slate-800 mt-0.5">
+                      {currentTenant.cccd ? currentTenant.cccd.slice(0, 8) + '****' : (user?.cccd ? user.cccd.slice(0, 8) + '****' : '00120101****')}
+                    </div>
+                  </div>
+                  <div className="bg-white/80 p-2 rounded-xl border border-slate-200/60">
+                    <div className="text-slate-400 text-[10px] font-semibold">📞 Số điện thoại</div>
+                    <div className="font-bold text-slate-800 mt-0.5">
+                      {currentTenant.phone || user?.phone || '0987.654.321'}
+                    </div>
+                  </div>
+                  <div className="bg-white/80 p-2 rounded-xl border border-slate-200/60">
+                    <div className="text-slate-400 text-[10px] font-semibold">🏡 Quê quán</div>
+                    <div className="font-bold text-slate-800 mt-0.5 truncate">
+                      {currentTenant.hometown || user?.hometown || 'Nam Định'}
+                    </div>
+                  </div>
+                  <div className="bg-white/80 p-2 rounded-xl border border-slate-200/60">
+                    <div className="text-slate-400 text-[10px] font-semibold">✉️ Email liên hệ</div>
+                    <div className="font-bold text-slate-800 mt-0.5 truncate">
+                      {currentTenant.email || user?.email || 'an.nguyen@rental.vn'}
+                    </div>
+                  </div>
+                  <div className="bg-white/80 p-2 rounded-xl border border-slate-200/60">
+                    <div className="text-slate-400 text-[10px] font-semibold">📅 Ngày bắt đầu ở</div>
+                    <div className="font-bold text-slate-800 mt-0.5">
+                      {currentTenant.contractStart || myActiveContract?.startDate || '01/01/2026'}
+                    </div>
+                  </div>
+                  <div className="bg-white/80 p-2 rounded-xl border border-slate-200/60">
+                    <div className="text-slate-400 text-[10px] font-semibold">🛡️ Trạng thái hồ sơ</div>
+                    <div className="font-bold text-teal-700 mt-0.5 flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3 text-teal-600" />
+                      <span>Đã xác thực KYC</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. CÁC THÀNH VIÊN Ở GHÉP CÙNG PHÒNG (NẾU CÓ - GỘP TRỰC TIẾP VÀO CƯ DÂN TRONG PHÒNG) */}
+              {roommates.map((m) => {
+                const maskedCccd = m.maskedCccd || (m.cccd ? m.cccd.slice(0, 8) + '****' : '00120109****');
+                return (
+                  <div
+                    key={m.id}
+                    className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2 hover:bg-slate-100/60 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-slate-900 text-sm">{m.fullName}</span>
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                            👤 Thành Viên Ở Ghép
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          Cư dân ở ghép cùng phòng {myRoomNumber}
+                        </p>
+                      </div>
+
+                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                        🟢 Đã đăng ký tạm trú
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 border-t border-slate-200/60 text-[11px]">
+                      <div className="bg-white p-2 rounded-xl border border-slate-200/60">
+                        <div className="text-slate-400 text-[10px] font-semibold">🆔 Số CCCD 12 số</div>
+                        <div className="font-mono font-bold text-slate-800 mt-0.5">{maskedCccd}</div>
+                      </div>
+                      <div className="bg-white p-2 rounded-xl border border-slate-200/60">
+                        <div className="text-slate-400 text-[10px] font-semibold">📞 Số điện thoại</div>
+                        <div className="font-bold text-slate-800 mt-0.5">{m.phone || '0981.222.333'}</div>
+                      </div>
+                      <div className="bg-white p-2 rounded-xl border border-slate-200/60">
+                        <div className="text-slate-400 text-[10px] font-semibold">📅 Ngày vào ở</div>
+                        <div className="font-bold text-slate-800 mt-0.5">{m.joinDate || '01/02/2026'}</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* 3. NẾU CHƯA CÓ NGƯỜI Ở GHÉP VÀ CÒN CHỖ TRỐNG (CHỈ DÙNG 1 NÚT PHÍA TRÊN) */}
+              {roommates.length === 0 && !isRoomFull && (
+                <div className="p-3.5 bg-slate-50/70 border border-dashed border-slate-200 rounded-xl flex items-center justify-between text-xs text-slate-500">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-teal-500"></span>
+                    <span>Phòng hiện tại còn trống <strong>{Math.max(0, maxOccupants - totalOccupants)} chỗ</strong>. Bạn có thể bấm nút <strong>+ Gửi CCCD Xin Ở Ghép</strong> ở góc trên để gửi thông tin bạn cùng phòng cho Chủ trọ phê duyệt.</span>
+                  </div>
+                </div>
+              )}
+
+              {/* 4. CẢNH BÁO KHI ĐÃ ĐỦ SỐ NGƯỜI TỐI ĐA */}
+              {isRoomFull && (
+                <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center gap-2 font-medium">
+                  <span className="text-base">⚠️</span>
+                  <span>
+                    <strong>Phòng đã đủ số người tối đa ({totalOccupants}/{maxOccupants} người):</strong> Theo quy định PCCC và an toàn nhà trọ, không thể thêm người vào phòng này nữa.
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Modal Xem Toàn Văn Hợp Đồng Điện Tử (UC-T01) */}
+        <ResidentContractModal
+          isOpen={showContractModal}
+          onClose={() => setShowContractModal(false)}
+          contract={myActiveContract}
+          onSignSuccess={(contractId) => {
+            signContractElectronically(contractId);
+          }}
+        />
+
+        {/* Modal Gửi CCCD Xin Ở Ghép Cho Chủ Trọ Duyệt (UC-T07) */}
+        <RoommateRequestModal
+          isOpen={showRoommateModal}
+          onClose={() => setShowRoommateModal(false)}
+          userRoom={currentRoomObj}
+          activeContract={myActiveContract}
+        />
+
+        {/* Cổng Thanh toán Đa Kênh VNPay / MoMo / VietQR cho Khách Thuê */}
+        <PaymentModal
+          isOpen={!!payingInvoice}
+          onClose={() => setPayingInvoice(null)}
+          onSuccess={(paidInv, payMethod) => {
+            const methodLabel = payMethod === 'VNPAY' ? 'Cổng VNPay' : (payMethod === 'MOMO' ? 'Ví MoMo' : (payMethod === 'SEPAY' ? 'SePay VietQR' : 'SePay VietQR'));
+            payInvoice(payingInvoice.id, methodLabel);
+            setPayingInvoice(null);
+            setPaySuccessToast(`Đã thanh toán thành công qua ${methodLabel} cho hóa đơn ${payingInvoice.code}!`);
+            setTimeout(() => setPaySuccessToast(null), 6000);
+          }}
+          invoice={payingInvoice || undefined}
+        />
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // GIAO DIỆN DÀNH CHO ADMIN & STAFF MANAGEMENT DASHBOARD
+  // =========================================================================
+  const occupiedCount = rooms.filter((r) => r.status === 'OCCUPIED').length;
+  const availableCount = rooms.filter((r) => r.status === 'AVAILABLE').length;
+  const maintenanceCount = rooms.filter((r) => r.status === 'MAINTENANCE').length;
+  const roomStatusData = [
+    { name: 'Đang Thuê', value: occupiedCount || 16, color: '#6366f1' },
+    { name: 'Còn Trống', value: availableCount || 6, color: '#10b981' },
+    { name: 'Bảo Trì', value: maintenanceCount || 2, color: '#f59e0b' },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Top Banner Admin / Staff */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-indigo-900/40 via-purple-900/20 to-slate-900 border border-indigo-500/20 rounded-2xl p-6 backdrop-blur-xl">
+        <div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">
+            Tổng Quan Hệ Thống Quản Lý Chuỗi Nhà Trọ
+          </h1>
+          <p className="text-slate-400 text-sm mt-1">
+            Theo dõi trạng thái các cơ sở, phòng trọ, chỉ số điện nước và dòng tiền theo thời gian thực.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {role !== 'ADMIN' && (
+            <Link
+              to="/rooms"
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl shadow-lg shadow-indigo-600/30 transition-all hover:scale-105"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>Sơ Đồ Phòng</span>
+            </Link>
+          )}
+          <Link
+            to="/meters"
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold rounded-xl shadow-lg shadow-purple-600/30 transition-all hover:scale-105"
+          >
+            <Zap className="w-4 h-4" />
+            <span>Chốt Điện Nước (AI)</span>
+          </Link>
+        </div>
+      </div>
+
+      {/* 4 Stat Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 hover:border-slate-600 transition-all">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tổng Số Phòng</span>
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/20">
+              <Home className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-4 flex items-baseline justify-between">
+            <span className="text-3xl font-extrabold text-white">{rooms.length || 24}</span>
+            <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1">
+              <TrendingUp className="w-3.5 h-3.5" />
+              <span>100% hoạt động</span>
+            </span>
+          </div>
+        </div>
+
+        <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 hover:border-slate-600 transition-all">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Khách Đang Thuê</span>
+            <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center border border-purple-500/20">
+              <Users className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-4 flex items-baseline justify-between">
+            <span className="text-3xl font-extrabold text-white">{tenants.filter(t => t.status === 'ACTIVE').length || 4}</span>
+            <span className="text-xs text-purple-300 font-semibold">1 khách - 1 phòng</span>
+          </div>
+        </div>
+
+        <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 hover:border-slate-600 transition-all">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Doanh Thu Tháng 9</span>
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center border border-emerald-500/20">
+              <DollarSign className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-4 flex items-baseline justify-between">
+            <span className="text-3xl font-extrabold text-white">62.4M</span>
+            <span className="text-xs text-emerald-400 font-semibold">+6.8% so với T8</span>
+          </div>
+        </div>
+
+        <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 hover:border-slate-600 transition-all">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Hóa Đơn Chờ Thu</span>
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center border border-amber-500/20">
+              <Receipt className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-4 flex items-baseline justify-between">
+            <span className="text-3xl font-extrabold text-white">
+              {invoices.filter(i => i.status === 'UNPAID').length}
+            </span>
+            <span className="text-xs text-amber-400 font-semibold">
+              {invoices.filter(i => i.status === 'PENDING_METER').length} chờ chốt Đ/N
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Biểu Đồ Doanh Thu Chuỗi */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 bg-slate-800/60 border border-slate-700/60 rounded-2xl p-6 backdrop-blur-xl">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-lg font-bold text-white">Biểu Đồ Doanh Thu Chuỗi</h2>
+              <p className="text-xs text-slate-400 mt-1">Dữ liệu doanh thu thực tế so với mục tiêu theo từng tháng</p>
+            </div>
+          </div>
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={revenueData}>
+                <defs>
+                  <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="month" stroke="#94a3b8" />
+                <YAxis stroke="#94a3b8" tickFormatter={(v) => `${v / 1000000}M`} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#1e293b', borderColor: '#475569', borderRadius: '0.75rem', color: '#fff' }}
+                  formatter={(value) => [`${value.toLocaleString('vi-VN')} ₫`, 'Doanh thu']}
+                />
+                <Area type="monotone" dataKey="revenue" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-6 backdrop-blur-xl">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-white">Tỷ Lệ Lấp Đầy Phòng</h2>
+          </div>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={roomStatusData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={55}
+                  outerRadius={80}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  {roomStatusData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip contentStyle={{ backgroundColor: '#1e293b', borderColor: '#475569', borderRadius: '0.75rem', color: '#fff' }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex justify-around text-xs mt-4">
+            {roomStatusData.map((s) => (
+              <div key={s.name} className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color }}></span>
+                <span className="text-slate-300 font-medium">{s.name}: {s.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
