@@ -34,7 +34,7 @@ const CATEGORIES = [
 
 export default function MaintenancePage() {
   const { user, tenantRooms } = useAuth();
-  const { tickets, createTicket, updateTicketStatus, tenants } = useData();
+  const { tickets, createTicket, updateTicketStatus, tenants, addMaintenanceFeeToInvoice } = useData();
   const role = user?.role || 'ADMIN';
   const isTenant = role === 'TENANT';
   const isStaff = role === 'STAFF';
@@ -78,7 +78,8 @@ export default function MaintenancePage() {
     technicianName: 'Nguyễn Văn Hùng',
     technicianPhone: '0988.112.233',
     cost: 150000,
-    costBearer: 'LANDLORD', // LANDLORD | TENANT
+    costBearer: 'LANDLORD',
+    addToInvoice: true,
     status: 'IN_PROGRESS'
   });
 
@@ -118,6 +119,10 @@ export default function MaintenancePage() {
     assignModal.technicianPhone = staffForm.technicianPhone;
     assignModal.cost = staffForm.cost;
     assignModal.costBearer = staffForm.costBearer;
+    // Task 12: Tự động cộng chi phí vào hóa đơn phòng nếu khách chịu chi phí
+    if (staffForm.costBearer === 'TENANT' && staffForm.addToInvoice && staffForm.cost > 0 && addMaintenanceFeeToInvoice) {
+      addMaintenanceFeeToInvoice(assignModal.room, staffForm.cost, `Phí sửa chữa: ${assignModal.issue}`);
+    }
     setAssignModal(null);
   };
 
@@ -512,6 +517,20 @@ export default function MaintenancePage() {
                   </select>
                 </div>
               </div>
+
+              {staffForm.costBearer === 'TENANT' && (
+                <div className="pt-1">
+                  <label className="flex items-center gap-2 cursor-pointer p-2.5 bg-purple-50/70 border border-purple-200 rounded-xl text-purple-900 font-semibold">
+                    <input
+                      type="checkbox"
+                      checked={staffForm.addToInvoice}
+                      onChange={(e) => setStaffForm({ ...staffForm, addToInvoice: e.target.checked })}
+                      className="rounded text-purple-600 focus:ring-purple-500"
+                    />
+                    <span>Tự động tính chi phí này vào hóa đơn tháng tiếp theo của phòng</span>
+                  </label>
+                </div>
+              )}
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                 <button

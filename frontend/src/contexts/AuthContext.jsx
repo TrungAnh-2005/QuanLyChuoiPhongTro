@@ -120,15 +120,7 @@ const getStoredTenantRooms = () => {
     }
   } catch {}
 
-  // Đảm bảo Khách 1 (An) và Khách 2 (Cường) luôn cọc/thuê phòng tại CS-01 của chủ A
-  if (!res.tenant1 || res.tenant1.length === 0) {
-    res.tenant1 = ['P.101'];
-    res['Nguyễn Văn An'] = ['P.101'];
-  }
-  if (!res.tenant2 || res.tenant2.length === 0) {
-    res.tenant2 = ['P.103'];
-    res['Phạm Minh Cường'] = ['P.103'];
-  }
+  // Tôn trọng mảng rỗng [] khi khách đã trả phòng hoặc chuyển đi
 
   // Tự động đối chiếu với rental_room_requests:
   try {
@@ -391,45 +383,12 @@ export const AuthProvider = ({ children }) => {
         : (latestRooms[baseUser.fullName] !== undefined ? latestRooms[baseUser.fullName] : currentRooms);
       currentRooms = normalizeRoomList(val);
 
-      if (roleKey === 'TENANT_2' || baseUser.username === 'tenant2') {
-        // Khách 2 (Phạm Minh Cường): Đang cọc phòng P.103 của ông chủ A (CS-01)
-        currentRooms = ['P.103'];
-        userHouseCode = 'CS-01';
-        userHouseName = 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
-        try {
-          const sRooms = localStorage.getItem('rental_tenant_rooms');
-          const pRooms = sRooms ? JSON.parse(sRooms) : {};
-          pRooms.tenant2 = ['P.103'];
-          pRooms['Phạm Minh Cường'] = ['P.103'];
-          localStorage.setItem('rental_tenant_rooms', JSON.stringify(pRooms));
-        } catch {}
-        setTenantRooms(prev => ({ ...prev, tenant2: ['P.103'], 'Phạm Minh Cường': ['P.103'] }));
-      } else if (roleKey === 'TENANT_1' || roleKey === 'TENANT' || baseUser.username === 'tenant1') {
-        // Khách 1 (Nguyễn Văn An): Đang cọc phòng P.101 của ông chủ A (CS-01)
-        currentRooms = ['P.101'];
-        userHouseCode = 'CS-01';
-        userHouseName = 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
-        try {
-          const sRooms = localStorage.getItem('rental_tenant_rooms');
-          const pRooms = sRooms ? JSON.parse(sRooms) : {};
-          pRooms.tenant1 = ['P.101'];
-          pRooms['Nguyễn Văn An'] = ['P.101'];
-          localStorage.setItem('rental_tenant_rooms', JSON.stringify(pRooms));
-        } catch {}
-        setTenantRooms(prev => ({ ...prev, tenant1: ['P.101'], 'Nguyễn Văn An': ['P.101'] }));
-      } else if (roleKey === 'TENANT_NEW' || baseUser.username === 'tenant_new') {
-        // Khách 3 (Hoàng Văn Nam): Chưa thuê phòng nào -> Chế độ Marketplace xem toàn bộ phòng
-        currentRooms = [];
+      if (currentRooms.length === 0) {
         userHouseCode = null;
         userHouseName = null;
-        try {
-          const sRooms = localStorage.getItem('rental_tenant_rooms');
-          const pRooms = sRooms ? JSON.parse(sRooms) : {};
-          pRooms.tenant_new = [];
-          pRooms['Hoàng Văn Nam'] = [];
-          localStorage.setItem('rental_tenant_rooms', JSON.stringify(pRooms));
-        } catch {}
-        setTenantRooms(prev => ({ ...prev, tenant_new: [], 'Hoàng Văn Nam': [] }));
+      } else {
+        userHouseCode = baseUser.houseCode || 'CS-01';
+        userHouseName = baseUser.houseName || 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
       }
     }
 
@@ -468,6 +427,14 @@ export const AuthProvider = ({ children }) => {
       }
     } catch (err) {
       console.warn('Backend API login offline/error, falling back to local session:', err);
+      // Kiểm tra mật khẩu reset trong rental_user_passwords
+      try {
+        const sPwds = localStorage.getItem('rental_user_passwords');
+        const pwds = sPwds ? JSON.parse(sPwds) : {};
+        if (pwds[username] && pwds[username] !== password) {
+          return { success: false, error: 'Mật khẩu không chính xác.' };
+        }
+      } catch {}
       const roleKey = username.toLowerCase().includes('tenant') ? 'TENANT'
                     : username.toLowerCase().includes('staff') ? 'STAFF' : 'ADMIN';
       const targetUser = DEMO_USERS[roleKey];

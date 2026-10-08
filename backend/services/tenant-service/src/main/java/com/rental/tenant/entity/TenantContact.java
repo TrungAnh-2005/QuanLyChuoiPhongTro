@@ -1,4 +1,4 @@
-package com.rental.tenant.entity;
+﻿package com.rental.tenant.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
@@ -10,6 +10,10 @@ import lombok.*;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+/**
+ * @deprecated Quy hoach mo rong du phong V2.0. Trong V1.0 thanh vien cu tru duoc quan ly qua bang room_members.
+ */
+@Deprecated
 public class TenantContact {
 
     @Id
@@ -29,3 +33,4 @@ public class TenantContact {
     @Column(length = 50)
     private String relationship;
 }
+

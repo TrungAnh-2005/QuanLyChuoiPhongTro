@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Receipt,
   CheckCircle,
@@ -82,14 +82,35 @@ export default function InvoicesPage({ forcedTab }) {
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [payingInvoice, setPayingInvoice] = useState(null);
 
-  const displayedInvoices = isTenant
-    ? invoices.filter(
+  const [selectedFacility, setSelectedFacility] = useState(() => {
+    if (role === 'STAFF') {
+      return user?.houseCode || 'CS-01';
+    }
+    return 'ALL';
+  });
+
+  const displayedInvoices = useMemo(() => {
+    if (isTenant) {
+      return invoices.filter(
         (inv) =>
-          inv.sentToTenant && // QUY TẮC BẮT BUỘC: Chỉ phòng đã chốt điện nước mới gửi đến khách hàng!
+          inv.sentToTenant &&
           (myRentedRooms.includes(inv.room) ||
             (inv.tenant && inv.tenant.toLowerCase().includes((user?.fullName || '').toLowerCase())))
-      )
-    : invoices;
+      );
+    }
+    if (selectedFacility === 'ALL') {
+      return invoices;
+    }
+    return invoices.filter((inv) => {
+      if (inv.houseCode) return inv.houseCode === selectedFacility;
+      if (inv.house) {
+        if (selectedFacility === 'CS-01') return inv.house.includes('Cơ Sở 1') || inv.house.includes('Cầu Giấy') || inv.house.includes('CS-01');
+        if (selectedFacility === 'CS-02') return inv.house.includes('Cơ Sở 2') || inv.house.includes('Bách Khoa') || inv.house.includes('CS-02');
+        if (selectedFacility === 'CS-03') return inv.house.includes('Cơ Sở 3') || inv.house.includes('Đống Đa') || inv.house.includes('CS-03');
+      }
+      return true;
+    });
+  }, [isTenant, invoices, myRentedRooms, user, selectedFacility, role]);
 
   const filtered = displayedInvoices.filter((inv) => {
     let matchStatus = true;
@@ -165,15 +186,20 @@ export default function InvoicesPage({ forcedTab }) {
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            <Receipt className="w-6 h-6 text-purple-600" />
             {isTenant
               ? (myRentedRooms.length > 0 ? `Hóa Đơn Của Tôi (Phòng ${myRentedRooms.join(', ')})` : 'Hóa Đơn Của Tôi')
-              : 'Hóa Đơn & Quản Lý Thu Phí Chuỗi'}
+              : invoiceTab === 'SAAS_INVOICES'
+              ? 'Hóa Đơn Nộp Tiền Cho Web Admin (Gói Cước SaaS)'
+              : 'Hóa Đơn Thu Tiền (Từ Khách Thuê)'}
           </h1>
           <p className="text-slate-500 text-sm mt-1 font-medium">
             {isTenant
               ? 'Theo dõi hóa đơn tiền nhà, chỉ số dịch vụ và thanh toán trực tuyến qua mã VietQR.'
-              : 'Phân hệ quản lý tài chính chuỗi trọ: Hóa đơn phòng thu từ khách & Hóa đơn gói phần mềm đóng cho Website.'}
+              : invoiceTab === 'SAAS_INVOICES'
+              ? 'Danh sách phí bản quyền phần mềm SaaS chuỗi trọ nộp cho Quản Trị Viên nền tảng qua VietQR / VNPay.'
+              : 'Quản lý thu tiền phòng, điện nước khách thuê, gạch nợ tự động và phát hành hóa đơn hàng loạt.'}
           </p>
         </div>
 
@@ -197,47 +223,6 @@ export default function InvoicesPage({ forcedTab }) {
           </button>
         )}
       </div>
-
-      {/* Tách 2 Tabs rõ ràng cho Chủ trọ */}
-      {!isTenant && (
-        <div className="flex flex-wrap items-center gap-2 bg-slate-200/60 p-1.5 rounded-2xl backdrop-blur-md w-fit">
-          <button
-            onClick={() => setInvoiceTab('TENANT_INVOICES')}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-xs transition-all cursor-pointer ${
-              invoiceTab === 'TENANT_INVOICES'
-                ? 'bg-white text-indigo-700 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Receipt className="w-4 h-4 text-purple-600" />
-            <span>1. Hóa Đơn Thu Tiền (Thu Từ Khách Thuê)</span>
-            <span className="px-2 py-0.5 rounded-full text-[10px] bg-purple-100 text-purple-700 font-black">
-              {invoices.length}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setInvoiceTab('SAAS_INVOICES')}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-xs transition-all cursor-pointer ${
-              invoiceTab === 'SAAS_INVOICES'
-                ? 'bg-white text-indigo-700 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>2. Hóa Đơn Nộp Tiền (Nộp Cho Web Admin)</span>
-            {saasInvoices.filter((s) => s.status === 'UNPAID').length > 0 ? (
-              <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-500 text-white font-black animate-pulse">
-                {saasInvoices.filter((s) => s.status === 'UNPAID').length} Cần Thanh Toán
-              </span>
-            ) : (
-              <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-700 font-bold">
-                Đã Thanh Toán Đủ
-              </span>
-            )}
-          </button>
-        </div>
-      )}
 
       {/* Batch Sent Toast */}
       {batchSentToast && (
@@ -434,6 +419,39 @@ export default function InvoicesPage({ forcedTab }) {
         /* TAB 1: HÓA ĐƠN THU KHÁCH THUÊ (TIỀN PHÒNG & ĐIỆN NƯỚC)                     */
         /* ========================================================================= */
         <div className="space-y-6">
+          {/* Facility Switcher Tabs for Landlord & Staff (Task 6) */}
+          {!isTenant && (
+            <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-100/80 rounded-2xl border border-slate-200/80 text-xs font-bold">
+              {[
+                { code: 'ALL', label: '🏢 Toàn Chuỗi (Tất Cả)' },
+                { code: 'CS-01', label: '🏠 Cơ Sở 1 (Cầu Giấy)' },
+                { code: 'CS-02', label: '🏠 Cơ Sở 2 (Bách Khoa)' },
+                { code: 'CS-03', label: '🏠 Cơ Sở 3 (Đống Đa)' }
+              ].map((fac) => {
+                const isSelected = selectedFacility === fac.code;
+                return (
+                  <button
+                    key={fac.code}
+                    disabled={role === 'STAFF' && fac.code !== (user?.houseCode || 'CS-01')}
+                    onClick={() => setSelectedFacility(fac.code)}
+                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-purple-600 text-white shadow-md shadow-purple-600/25'
+                        : 'text-slate-600 hover:text-purple-700 hover:bg-white/60'
+                    } ${role === 'STAFF' && fac.code !== (user?.houseCode || 'CS-01') ? 'opacity-40 cursor-not-allowed' : ''}`}
+                  >
+                    <span>{fac.label}</span>
+                  </button>
+                );
+              })}
+              {role === 'STAFF' && (
+                <span className="text-[11px] text-purple-700 font-semibold ml-auto px-2">
+                  🔒 Cố định theo cơ sở trực: {user?.houseName || user?.houseCode || 'CS-01'}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Top 3 KPI Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
             <div className="bento-card p-5 space-y-3">
@@ -794,7 +812,7 @@ export default function InvoicesPage({ forcedTab }) {
 
             <button
               onClick={() => {
-                alert('Đã tải xuống file PDF Hóa Đơn Điện Tử VAT có chữ ký số điện tử của CTCP SaaS Trọ Việt!');
+                setBatchSentToast({ success: true, message: 'Đã tải xuống file PDF Hóa Đơn Điện Tử VAT có chữ ký số điện tử của CTCP SaaS Trọ Việt!' }); setTimeout(() => setBatchSentToast(null), 4000);
               }}
               className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2"
             >

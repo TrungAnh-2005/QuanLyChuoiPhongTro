@@ -1,4 +1,4 @@
-server:
+﻿server:
   port: 8080
 
 spring:
@@ -34,15 +34,10 @@ spring:
           predicates:
             - Path=/api/auth/**
 
-        - id: property-service
-          uri: lb://PROPERTY-SERVICE
-          predicates:
-            - Path=/api/properties/**
-
         - id: room-service
           uri: lb://ROOM-SERVICE
           predicates:
-            - Path=/api/rooms/**
+            - Path=/api/rooms/**, /api/boarding-houses/**, /api/properties/**
 
         - id: tenant-service
           uri: lb://TENANT-SERVICE
@@ -119,3 +114,4 @@ eureka:
   client:
     service-url:
       defaultZone: http://discovery-server:8761/eureka/
+

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useData } from '../contexts/DataContext';
 import {
   Building2,
   Plus,
@@ -72,10 +73,77 @@ const initialHouses = [
 
 export default function BoardingHousesPage() {
   const { user } = useAuth();
+  const { rooms = [], tenants = [], invoices = [] } = useData();
   const role = user?.role || 'ADMIN';
   const isTenant = role === 'TENANT';
+  const isStaff = role === 'STAFF';
+  const staffHouseCode = isStaff ? (user?.houseCode || 'CS-01') : null;
+  const [houseScopeTab, setHouseScopeTab] = useState('ALL'); // 'ALL' | 'ASSIGNED'
+
   const [rawHouses, setHouses] = useState(initialHouses);
-  const houses = useMemo(() => isTenant ? rawHouses.filter(h => h.code === 'CS-01') : rawHouses, [rawHouses, isTenant]);
+
+  // TÍNH TOÁN DỮ LIỆU ĐỘNG CHUẨN XÁC THEO THỜI GIAN THỰC (TASK 3 FIX)
+  const enrichedHouses = useMemo(() => {
+    return rawHouses.map((house) => {
+      // Lấy danh sách phòng thuộc cơ sở này
+      const houseRooms = (rooms || []).filter(
+        (r) => r.houseCode === house.code || (house.code === 'CS-01' && !r.houseCode)
+      );
+
+      // Nếu có phòng trong DataContext thì tính toán chính xác
+      const totalRooms = houseRooms.length > 0 ? houseRooms.length : house.totalRooms;
+      const occupiedRooms = houseRooms.length > 0
+        ? houseRooms.filter((r) => r.status === 'OCCUPIED').length
+        : house.occupiedRooms;
+      const availableRooms = houseRooms.length > 0
+        ? houseRooms.filter((r) => r.status === 'AVAILABLE').length
+        : house.availableRooms;
+      const holdingRooms = houseRooms.length > 0
+        ? houseRooms.filter((r) => r.status === 'HOLDING').length
+        : 0;
+      const maintenanceRooms = houseRooms.length > 0
+        ? houseRooms.filter((r) => r.status === 'MAINTENANCE').length
+        : 0;
+
+      // Doanh thu ước tính hàng tháng của cơ sở
+      const monthlyRevenue = houseRooms.length > 0
+        ? houseRooms
+            .filter((r) => r.status === 'OCCUPIED')
+            .reduce((sum, r) => sum + (r.price || 3500000), 0)
+        : house.monthlyRevenue;
+
+      // Danh sách khách thuê thuộc cơ sở này
+      const houseTenants = (tenants || []).filter(
+        (t) => t.houseCode === house.code || (house.code === 'CS-01' && !t.houseCode)
+      );
+
+      return {
+        ...house,
+        totalRooms,
+        occupiedRooms,
+        availableRooms,
+        holdingRooms,
+        maintenanceRooms,
+        monthlyRevenue,
+        tenantCount: houseTenants.length,
+        isAssignedToStaff: isStaff && house.code === staffHouseCode
+      };
+    });
+  }, [rawHouses, rooms, tenants, isStaff, staffHouseCode]);
+
+  // Bộ lọc theo quyền hạn và tìm kiếm
+  const houses = useMemo(() => {
+    let list = enrichedHouses;
+
+    if (isTenant) {
+      list = list.filter((h) => h.code === 'CS-01');
+    } else if (isStaff && houseScopeTab === 'ASSIGNED') {
+      list = list.filter((h) => h.code === staffHouseCode);
+    }
+
+    return list;
+  }, [enrichedHouses, isTenant, isStaff, houseScopeTab, staffHouseCode]);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [serviceConfigModalOpen, setServiceConfigModalOpen] = useState(false);
@@ -126,7 +194,6 @@ export default function BoardingHousesPage() {
   };
 
   // Scoping theo quyền Staff: Mỗi Staff chỉ quản lý DUY NHẤT 1 cơ sở được phân công
-  const staffHouseCode = user?.role === 'STAFF' ? (user?.houseCode || 'CS-01') : null;
 
   const filtered = houses.filter(h => {
     if (staffHouseCode && h.code !== staffHouseCode) {
@@ -245,18 +312,45 @@ export default function BoardingHousesPage() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-3">
+      {/* Search & Staff Scope Filter Bar */}
+      <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Tìm kiếm cơ sở nhà trọ theo tên, địa chỉ, người quản lý..."
+            placeholder="Tìm kiếm cơ sở nhà trọ theo tên, mã CS, địa chỉ, người quản lý..."
             className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
           />
         </div>
+
+        {isStaff && (
+          <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl shrink-0">
+            <button
+              type="button"
+              onClick={() => setHouseScopeTab('ALL')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                houseScopeTab === 'ALL'
+                  ? 'bg-white text-purple-700 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              🏢 Tất Cả Cơ Sở ({enrichedHouses.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setHouseScopeTab('ASSIGNED')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                houseScopeTab === 'ASSIGNED'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>⭐ Cơ Sở Bạn Phụ Trách ({staffHouseCode})</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Chain Houses Cards Grid */}
@@ -281,10 +375,15 @@ export default function BoardingHousesPage() {
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-transparent to-black/20 pointer-events-none" />
 
-                  <div className="absolute top-3 left-3 z-10">
+                  <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5">
                     <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase bg-purple-600/90 text-white backdrop-blur-md border border-white/20 shadow-md">
                       {house.code}
                     </span>
+                    {house.isAssignedToStaff && (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-400 text-slate-950 shadow-md border border-white/40">
+                        ⭐ Cơ sở của bạn
+                      </span>
+                    )}
                   </div>
 
                   <div className="absolute top-3 right-3 z-10">
@@ -351,19 +450,23 @@ export default function BoardingHousesPage() {
                   </div>
                 </div>
 
-                {/* Stats Breakdown */}
-                <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-slate-100 text-center">
-                  <div className="p-2 rounded-xl bg-purple-50">
-                    <div className="text-[10px] font-bold text-purple-700 uppercase">Đang ở</div>
-                    <div className="text-base font-black text-purple-900 mt-0.5">{house.occupiedRooms}</div>
+                {/* Stats Breakdown (Dữ liệu thời gian thực đồng bộ Sơ đồ phòng) */}
+                <div className="grid grid-cols-4 gap-1.5 mt-3 pt-3 border-t border-slate-100 text-center">
+                  <div className="p-1.5 rounded-xl bg-purple-50 border border-purple-100">
+                    <div className="text-[9px] font-bold text-purple-700 uppercase">Đang ở</div>
+                    <div className="text-sm font-black text-purple-900 mt-0.5">{house.occupiedRooms}</div>
                   </div>
-                  <div className="p-2 rounded-xl bg-blue-50">
-                    <div className="text-[10px] font-bold text-blue-700 uppercase">Trống</div>
-                    <div className="text-base font-black text-blue-900 mt-0.5">{house.availableRooms}</div>
+                  <div className="p-1.5 rounded-xl bg-blue-50 border border-blue-100">
+                    <div className="text-[9px] font-bold text-blue-700 uppercase">Trống</div>
+                    <div className="text-sm font-black text-blue-900 mt-0.5">{house.availableRooms}</div>
                   </div>
-                  <div className="p-2 rounded-xl bg-emerald-50">
-                    <div className="text-[10px] font-bold text-emerald-700 uppercase">Doanh thu</div>
-                    <div className="text-sm font-black text-emerald-800 mt-0.5">
+                  <div className="p-1.5 rounded-xl bg-amber-50 border border-amber-100">
+                    <div className="text-[9px] font-bold text-amber-700 uppercase">Giữ chỗ</div>
+                    <div className="text-sm font-black text-amber-900 mt-0.5">{house.holdingRooms || 0}</div>
+                  </div>
+                  <div className="p-1.5 rounded-xl bg-emerald-50 border border-emerald-100">
+                    <div className="text-[9px] font-bold text-emerald-700 uppercase">Doanh thu</div>
+                    <div className="text-xs font-black text-emerald-800 mt-0.5">
                       {(house.monthlyRevenue / 1000000).toFixed(1)}Tr
                     </div>
                   </div>

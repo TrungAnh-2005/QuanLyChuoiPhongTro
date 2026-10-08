@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -59,19 +59,19 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
       : adminNavItems;
 
   const sidebarContent = (
-    <div className="flex flex-col h-full bg-slate-900 text-slate-300">
+    <div className="flex flex-col h-full bg-white text-slate-700">
       {/* Brand Logo & Close Button */}
-      <div className="p-4 sm:p-5 flex items-center justify-between border-b border-slate-800/80 bg-slate-950/40">
+      <div className="p-4 sm:p-5 flex items-center justify-between border-b border-slate-100 bg-white">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-blue-500 flex items-center justify-center text-white shadow-lg shadow-purple-600/30 font-black text-lg">
+          <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-600/20 font-black text-lg shrink-0">
             <Building2 className="w-5 h-5 text-white" />
           </div>
           <div>
-            <div className="font-black text-white tracking-tight leading-none text-base">
+            <div className="font-extrabold text-slate-800 tracking-tight leading-none text-sm">
               TRỌ VIỆT SAAS
             </div>
-            <div className="text-[10px] text-purple-400 font-mono mt-1 tracking-wider uppercase">
-              Microservices Platform
+            <div className="text-[11px] text-slate-400 font-normal mt-1 tracking-normal">
+              Quản lý vận hành tập trung
             </div>
           </div>
         </div>
@@ -79,7 +79,7 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
         {/* Close button for mobile drawer */}
         <button
           onClick={onClose}
-          className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 lg:hidden transition-colors"
+          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 lg:hidden transition-colors"
           title="Đóng menu"
         >
           <X className="w-5 h-5" />
@@ -88,12 +88,12 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
 
       {/* Nav List */}
       <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-        <div className="px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+        <div className="px-3 py-2 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
           {role === 'ADMIN'
-            ? 'Phân Hệ Quản Trị Hệ Thống'
+            ? 'PHÂN HỆ QUẢN TRỊ HỆ THỐNG'
             : role === 'STAFF'
-            ? 'Vận Hành Cơ Sở Chuỗi'
-            : 'Cổng Cư Dân Trực Tuyến'}
+            ? 'VẬN HÀNH CƠ SỞ CHUỖI'
+            : 'CỔNG CƯ DÂN TRỰC TUYẾN'}
         </div>
 
         {navItems.map((item) => {
@@ -105,10 +105,10 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
               end={item.path === '/'}
               onClick={onClose}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-150 ${
+                `flex items-center gap-3 px-3.5 py-2.5 rounded-2xl font-bold text-xs transition-all duration-150 ${
                   isActive
-                    ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-                    : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/70'
+                    ? 'bg-purple-50 text-purple-700 border border-purple-100/80 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/70'
                 }`
               }
             >
@@ -120,13 +120,15 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
       </nav>
 
       {/* Footer System Status */}
-      <div className="p-4 border-t border-slate-800/80 bg-slate-950/20 text-xs">
-        <div className="flex items-center justify-between text-[11px] text-slate-400">
-          <span>Hệ thống:</span>
-          <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            10 Microservices Online
-          </span>
+      <div className="p-3 border-t border-slate-100 bg-white">
+        <div className="bg-emerald-50/80 border border-emerald-100/80 rounded-2xl p-3 text-xs">
+          <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            Hệ thống ổn định
+          </div>
+          <div className="text-[11px] text-emerald-600 mt-0.5 pl-4">
+            10 Microservices · 99,9% trực tuyến
+          </div>
         </div>
       </div>
     </div>
@@ -135,7 +137,7 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
   return (
     <>
       {/* Desktop Sidebar: Permanent fixed-width on large screens */}
-      <aside className="hidden lg:flex w-64 flex-col h-full border-r border-slate-800 shrink-0">
+      <aside className="hidden lg:flex w-64 flex-col h-full border-r border-slate-200/80 shrink-0 bg-white">
         {sidebarContent}
       </aside>
 
@@ -148,7 +150,7 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
             onClick={onClose}
           />
           {/* Drawer content */}
-          <div className="fixed inset-y-0 left-0 w-72 max-w-[85vw] shadow-2xl z-10 transition-transform duration-300 ease-out transform translate-x-0">
+          <div className="fixed inset-y-0 left-0 w-72 max-w-[85vw] shadow-2xl z-10 transition-transform duration-300 ease-out transform translate-x-0 bg-white">
             {sidebarContent}
           </div>
         </div>

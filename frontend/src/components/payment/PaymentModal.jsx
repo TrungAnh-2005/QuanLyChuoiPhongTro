@@ -74,6 +74,7 @@ export default function PaymentModal({
   const [detectedTx, setDetectedTx] = useState(null);
   const [copiedField, setCopiedField] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [apiError, setApiError] = useState(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [isDone, setIsDone] = useState(false);
   const modalOpenedAt = React.useRef(Date.now());
@@ -182,7 +183,7 @@ export default function PaymentModal({
     } catch (err) {
       console.error('Lỗi tạo URL VNPay:', err);
       setIsRedirecting(false);
-      alert('Không thể tạo URL VNPay. Vui lòng kiểm tra lại cấu hình kết nối Sandbox.');
+      setApiError('Không thể tạo URL VNPay. Vui lòng kiểm tra lại cấu hình kết nối Sandbox.');
     }
   };
 
@@ -215,7 +216,7 @@ export default function PaymentModal({
     } catch (err) {
       console.error('Lỗi tạo URL MoMo:', err);
       setIsRedirecting(false);
-      alert('Không thể kết nối cổng MoMo Sandbox. Vui lòng kiểm tra lại cấu hình kết nối.');
+      setApiError('Không thể kết nối cổng MoMo Sandbox. Vui lòng kiểm tra lại cấu hình kết nối.');
     }
   };
 
@@ -253,6 +254,7 @@ export default function PaymentModal({
 
   // Xác nhận thanh toán (Mô phỏng tức thì cho VNPay / MoMo / VietQR)
   const handleConfirmSimulation = (selectedMethod) => {
+    if (isProcessing) return;
     const finalMethod = selectedMethod || method;
     setIsProcessing(true);
     setTimeout(() => {

@@ -15,7 +15,7 @@ export const ALL_ROOMS = [
   // =========================================================================
   // CƠ SỞ 1: NHÀ TRỌ CẦU GIẤY (CS-01) - 5 TẦNG, ĐÚNG 12 PHÒNG
   // =========================================================================
-  { id: 101, number: 'P.101', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 1', price: 3500000, area: 25, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
+  { id: 101, number: 'P.101', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 1', price: 3500000, area: 25, occupants: 1, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
   { id: 102, number: 'P.102', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 1', price: 3800000, area: 28, occupants: 0, maxOccupants: 3, status: 'AVAILABLE', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Ban công'] },
   { id: 103, number: 'P.103', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 1', price: 3200000, area: 22, occupants: 1, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Nóng lạnh'] },
   { id: 104, number: 'P.201', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 2', price: 3600000, area: 25, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
@@ -64,6 +64,6 @@ export const ALL_ROOMS = [
 export const HOUSES_LIST = [
   { code: 'ALL', name: 'Tất Cả Các Cơ Sở', totalRooms: 36 },
   { code: 'CS-01', name: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', totalRooms: 12 },
-  { code: 'CS-02', name: 'Nhà Trọ Bách Khoa - Cơ Sở 2', totalRooms: 8 },
+  { code: 'CS-02', name: 'Nhà Trọ Bách Khoa - Cơ Sở 2', totalRooms: 12 },
   { code: 'CS-03', name: 'Nhà Trọ Đống Đa - Cơ Sở 3', totalRooms: 16 },
 ];

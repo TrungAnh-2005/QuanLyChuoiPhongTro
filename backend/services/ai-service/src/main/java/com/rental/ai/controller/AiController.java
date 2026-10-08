@@ -1,4 +1,4 @@
-package com.rental.ai.controller;
+﻿package com.rental.ai.controller;
 
 import com.rental.ai.dto.IdCardOcrResponse;
 import com.rental.ai.dto.MeterOcrResponse;
@@ -19,7 +19,7 @@ public class AiController {
 
     private final AiVisionService aiVisionService;
 
-    @PostMapping(value = "/ocr/id-card", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping(value = {"/ocr/id-card", "/id-card-ocr"}, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "OCR Căn Cước Công Dân (CCCD)", description = "Trích xuất họ tên, số CCCD, ngày sinh, quê quán, nơi thường trú từ ảnh mặt trước và mặt sau")
     public ResponseEntity<IdCardOcrResponse> extractIdCard(
             @RequestPart("front") MultipartFile front,
@@ -29,7 +29,7 @@ public class AiController {
         return ResponseEntity.ok(response);
     }
 
-    @PostMapping(value = "/ocr/meter", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping(value = {"/ocr/meter", "/meter-ocr"}, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "OCR Đồng Hồ Công Tơ Điện / Nước", description = "Nhận diện và trích xuất chỉ số đồng hồ điện / nước từ ảnh chụp")
     public ResponseEntity<MeterOcrResponse> extractMeterReading(
             @RequestPart("image") MultipartFile image,
@@ -39,3 +39,4 @@ public class AiController {
         return ResponseEntity.ok(response);
     }
 }
+

@@ -25,7 +25,8 @@ export default function AdminSaasInvoicesPage() {
     landlords = [],
     saasInvoices = [],
     paySaasInvoice,
-    createSaasInvoice
+    createSaasInvoice,
+    sendSaasReminder
   } = useData();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -282,10 +283,11 @@ export default function AdminSaasInvoicesPage() {
 
                         <button
                           onClick={() => {
-                            showToast(`Đã gửi tin nhắn SMS Brandname nhắc nộp cước đến SĐT ${inv.landlordPhone}!`);
+                            if (sendSaasReminder) sendSaasReminder(inv);
+                            showToast(`🔔 Đã gửi thông báo nhắc nợ cước SaaS đến tài khoản Staff/Chủ trọ và SMS Brandname đến SĐT ${inv.landlordPhone}!`);
                           }}
                           className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition inline-flex items-center gap-1 cursor-pointer"
-                          title="Gửi tin nhắn nhắc nợ"
+                          title="Gửi thông báo và tin nhắn nhắc nợ cước SaaS"
                         >
                           <Send className="w-3.5 h-3.5" />
                           <span>Nhắc Nợ</span>
@@ -371,7 +373,7 @@ export default function AdminSaasInvoicesPage() {
 
             <button
               onClick={() => {
-                alert('Đã gửi bản Hóa Đơn Điện Tử VAT có chữ ký số điện tử của Nền Tảng qua Email và SMS cho Chủ Trọ!');
+                showToast('Đã gửi bản Hóa Đơn Điện Tử VAT có chữ ký số điện tử của Nền Tảng qua Email và SMS cho Chủ Trọ!');
               }}
               className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
             >

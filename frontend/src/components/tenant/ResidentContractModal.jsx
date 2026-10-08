@@ -1,5 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
+  Sparkles,
+
+  Eye,
+
+  Camera,
+
   FileText,
   CheckCircle2,
   AlertTriangle,
@@ -22,11 +28,53 @@ export default function ResidentContractModal({
   onSignSuccess
 }) {
   const [agreedTerms, setAgreedTerms] = useState(false);
+  const [agreedTemporaryResidence, setAgreedTemporaryResidence] = useState(true);
+  const [cccdNumber, setCccdNumber] = useState(contract?.tenantCccd || '001201012345');
+  const [issueDate, setIssueDate] = useState('20/04/2021');
+  const [issuePlace, setIssuePlace] = useState('Cục Cảnh sát QLHC về TTXH');
+  const [permanentAddress, setPermanentAddress] = useState('Ba Đình, Hà Nội');
+  const [cccdFrontUrl, setCccdFrontUrl] = useState(
+    contract?.tenantCccdFrontUrl || 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=600&auto=format&fit=crop'
+  );
+  const [cccdBackUrl, setCccdBackUrl] = useState(
+    contract?.tenantCccdBackUrl || 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=600&auto=format&fit=crop'
+  );
+  const [frontUploaded, setFrontUploaded] = useState(false);
+  const [backUploaded, setBackUploaded] = useState(false);
+  const frontInputRef = useRef(null);
+  const backInputRef = useRef(null);
+
+  const handleUploadFrontFile = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCccdFrontUrl(reader.result);
+        setFrontUploaded(true);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleUploadBackFile = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCccdBackUrl(reader.result);
+        setBackUploaded(true);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
   const [signatureType, setSignatureType] = useState('OTP'); // 'OTP' | 'DRAW'
   const [otpCode, setOtpCode] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [signedSuccess, setSignedSuccess] = useState(false);
+  const [pdfNotice, setPdfNotice] = useState(null);
+  const isHolding = contract?.status === 'HOLDING' || contract?.status === 'PENDING_DEPOSIT' || contract?.status === 'PENDING';
+  const isActive = contract?.status === 'ACTIVE' || signedSuccess;
 
   if (!contract) return null;
 
@@ -39,11 +87,21 @@ export default function ResidentContractModal({
     if (!agreedTerms) return;
 
     setIsSubmitting(true);
+    const cccdData = {
+      cccdNumber: cccdNumber.trim(),
+      issueDate: issueDate.trim(),
+      issuePlace: issuePlace.trim(),
+      permanentAddress: permanentAddress.trim(),
+      cccdFrontUrl,
+      cccdBackUrl,
+      consentTemporaryResidence: agreedTemporaryResidence
+    };
+
     setTimeout(() => {
       setIsSubmitting(false);
       setSignedSuccess(true);
       if (onSignSuccess) {
-        onSignSuccess(contract.id);
+        onSignSuccess(contract.id, cccdData);
       }
     }, 700);
   };
@@ -52,7 +110,7 @@ export default function ResidentContractModal({
   const handleDownloadPdf = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
-      alert('Vui lòng cho phép popup để tải và in Hợp đồng PDF!');
+      setPdfNotice('Vui lòng cho phép mở popup trên trình duyệt để tải và in Hợp đồng PDF!');
       return;
     }
 
@@ -302,6 +360,23 @@ export default function ResidentContractModal({
         ) : (
           /* Luồng Ký Điện Tử e-Sign khi chưa ký */
           <form onSubmit={handleConfirmSign} className="py-4 space-y-4 text-xs">
+            {isHolding && (
+              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 text-xs flex items-start gap-2.5 shadow-xs">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold text-amber-950">⚠️ Bản Thảo Giữ Chỗ — Chưa Có Hiệu Lực Pháp Lý (Trạng thái: HOLDING)</div>
+                  <div className="text-[11px] text-amber-800 mt-0.5">
+                    Phòng đang trong thời gian giữ chỗ tạm thời (15 phút). Hợp đồng chỉ chính thức phát sinh hiệu lực pháp lý sau khi hoàn tất chuyển khoản tiền đặt cọc và xác thực chữ ký điện tử.
+                  </div>
+                </div>
+              </div>
+            )}
+            {pdfNotice && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center justify-between">
+                <span>⚠️ {pdfNotice}</span>
+                <button type="button" onClick={() => setPdfNotice(null)} className="text-rose-400 hover:text-rose-700 font-bold p-1 cursor-pointer">✕</button>
+              </div>
+            )}
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 max-h-56 overflow-y-auto">
               <h4 className="font-bold text-slate-800 uppercase tracking-wider text-[11px]">Tóm Tắt Các Điều Khoản Quan Trọng</h4>
               <p className="text-slate-600">• Bên thuê thanh toán tiền phòng định kỳ từ ngày 01 đến ngày 05 hàng tháng qua chuyển khoản VietQR.</p>
@@ -309,7 +384,182 @@ export default function ResidentContractModal({
               <p className="text-slate-600">• Tuân thủ nghiêm ngặt quy định PCCC và số người ở tối đa cho phép của phòng.</p>
             </div>
 
-            <label className="flex items-center gap-2 cursor-pointer">
+            {/* PHẦN ĐÍNH KÈM CCCD & KHAI BÁO TẠM TRÚ VNeID (TASK 2) */}
+            <div className="p-4 bg-gradient-to-br from-indigo-50/90 via-purple-50/70 to-blue-50/90 border border-indigo-200/90 rounded-2xl space-y-3.5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 font-black text-indigo-950 text-xs">
+                  <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs">
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <span>Hồ Sơ Căn Cước Công Dân (CCCD) & Khai Báo Tạm Trú VNeID</span>
+                </div>
+                <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 font-bold rounded-md text-[10px]">
+                  Bắt Buộc Pháp Lý
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                Theo quy định Luật Cư Trú 2020, thông tin CCCD sẽ được tự động gửi đến Quản lý cơ sở để đăng ký Tạm Trú với Công an khu vực ngay khi bạn ký hợp đồng.
+              </p>
+
+              {/* Grid Nhập Liệu Định Danh */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Số Căn Cước Công Dân (12 số) *</label>
+                  <input
+                    type="text"
+                    required
+                    value={cccdNumber}
+                    onChange={(e) => setCccdNumber(e.target.value)}
+                    placeholder="Ví dụ: 001201012345"
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Nơi Thường Trú / Quê Quán *</label>
+                  <input
+                    type="text"
+                    required
+                    value={permanentAddress}
+                    onChange={(e) => setPermanentAddress(e.target.value)}
+                    placeholder="Ví dụ: Ba Đình, Hà Nội"
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Ngày Cấp CCCD</label>
+                  <input
+                    type="text"
+                    value={issueDate}
+                    onChange={(e) => setIssueDate(e.target.value)}
+                    placeholder="20/04/2021"
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Nơi Cấp</label>
+                  <input
+                    type="text"
+                    value={issuePlace}
+                    onChange={(e) => setIssuePlace(e.target.value)}
+                    placeholder="Cục Cảnh sát QLHC về TTXH"
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* Ảnh 2 Mặt CCCD & Nút Tải / Cập Nhật Ảnh (TASK 2 FIX) */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[11px] font-bold text-slate-700">
+                    Ảnh Chụp 2 Mặt Căn Cước Công Dân <span className="text-rose-500">*</span>
+                  </label>
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    (Hỗ trợ PNG, JPG, JPEG hoặc chụp ảnh trực tiếp)
+                  </span>
+                </div>
+
+                {/* Hidden File Inputs */}
+                <input
+                  type="file"
+                  ref={frontInputRef}
+                  onChange={handleUploadFrontFile}
+                  accept="image/*"
+                  className="hidden"
+                />
+                <input
+                  type="file"
+                  ref={backInputRef}
+                  onChange={handleUploadBackFile}
+                  accept="image/*"
+                  className="hidden"
+                />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Mặt trước CCCD */}
+                  <div className="space-y-1.5">
+                    <div
+                      onClick={() => frontInputRef.current?.click()}
+                      className="relative rounded-xl border-2 border-dashed border-indigo-200 hover:border-indigo-400 overflow-hidden bg-slate-900 group aspect-[16/10] cursor-pointer transition shadow-xs"
+                      title="Bấm để chọn hoặc đổi ảnh mặt trước CCCD"
+                    >
+                      <img
+                        src={cccdFrontUrl}
+                        alt="Mặt trước CCCD"
+                        className="w-full h-full object-cover opacity-90 group-hover:scale-105 group-hover:opacity-75 transition duration-300"
+                      />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <span className="px-3 py-1.5 rounded-lg bg-white/90 text-slate-900 text-xs font-bold shadow-md flex items-center gap-1.5">
+                          <Upload className="w-3.5 h-3.5 text-indigo-600" /> Đổi ảnh mặt trước
+                        </span>
+                      </div>
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent flex items-center justify-between p-2">
+                        <span className="text-[10px] font-bold text-white flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                          Mặt trước CCCD {frontUploaded && <span className="text-emerald-300 font-mono">(Đã cập nhật)</span>}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => frontInputRef.current?.click()}
+                      className="w-full py-1.5 px-3 bg-white hover:bg-indigo-50 border border-indigo-200 hover:border-indigo-300 text-indigo-700 text-xs font-bold rounded-xl shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{frontUploaded ? 'Đổi Ảnh Mặt Trước' : 'Tải Ảnh Mặt Trước'}</span>
+                    </button>
+                  </div>
+
+                  {/* Mặt sau CCCD */}
+                  <div className="space-y-1.5">
+                    <div
+                      onClick={() => backInputRef.current?.click()}
+                      className="relative rounded-xl border-2 border-dashed border-indigo-200 hover:border-indigo-400 overflow-hidden bg-slate-900 group aspect-[16/10] cursor-pointer transition shadow-xs"
+                      title="Bấm để chọn hoặc đổi ảnh mặt sau CCCD"
+                    >
+                      <img
+                        src={cccdBackUrl}
+                        alt="Mặt sau CCCD"
+                        className="w-full h-full object-cover opacity-90 group-hover:scale-105 group-hover:opacity-75 transition duration-300"
+                      />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <span className="px-3 py-1.5 rounded-lg bg-white/90 text-slate-900 text-xs font-bold shadow-md flex items-center gap-1.5">
+                          <Upload className="w-3.5 h-3.5 text-indigo-600" /> Đổi ảnh mặt sau
+                        </span>
+                      </div>
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent flex items-center justify-between p-2">
+                        <span className="text-[10px] font-bold text-white flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                          Mặt sau CCCD (Có chip) {backUploaded && <span className="text-emerald-300 font-mono">(Đã cập nhật)</span>}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => backInputRef.current?.click()}
+                      className="w-full py-1.5 px-3 bg-white hover:bg-indigo-50 border border-indigo-200 hover:border-indigo-300 text-indigo-700 text-xs font-bold rounded-xl shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{backUploaded ? 'Đổi Ảnh Mặt Sau' : 'Tải Ảnh Mặt Sau'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tích chọn ủy quyền tạm trú */}
+              <label className="flex items-start gap-2 pt-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={agreedTemporaryResidence}
+                  onChange={(e) => setAgreedTemporaryResidence(e.target.checked)}
+                  className="w-4 h-4 text-indigo-600 rounded mt-0.5 shrink-0"
+                />
+                <span className="text-[11px] text-slate-700 font-medium leading-relaxed">
+                  Tôi đồng ý chuyển thông tin CCCD cho Quản lý cơ sở để tiến hành đăng ký Tạm Trú / Lưu Trú với Cơ quan Công an theo đúng quy định hiện hành.
+                </span>
+              </label>
+            </div>
+
+            <label className="flex items-center gap-2 cursor-pointer pt-1">
               <input
                 type="checkbox"
                 checked={agreedTerms}

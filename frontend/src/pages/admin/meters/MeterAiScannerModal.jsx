@@ -43,7 +43,8 @@ export default function MeterAiScannerModal({
 
   // Bộ lọc cơ sở và trạng thái trong modal
   const [modalHouseFilter, setModalHouseFilter] = useState('ALL'); // 'ALL' | 'CS-01' | 'CS-02' | 'CS-03'
-  const [modalStatusFilter, setModalStatusFilter] = useState('UNRECORDED'); // 'UNRECORDED' | 'ALL'
+  const [modalStatusFilter, setModalStatusFilter] = useState('UNRECORDED');
+  const [scanError, setScanError] = useState(null); // 'UNRECORDED' | 'ALL'
 
   // Chuẩn hóa danh sách phòng đầy đủ
   const fullRoomsList = useMemo(() => {
@@ -503,7 +504,7 @@ export default function MeterAiScannerModal({
   // Xác nhận lưu vào bảng chỉ số
   const handleConfirmSave = () => {
     if (!elecResult && !waterResult) {
-      alert('Chưa có chỉ số nào được quét. Vui lòng quét ảnh công tơ điện hoặc nước trước!');
+      setScanError('Chưa có chỉ số nào được quét. Vui lòng quét ảnh công tơ điện hoặc nước trước!'); setTimeout(() => setScanError(null), 4000);
       return;
     }
 

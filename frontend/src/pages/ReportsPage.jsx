@@ -66,6 +66,8 @@ export default function ReportsPage() {
   const isAdmin = role === 'ADMIN';
 
   const [selectedFacility, setSelectedFacility] = useState('ALL');
+  const [timeRange, setTimeRange] = useState('9_MONTHS');
+  const [pdfToast, setPdfToast] = useState(false);
 
   // Thống kê cơ sở cho Staff (UC-S06)
   const facilityStats = useMemo(() => {
@@ -100,6 +102,13 @@ export default function ReportsPage() {
     };
   }, [rooms, invoices, selectedFacility]);
 
+    const filteredChartData = useMemo(() => {
+    if (timeRange === 'SEP_2026') return yearlyData.slice(8);
+    if (timeRange === 'Q3_2026') return yearlyData.slice(6, 9);
+    if (timeRange === 'Q2_2026') return yearlyData.slice(3, 6);
+    return yearlyData;
+  }, [timeRange]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -118,12 +127,47 @@ export default function ReportsPage() {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => alert('Xuất báo cáo PDF thành công!')}
+            onClick={() => { setPdfToast(true); setTimeout(() => setPdfToast(false), 4000); }}
             className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-purple-600/25 transition-all btn-press cursor-pointer"
           >
             <Download className="w-4 h-4" />
             <span>Xuất Báo Cáo PDF</span>
           </button>
+        </div>
+      </div>
+
+      {pdfToast && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-800 text-xs font-bold flex items-center justify-between shadow-xs">
+          <span>✓ Xuất báo cáo tài chính và hiệu suất định dạng PDF thành công!</span>
+          <button onClick={() => setPdfToast(false)} className="text-emerald-600 hover:text-emerald-900 cursor-pointer">✕</button>
+        </div>
+      )}
+
+      {/* Bộ Lọc Thời Gian (Task 8) */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
+        <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+          <Calendar className="w-4 h-4 text-purple-600" />
+          <span>Khoảng thời gian báo cáo:</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {[
+            { id: '9_MONTHS', label: '9 Tháng Gần Nhất' },
+            { id: 'Q3_2026', label: 'Quý 3/2026' },
+            { id: 'Q2_2026', label: 'Quý 2/2026' },
+            { id: 'SEP_2026', label: 'Tháng 09/2026' }
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTimeRange(t.id)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                timeRange === t.id
+                  ? 'bg-purple-600 text-white shadow-md shadow-purple-600/25'
+                  : 'text-slate-600 hover:text-purple-700 hover:bg-slate-100'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
       </div>
 

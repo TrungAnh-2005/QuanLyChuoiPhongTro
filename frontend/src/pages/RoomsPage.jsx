@@ -213,19 +213,51 @@ export default function RoomsPage() {
     return myRentedRoom ? [myRentedRoom] : [];
   }, [myRentedRoom]);
 
-  // Kiểm tra phòng khách hiện tại đang giữ chỗ (nếu có)
+  // KIỂM TRA TRẠNG THÁI GIỮ CHỖ CHỜ NỘP CỌC CỦA KHÁCH (TASK 4 FIX)
+  // 1. Kiểm tra hợp đồng PENDING_DEPOSIT / PENDING_SIGN
+  const myPendingDepositContract = useMemo(() => {
+    if (!isTenant) return null;
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    const uPhone = (user?.phone || '').trim();
+    return (contracts || []).find((c) => {
+      const isPending = (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN' || (!c.depositPaid && c.status !== 'ACTIVE' && c.status !== 'CANCELLED' && c.status !== 'EXPIRED'));
+      if (!isPending) return false;
+      const cName = (c.tenantName || '').toLowerCase().trim();
+      const cPhone = (c.tenantPhone || '').trim();
+      return (
+        (uName && (cName.includes(uName) || uName.includes(cName))) ||
+        (uPhone && cPhone === uPhone) ||
+        (user?.username === 'tenant_new' && (cName.includes('nam') || c.contractCode === 'HD-2026-007')) ||
+        (user?.username === 'tenant' && cName.includes('an')) ||
+        (user?.username === 'tenant2' && cName.includes('cường'))
+      );
+    });
+  }, [isTenant, user, contracts]);
+
+  // 2. Kiểm tra phòng trong danh sách rooms có status HOLDING khớp với khách này
   const myHeldRoom = useMemo(() => {
-    if (!isTenant || myRentedRoom) return null;
-    const uName = (user?.fullName || '').toLowerCase();
-    const uPhone = user?.phone || '';
+    if (!isTenant) return null;
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    const uPhone = (user?.phone || '').trim();
+    const contractRoom = myPendingDepositContract?.roomNumber;
     return (rooms || []).find(
       (r) =>
         r.status === 'HOLDING' &&
         r.holdingUntil &&
         r.holdingUntil > currentTime &&
-        (((r.holdingBy || '').toLowerCase() === uName) || (uPhone && r.holdingPhone === uPhone))
+        (
+          (contractRoom && r.number === contractRoom) ||
+          (uName && (r.holdingBy || '').toLowerCase().includes(uName)) ||
+          (uPhone && r.holdingPhone === uPhone) ||
+          (user?.username === 'tenant_new' && ((r.holdingBy || '').toLowerCase().includes('nam') || r.number === 'P.102'))
+        )
     );
-  }, [isTenant, myRentedRoom, user, rooms, currentTime]);
+  }, [isTenant, user, rooms, currentTime, myPendingDepositContract]);
+
+  // Trạng thái giữ chỗ kích hoạt: MỜ VÀ KHÓA TẤT CẢ NÚT THUÊ PHÒNG & XIN Ở GHÉP PHÒNG KHÁC (TASK 4)
+  const isCurrentlyHolding = Boolean(isTenant && (myHeldRoom || myPendingDepositContract));
+  const heldRoomNumber = myHeldRoom?.number || myPendingDepositContract?.roomNumber || 'đang giữ chỗ';
+  const heldHouseCode = myHeldRoom?.houseCode || myPendingDepositContract?.houseCode || 'CS-01';
 
   // Thông tin chi tiết phòng đang thuê của cư dân - Xác định CHÍNH XÁC cơ sở (CS-01 hoặc CS-02)
   const myRentedRoomObj = useMemo(() => {
@@ -288,6 +320,24 @@ export default function RoomsPage() {
 
   // Checkout modal states (Trả phòng trước hạn - Mất cọc)
   const [checkoutModal, setCheckoutModal] = useState(null);
+
+  // Tự động mở modal trả phòng khi có action=checkout từ URL
+  useEffect(() => {
+    const action = searchParams.get('action');
+    if (action === 'checkout' && myRentedRoom) {
+      if (isRepresentative) {
+        setCheckoutModal(myRentedRoom);
+        setAgreedForfeitDeposit(false);
+        setCheckoutReason('');
+        setCheckoutSuccess(false);
+      } else {
+        setLeaveModal(myRentedRoom);
+        setAgreedForfeitLeave(false);
+        setLeaveReason('');
+        setLeaveSuccess(false);
+      }
+    }
+  }, [searchParams, myRentedRoom, isRepresentative]);
   const [checkoutReason, setCheckoutReason] = useState('');
   const [agreedForfeitDeposit, setAgreedForfeitDeposit] = useState(false);
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
@@ -477,6 +527,11 @@ export default function RoomsPage() {
     if (!requestModal) return;
     setRequestErrorMsg('');
 
+    if (isCurrentlyHolding) {
+      setRequestErrorMsg(`Bạn đang có phòng ${heldRoomNumber} đang chờ nộp cọc. Vui lòng hủy giữ chỗ trước khi gửi yêu cầu phòng khác!`);
+      return;
+    }
+
     const originRoom = requestModal.type === 'TRANSFER'
       ? (transferFromRoom || requestModal.fromRoom || myRentedRooms[0] || userRoom)
       : null;
@@ -493,19 +548,7 @@ export default function RoomsPage() {
         return;
       }
 
-      // 2. Chuyển phòng ngay và tự động đổi hợp đồng sang phòng mới, bảo lưu 100% tiền cọc
-      if (transferRoom) {
-        transferRoom({
-          tenantName: user?.fullName || 'Khách thuê',
-          tenantPhone: requestPhone || user?.phone || '0987.654.321',
-          oldRoom: originRoom,
-          newRoom: requestModal.room.number,
-          targetHouseCode,
-          targetHouseName: targetHouse
-        });
-      }
-
-      // 3. Ghi nhận vào lịch sử yêu cầu phòng với trạng thái APPROVED
+      // 2. Gửi đơn chuyển phòng lên BQL ở trạng thái PENDING chờ duyệt (không tự động đổi ngay)
       submitRoomRequest({
         type: 'TRANSFER',
         targetRoom: requestModal.room.number,
@@ -514,8 +557,8 @@ export default function RoomsPage() {
         currentRoom: originRoom,
         tenant: user?.fullName || 'Khách thuê',
         phone: requestPhone || user?.phone || '0987.654.321',
-        note: requestNote || `Chuyển phòng từ ${originRoom} sang ${requestModal.room.number} (Tự động bảo lưu HĐ & cọc)`,
-        status: 'APPROVED'
+        note: requestNote || `Chuyển phòng từ ${originRoom} sang ${requestModal.room.number} (Đang chờ Ban Quản Lý phê duyệt)`,
+        status: 'PENDING'
       });
 
       setRequestSuccess(true);
@@ -842,11 +885,17 @@ export default function RoomsPage() {
                     </button>
                     {isRepresentative ? (
                       <button
-                        onClick={() => setCheckoutModal(myRentedRoom)}
-                        className="text-[11px] font-bold text-rose-600 hover:text-rose-800 hover:underline cursor-pointer"
+                        onClick={() => {
+                          setCheckoutModal(myRentedRoom);
+                          setAgreedForfeitDeposit(false);
+                          setCheckoutReason('');
+                          setCheckoutSuccess(false);
+                        }}
+                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer btn-press"
                         title="Báo trả phòng & Quyết toán hoàn cọc (Chỉ Người đại diện ký HĐ mới có quyền)"
                       >
-                        [Trả phòng & Hoàn cọc (UC-T06)]
+                        <span>📤</span>
+                        <span>Báo Trả Phòng & Hoàn Cọc (UC-T06)</span>
                       </button>
                     ) : (
                       <button
@@ -856,10 +905,11 @@ export default function RoomsPage() {
                           setLeaveReason('');
                           setLeaveSuccess(false);
                         }}
-                        className="text-[11px] font-bold text-amber-600 hover:text-amber-800 hover:underline cursor-pointer"
+                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer btn-press"
                         title="Rời phòng ở ghép (Cá nhân dọn đi, thông báo cho cả phòng)"
                       >
-                        [🚪 Rời phòng ở ghép]
+                        <span>🚪</span>
+                        <span>Rời Phòng Ở Ghép (UC-T07)</span>
                       </button>
                     )}
                   </div>
@@ -1863,47 +1913,132 @@ export default function RoomsPage() {
                       )}
                     </div>
                   ) : selectedRoomDetails.status === 'AVAILABLE' ? (
-                    <div className="flex flex-wrap items-center gap-2">
-                      {myRentedRoom ? (
-                        <button
-                          onClick={() => {
-                            setRequestModal({ room: selectedRoomDetails, type: 'TRANSFER' });
-                            setTransferFromRoom(myRentedRoom);
-                            setRequestSuccess(false);
-                            setRequestNote(`Em có nguyện vọng muốn chuyển từ phòng ${myRentedRoom} sang phòng ${selectedRoomDetails.number}`);
-                          }}
-                          className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold transition-all btn-press flex items-center gap-1.5 shadow-md shadow-purple-600/20 cursor-pointer"
-                        >
-                          <span>🔄 Chuyển Sang Phòng Này (Tự Động Trả Phòng Cũ ${myRentedRoom})</span>
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setRequestModal({ room: selectedRoomDetails, type: 'RENT' });
-                            setRequestSuccess(false);
-                            setRequestNote(`Em có nguyện vọng đăng ký thuê phòng ${selectedRoomDetails.number}`);
-                          }}
-                          className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold transition-all btn-press flex items-center gap-1.5 shadow-md shadow-purple-600/20 cursor-pointer"
-                        >
-                          <span>🔑 Đăng Ký Thuê Phòng Này</span>
-                        </button>
+                    <div className="space-y-2">
+                      {/* Cảnh báo khi đang giữ chỗ phòng khác */}
+                      {isCurrentlyHolding && (
+                        <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shadow-2xs">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">🔒</span>
+                            <span>
+                              Bạn đang giữ chỗ phòng <strong>{heldRoomNumber}</strong> ({heldHouseCode}). Nút thuê phòng đang bị <strong>mờ và khóa</strong>.
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`Bạn có chắc chắn muốn hủy giữ chỗ phòng ${heldRoomNumber}? Nút đăng ký phòng ${selectedRoomDetails.number} sẽ sáng lên ngay lập tức.`)) {
+                                if (cancelRoomHold) {
+                                  cancelRoomHold(heldRoomNumber, heldHouseCode);
+                                }
+                              }
+                            }}
+                            className="px-2.5 py-1 bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 rounded-lg text-xs font-bold transition cursor-pointer shrink-0"
+                          >
+                            Hủy Giữ Chỗ Phòng {heldRoomNumber} Để Thuê Phòng Này
+                          </button>
+                        </div>
                       )}
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        {myRentedRoom ? (
+                          selectedRoomDetails.status === 'HOLDING' || selectedRoomDetails.status === 'RESERVED' ? (
+                            <button
+                              disabled
+                              className="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed flex items-center gap-1.5 shadow-none"
+                              title="Phòng đang được giữ chỗ bởi khách khác, không thể chuyển sang phòng này"
+                            >
+                              <span>🔒 Phòng Đang Được Giữ Chỗ (Không Thể Đổi Sang)</span>
+                            </button>
+                          ) : (
+                            <button
+                              disabled={isCurrentlyHolding}
+                              onClick={() => {
+                                if (isCurrentlyHolding) return;
+                                setRequestModal({ room: selectedRoomDetails, type: 'TRANSFER' });
+                                setTransferFromRoom(myRentedRoom);
+                                setRequestSuccess(false);
+                                setRequestNote(`Em có nguyện vọng muốn chuyển từ phòng ${myRentedRoom} sang phòng ${selectedRoomDetails.number}`);
+                              }}
+                              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md ${
+                                isCurrentlyHolding
+                                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-50 shadow-none border border-slate-300 pointer-events-none'
+                                  : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-purple-600/20 cursor-pointer btn-press'
+                              }`}
+                              title={isCurrentlyHolding ? `Nút đã bị mờ do bạn đang giữ chỗ phòng ${heldRoomNumber}. Hãy hủy giữ chỗ để kích hoạt lại nút.` : ''}
+                            >
+                              <span>🔄 Chuyển Sang Phòng Này (Tự Động Trả Phòng Cũ ${myRentedRoom})</span>
+                            </button>
+                          )
+                        ) : (
+                          <button
+                            disabled={isCurrentlyHolding}
+                            onClick={() => {
+                              if (isCurrentlyHolding) return;
+                              setRequestModal({ room: selectedRoomDetails, type: 'RENT' });
+                              setRequestSuccess(false);
+                              setRequestNote(`Em có nguyện vọng đăng ký thuê phòng ${selectedRoomDetails.number}`);
+                            }}
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md ${
+                              isCurrentlyHolding
+                                ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-50 shadow-none border border-slate-300 pointer-events-none'
+                                : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-purple-600/20 cursor-pointer btn-press'
+                            }`}
+                            title={isCurrentlyHolding ? `Nút đã bị mờ do bạn đang giữ chỗ phòng ${heldRoomNumber}. Hãy hủy giữ chỗ để kích hoạt lại nút.` : ''}
+                          >
+                            <span>🔑 Đăng Ký Thuê Phòng Này</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ) : selectedRoomDetails.status === 'OCCUPIED' && selectedRoomDetails.occupants < selectedRoomDetails.maxOccupants ? (
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => {
-                          setRequestModal({ room: selectedRoomDetails, type: 'ROOMMATE' });
-                          setRequestSuccess(false);
-                          setRequestNote(`Em có nguyện vọng muốn xin vào ở ghép cùng bạn phòng ${selectedRoomDetails.number}`);
-                        }}
-                        className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white rounded-xl text-xs font-bold transition-all btn-press flex items-center gap-1.5 shadow-md shadow-indigo-600/20 cursor-pointer"
-                      >
-                        <span>{myRentedRoom ? `🔄 Xin Chuyển Sang Ở Ghép (Trả ${myRentedRoom})` : '🤝 Xin Vào Ở Ghép'}</span>
-                      </button>
-                      <span className="text-[11px] text-indigo-700 bg-indigo-50 font-bold px-2 py-1 rounded-lg border border-indigo-200">
-                        Còn trống {selectedRoomDetails.maxOccupants - selectedRoomDetails.occupants} chỗ
-                      </span>
+                    <div className="space-y-2">
+                      {/* Cảnh báo khi đang giữ chỗ phòng khác */}
+                      {isCurrentlyHolding && (
+                        <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shadow-2xs">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">🔒</span>
+                            <span>
+                              Bạn đang giữ chỗ phòng <strong>{heldRoomNumber}</strong> ({heldHouseCode}). Nút xin vào ở ghép đang bị <strong>mờ và khóa</strong>.
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`Bạn có chắc chắn muốn hủy giữ chỗ phòng ${heldRoomNumber}? Nút xin ở ghép phòng ${selectedRoomDetails.number} sẽ sáng lên ngay lập tức.`)) {
+                                if (cancelRoomHold) {
+                                  cancelRoomHold(heldRoomNumber, heldHouseCode);
+                                }
+                              }
+                            }}
+                            className="px-2.5 py-1 bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 rounded-lg text-xs font-bold transition cursor-pointer shrink-0"
+                          >
+                            Hủy Giữ Chỗ Phòng {heldRoomNumber}
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          disabled={isCurrentlyHolding}
+                          onClick={() => {
+                            if (isCurrentlyHolding) return;
+                            setRequestModal({ room: selectedRoomDetails, type: 'ROOMMATE' });
+                            setRequestSuccess(false);
+                            setRequestNote(`Em có nguyện vọng muốn xin vào ở ghép cùng bạn phòng ${selectedRoomDetails.number}`);
+                          }}
+                          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md ${
+                            isCurrentlyHolding
+                              ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-50 shadow-none border border-slate-300 pointer-events-none'
+                              : 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white shadow-indigo-600/20 cursor-pointer btn-press'
+                          }`}
+                          title={isCurrentlyHolding ? `Nút đã bị mờ do bạn đang giữ chỗ phòng ${heldRoomNumber}. Hãy hủy giữ chỗ để kích hoạt lại nút.` : ''}
+                        >
+                          <span>{myRentedRoom ? `🔄 Xin Chuyển Sang Ở Ghép (Trả ${myRentedRoom})` : '🤝 Xin Vào Ở Ghép'}</span>
+                        </button>
+                        <span className="text-[11px] text-indigo-700 bg-indigo-50 font-bold px-2 py-1 rounded-lg border border-indigo-200">
+                          Còn trống {selectedRoomDetails.maxOccupants - selectedRoomDetails.occupants} chỗ
+                        </span>
+                      </div>
                     </div>
                   ) : (
                     <div className="text-xs text-slate-500 font-medium italic">
@@ -2275,7 +2410,7 @@ export default function RoomsPage() {
                   label: 'Cần BQL duyệt',
                   count: roomRequests.filter(
                     (r) => (!staffHouseCode || (r.houseCode || (rooms || []).find(rm => rm.number === (r.targetRoom || r.currentRoom))?.houseCode || 'CS-01') === staffHouseCode) &&
-                      (r.status === 'PENDING' || r.status === 'ROOMMATES_APPROVED')
+                      (r.status === 'PENDING' || r.status === 'ROOMMATES_APPROVED' || r.status === 'HOLDING')
                   ).length
                 },
                 {
@@ -2460,7 +2595,8 @@ export default function RoomsPage() {
                       return (
                         r.status === 'PENDING' ||
                         r.status === 'ROOMMATES_APPROVED' ||
-                        r.status === 'WAITING_ROOMMATES'
+                        r.status === 'WAITING_ROOMMATES' ||
+                        r.status === 'HOLDING'
                       );
                     if (requestFilter === 'APPROVED') return r.status === 'APPROVED';
                     if (requestFilter === 'REJECTED')
@@ -2524,9 +2660,9 @@ export default function RoomsPage() {
                           <span>❌</span> Thành viên phòng {req.targetRoom} đã từ chối
                         </span>
                       )}
-                      {req.status === 'PENDING' && (
+                      {(req.status === 'PENDING' || req.status === 'HOLDING') && (
                         <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                          🟡 Chờ BQL phê duyệt
+                          🟡 Chờ BQL phê duyệt {req.status === 'HOLDING' ? '(Tạm giữ chỗ)' : ''}
                         </span>
                       )}
                       {req.status === 'APPROVED' && (
@@ -2616,7 +2752,7 @@ export default function RoomsPage() {
                         </div>
                       )}
 
-                      {(req.status === 'PENDING' || req.status === 'ROOMMATES_APPROVED') && (
+                      {(req.status === 'PENDING' || req.status === 'ROOMMATES_APPROVED' || req.status === 'HOLDING') && (
                         <>
                           <button
                             onClick={() => rejectRoomRequest(req.id)}
@@ -2633,7 +2769,7 @@ export default function RoomsPage() {
                                 ? '✅ Thu Hồi Phòng & Tịch Thu Cọc'
                                 : req.type === 'RENEW_CONTRACT'
                                 ? '✅ Phê Duyệt Gia Hạn Hợp Đồng'
-                                : '✅ Phê Duyệt & Chốt Phòng'}
+                                : '✅ Phê Duyệt & Mở Cổng Nộp Cọc'}
                             </span>
                           </button>
                         </>

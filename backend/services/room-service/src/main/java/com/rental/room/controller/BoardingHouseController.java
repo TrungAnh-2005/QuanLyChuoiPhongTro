@@ -1,4 +1,4 @@
-package com.rental.room.controller;
+﻿package com.rental.room.controller;
 
 import com.rental.room.dto.ApiResponse;
 import com.rental.room.dto.BoardingHouseResponse;
@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/boarding-houses")
+@RequestMapping({"/api/boarding-houses", "/api/properties"})
 @RequiredArgsConstructor
 public class BoardingHouseController {
 
@@ -54,3 +54,4 @@ public class BoardingHouseController {
         return ResponseEntity.ok(ApiResponse.success(null, "Boarding house deleted successfully"));
     }
 }
+

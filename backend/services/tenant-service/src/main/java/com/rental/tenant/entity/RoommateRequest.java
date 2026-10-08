@@ -1,4 +1,4 @@
-﻿package com.rental.meter.entity;
+﻿package com.rental.tenant.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
@@ -9,36 +9,42 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "meters")
+@Table(name = "roommate_requests")
 @EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-/**
- * @deprecated Quy hoach mo rong du phong V2.0. Trong V1.0 chi so tieu thu duoc ghi truc tiep qua meter_readings.
- */
-@Deprecated
-public class Meter {
+public class RoommateRequest {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "room_id", nullable = false)
+    @Column(nullable = false)
     private Long roomId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "meter_type", nullable = false, length = 20)
-    private MeterType meterType;
+    @Column(nullable = false, length = 100)
+    private String fullName;
+
+    @Column(nullable = false, length = 20)
+    private String identityCard;
+
+    @Column(nullable = false, length = 20)
+    private String phone;
+
+    @Column(length = 255)
+    private String note;
+
+    @Column(length = 50)
+    @Builder.Default
+    private String status = "PENDING"; // PENDING, APPROVED, REJECTED
 
     @CreatedDate
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column(updatable = false)
     private LocalDateTime createdAt;
 
     @LastModifiedDate
-    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 }
-

@@ -1,4 +1,4 @@
-﻿package com.rental.meter.entity;
+﻿package com.rental.room.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
@@ -6,39 +6,39 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "meters")
+@Table(name = "house_service_configs")
 @EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-/**
- * @deprecated Quy hoach mo rong du phong V2.0. Trong V1.0 chi so tieu thu duoc ghi truc tiep qua meter_readings.
- */
-@Deprecated
-public class Meter {
+public class HouseServiceConfig {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "room_id", nullable = false)
-    private Long roomId;
+    @Column(nullable = false)
+    private Long boardingHouseId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "meter_type", nullable = false, length = 20)
-    private MeterType meterType;
+    @Column(nullable = false, length = 100)
+    private String serviceName; // Dien, Nuoc, Wifi, Rac
+
+    @Column(nullable = false, length = 50)
+    private String calculationType; // METER, PER_CAPITA, PER_ROOM
+
+    @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal unitPrice;
 
     @CreatedDate
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column(updatable = false)
     private LocalDateTime createdAt;
 
     @LastModifiedDate
-    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 }
-

@@ -1,4 +1,4 @@
--- ==========================================================
+﻿-- ==========================================================
 -- SCRIPT KHỞI TẠO CÁC DATABASE ĐỘC LẬP CHO TỪNG MICROSERVICE
 -- NGUYÊN TẮC: Database per Service, KHÔNG FOREIGN KEY CHÉO
 -- ==========================================================
@@ -30,3 +30,5 @@ GRANT ALL PRIVILEGES ON `notification_db`.* TO 'rental_user'@'%';
 GRANT ALL PRIVILEGES ON `report_db`.* TO 'rental_user'@'%';
 
 FLUSH PRIVILEGES;
+
+

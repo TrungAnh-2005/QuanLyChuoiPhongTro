@@ -322,6 +322,25 @@ export default function MoveOutSettlementModal({ isOpen, onClose, settlement, ro
             )}
           </div>
 
+          {tenantMustPayExtra > 0 && (
+              <div className="p-4 bg-gradient-to-r from-rose-600 via-red-600 to-rose-700 text-white rounded-2xl shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-pulse">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-yellow-300 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-black text-sm uppercase tracking-wide">
+                      🚨 CÔNG NỢ PHÁT SINH - KHÁCH THUÊ PHẢI NỘP BÙ: +{formatVND(tenantMustPayExtra)}
+                    </div>
+                    <div className="text-xs text-rose-100 mt-0.5">
+                      Tổng tiền bồi thường hư hại ({formatVND(damageFee)}) và nợ cước ({formatVND(unpaidRentFee + unpaidUtilitiesFee)}) vượt quá tiền cọc. Quản lý lập phiếu thu bổ sung trước khi ký biên bản bàn giao!
+                    </div>
+                  </div>
+                </div>
+                <div className="font-mono font-black text-base bg-white text-rose-700 px-3 py-1.5 rounded-xl shrink-0 shadow-md text-center">
+                  +{formatVND(tenantMustPayExtra)}
+                </div>
+              </div>
+            )}
+
           {/* 1. NGHIỆM THU TRANG THIẾT BỊ (Asset Inspection Checklist) */}
           <div className="border border-slate-200 rounded-2xl p-4 bg-white space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pb-2 border-b border-slate-100">

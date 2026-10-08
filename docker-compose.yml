@@ -1,6 +1,6 @@
-services:
+﻿services:
   # ==========================================================
-  # MySQL 8.0 - Cụm cơ sở dữ liệu riêng biệt theo từng service
+  # MySQL 8.0 - Cá»¥m cÆ¡ sá»Ÿ dá»¯ liá»‡u riÃªng biá»‡t theo tá»«ng service
   # ==========================================================
   mysql:
     image: mysql:8.0
@@ -133,37 +133,6 @@ services:
     networks:
       - rental-network
 
-  # ==========================================================
-  # Property & Boarding House Chain Service (Port 8091)
-  # ==========================================================
-  property-service:
-    build:
-      context: ./backend
-      dockerfile: services/property-service/Dockerfile
-    container_name: rental-property-service
-    restart: always
-    ports:
-      - "8091:8091"
-    environment:
-      SPRING_PROFILES_ACTIVE: docker
-      SERVER_PORT: 8091
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_USER: ${MYSQL_USER:-rental_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-rental_secret}
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
-    depends_on:
-      mysql:
-        condition: service_healthy
-      discovery-server:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8091/actuator/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-    networks:
-      - rental-network
 
   # ==========================================================
   # Room & Property Service (Port 8082)
@@ -413,43 +382,6 @@ services:
     networks:
       - rental-network
 
-  # ==========================================================
-  # Notification Service (Port 8089)
-  # ==========================================================
-  notification-service:
-    build:
-      context: ./backend
-      dockerfile: services/notification-service/Dockerfile
-    container_name: rental-notification-service
-    restart: always
-    ports:
-      - "8089:8089"
-    environment:
-      SPRING_PROFILES_ACTIVE: docker
-      SERVER_PORT: 8089
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_USER: ${MYSQL_USER:-rental_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-rental_secret}
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: 5672
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-rental_rabbit}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-rental_rabbit_secret}
-    depends_on:
-      mysql:
-        condition: service_healthy
-      discovery-server:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8089/actuator/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-    networks:
-      - rental-network
 
   # ==========================================================
   # Report & Analytics Service (Port 8090)
@@ -490,7 +422,7 @@ services:
       - rental-network
 
   # ==========================================================
-  # AI Service - OCR CCCD & Đồng Hồ Công Tơ (Port 8091)
+  # AI Service - OCR CCCD & Äá»“ng Há»“ CÃ´ng TÆ¡ (Port 8091)
   # ==========================================================
   ai-service:
     build:

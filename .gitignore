@@ -66,3 +66,7 @@ dist-ssr/
 *.env.local
 docker/mysql/data/
 docker/rabbitmq/data/
+# Chat exports & assets
+chat_assets/
+TONG_HOP_CHAT_XOA_FILE_TRONG_DOCS_07_08_10_2026.md
+

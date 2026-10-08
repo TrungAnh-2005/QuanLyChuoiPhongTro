@@ -35,7 +35,10 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
     tenantRooms = {},
     systemNotices = [],
     roomPaymentNotices = [],
-    roommateLeaveNotices = []
+    roommateLeaveNotices = [],
+    saasReminders = [],
+    saasInvoices = [],
+    landlords = []
   } = data;
 
   const role = user?.role || 'ADMIN';
@@ -54,126 +57,72 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
 
   if (role === 'ADMIN') {
     // =========================================================================
-    // 👑 ADMIN: Giám sát toàn hệ thống, phê duyệt đơn, hóa đơn quá hạn, sự cố khẩn cấp
+    // 👑 PLATFORM ADMIN (CTCP Trọ Việt SaaS): Quản trị hạ tầng, cước SaaS & đối tác
     // =========================================================================
 
-    // 1. Các đơn cần Ban Quản Lý phê duyệt (Chuyển phòng, Thuê thêm, Trả phòng, Ở ghép đã biểu quyết xong)
-    const pendingRequests = roomRequests.filter(
-      (r) => r.status === 'PENDING' || r.status === 'ROOMMATES_APPROVED'
-    );
-    pendingRequests.forEach((req) => {
-      if (req.type === 'CHECKOUT') {
-        addNotif({
-          id: `admin-req-${req.id}`,
-          type: 'URGENT',
-          title: `Đơn trả phòng trước hạn (Mất cọc): Phòng ${req.targetRoom}`,
-          desc: `Khách ${req.tenant} xin trả phòng sớm, chấp nhận tịch thu tiền cọc theo hợp đồng. Cần BQL duyệt giải phóng phòng.`,
-          time: req.date || 'Hôm nay',
-          defaultRead: false,
-          link: '/rooms'
-        });
-      } else if (req.type === 'TRANSFER') {
-        addNotif({
-          id: `admin-req-${req.id}`,
-          type: 'CONTRACT',
-          title: `Đơn xin đổi phòng: ${req.currentRoom} ➔ ${req.targetRoom}`,
-          desc: `Khách ${req.tenant} muốn chuyển từ ${req.currentRoom} sang ${req.targetRoom} (${req.houseCode}). Lý do: ${req.note}`,
-          time: req.date || 'Hôm nay',
-          defaultRead: false,
-          link: '/rooms'
-        });
-      } else if (req.type === 'ADDITIONAL_RENT') {
-        addNotif({
-          id: `admin-req-${req.id}`,
-          type: 'CONTRACT',
-          title: `Đơn thuê thêm phòng: ${req.targetRoom}`,
-          desc: `Khách ${req.tenant} (đang ở ${req.currentRoom}) muốn đứng tên thuê thêm phòng ${req.targetRoom}.`,
-          time: req.date || 'Hôm nay',
-          defaultRead: false,
-          link: '/rooms'
-        });
-      } else if (req.type === 'ROOMMATE') {
-        addNotif({
-          id: `admin-req-${req.id}`,
-          type: 'CONTRACT',
-          title: `Cư dân đã đồng ý ở ghép phòng ${req.targetRoom}`,
-          desc: `Bạn cùng phòng đã bấm đồng ý đơn của ${req.tenant}. Cần Admin chốt duyệt hợp đồng và xếp chỗ.`,
-          time: req.date || 'Hôm nay',
-          defaultRead: false,
-          link: '/rooms'
-        });
-      } else if (req.type === 'RENEW_CONTRACT') {
-        addNotif({
-          id: `admin-req-${req.id}`,
-          type: 'CONTRACT',
-          title: `Đơn xin gia hạn hợp đồng: Phòng ${req.currentRoom || req.targetRoom}`,
-          desc: `Khách ${req.tenant} xin gia hạn hợp đồng thêm ${req.extensionMonths || 6} tháng. Cần BQL phê duyệt.`,
-          time: req.date || 'Hôm nay',
-          defaultRead: false,
-          link: '/rooms'
-        });
-      } else if (req.type === 'RENT' || req.type === 'NEW_RENT') {
-        addNotif({
-          id: `admin-req-${req.id}`,
-          type: 'CONTRACT',
-          title: `Đơn đăng ký thuê phòng mới: Phòng ${req.targetRoom} (${req.houseCode || 'CS-01'})`,
-          desc: `Khách ${req.tenant} đăng ký thuê phòng ${req.targetRoom} tại ${req.house || (req.houseCode === 'CS-02' ? 'Cơ Sở 2 (Bách Khoa)' : 'Cơ Sở 1 (Cầu Giấy)')}. Cần phê duyệt hợp đồng.`,
-          time: req.date || 'Hôm nay',
-          defaultRead: false,
-          link: '/rooms'
-        });
-      } else {
-        addNotif({
-          id: `admin-req-${req.id}`,
-          type: 'CONTRACT',
-          title: `Đơn cần phê duyệt: Phòng ${req.targetRoom || req.currentRoom} (${req.houseCode || 'CS-01'})`,
-          desc: `Đơn ${req.type} từ khách ${req.tenant}. Cần BQL xem xét và phê duyệt.`,
-          time: req.date || 'Hôm nay',
-          defaultRead: false,
-          link: '/rooms'
-        });
-      }
-    });
-
-    // 2. Hóa đơn quá hạn thanh toán
-    const overdueInvoices = invoices.filter((inv) => inv.status === 'OVERDUE');
-    overdueInvoices.forEach((inv) => {
+    // 1. Hóa đơn cước SaaS chờ thu từ Chủ trọ
+    const unpaidSaas = (saasInvoices || []).filter((inv) => inv.status === 'UNPAID');
+    unpaidSaas.forEach((inv) => {
       addNotif({
-        id: `admin-inv-${inv.id}`,
+        id: `admin-saas-due-${inv.id}`,
         type: 'URGENT',
-        title: `Hóa đơn quá hạn: Phòng ${inv.room} (${inv.house})`,
-        desc: `Hóa đơn ${inv.code} của ${inv.tenant} trị giá ${inv.total.toLocaleString('vi-VN')} đ chưa được thanh toán.`,
-        time: '3 ngày trước',
+        title: `Cước SaaS chờ thu: ${inv.code} (${inv.landlordName})`,
+        desc: `Hóa đơn ${inv.packageName} (${Number(inv.amount || 0).toLocaleString('vi-VN')} đ) đến hạn ${inv.dueDate}. Hãy theo dõi đối soát.`,
+        time: inv.dueDate ? `Hạn ${inv.dueDate}` : 'Đến hạn',
         defaultRead: false,
-        link: '/invoices'
+        link: '/admin/saas-invoices'
       });
     });
 
-    // 3. Sự cố kỹ thuật khẩn cấp (Ưu tiên Cao)
-    const urgentTickets = tickets.filter(
-      (t) => t.priority === 'HIGH' && t.status !== 'RESOLVED'
-    );
-    urgentTickets.forEach((t) => {
+    // 2. Thu cước SaaS thành công (Đối soát doanh thu nền tảng)
+    const paidSaas = (saasInvoices || []).filter((inv) => inv.status === 'PAID');
+    paidSaas.slice(0, 2).forEach((inv) => {
       addNotif({
-        id: `admin-ticket-${t.id}`,
-        type: 'MAINTENANCE',
-        title: `Sự cố thiết bị khẩn: Phòng ${t.room}`,
-        desc: `${t.tenant} báo: ${t.issue}. Trạng thái: ${t.status === 'PENDING' ? 'Chờ kỹ thuật xử lý' : 'Đang xử lý'}.`,
-        time: t.date || 'Hôm nay',
-        defaultRead: false,
-        link: '/maintenance'
+        id: `admin-saas-paid-${inv.id}`,
+        type: 'INVOICE',
+        title: `Thu cước SaaS thành công: ${inv.code}`,
+        desc: `Chủ trọ ${inv.landlordName} đã thanh toán ${Number(inv.amount || 0).toLocaleString('vi-VN')} đ qua ${inv.paymentMethod || 'VietQR / VNPay'}.`,
+        time: inv.paidAt || 'Gần đây',
+        defaultRead: true,
+        link: '/admin/saas-invoices'
       });
     });
 
-    // 4. Báo cáo chốt số định kỳ
+    // 3. Thẩm định hồ sơ đối tác KYC Chủ trọ
+    const pendingKyc = (landlords || []).filter((l) => l.kycStatus === 'PENDING' || l.status === 'PENDING');
+    if (pendingKyc.length > 0) {
+      pendingKyc.forEach((l) => {
+        addNotif({
+          id: `admin-kyc-${l.id}`,
+          type: 'CONTRACT',
+          title: `Thẩm định hồ sơ KYC: Chủ trọ ${l.fullName || l.name}`,
+          desc: `Đối tác mới đăng ký kinh doanh trọ ${l.businessName || ''}. Cần Admin duyệt định danh CCCD và cấp quyền cơ sở.`,
+          time: 'Hôm nay',
+          defaultRead: false,
+          link: '/admin/landlords'
+        });
+      });
+    } else {
+      addNotif({
+        id: 'admin-kyc-status',
+        type: 'CONTRACT',
+        title: 'Hồ sơ KYC Chủ trọ nền tảng',
+        desc: 'Tất cả đối tác Chủ trọ kinh doanh chuỗi đều đã được thẩm định hợp lệ 100%.',
+        time: 'Hôm nay',
+        defaultRead: true,
+        link: '/admin/landlords'
+      });
+    }
+
+    // 4. Giám sát hạ tầng Microservices APM
     addNotif({
-      id: 'admin-sys-meters',
+      id: 'admin-apm-status',
       type: 'SYSTEM',
-      title: 'Chốt số điện nước & Doanh thu Tháng 09/2026',
-      desc: 'Đã hoàn tất ghi nhận chỉ số công tơ điện nước cho 36 phòng thuộc 3 cơ sở.',
-      time: '1 ngày trước',
+      title: 'Giám sát hạ tầng & Microservices (APM)',
+      desc: '10/10 Microservices, Eureka Registry, RabbitMQ và MySQL Cluster đang vận hành ổn định 99.9%.',
+      time: 'Vừa xong',
       defaultRead: true,
-      link: '/meters'
+      link: '/admin/system'
     });
   } else if (role === 'STAFF') {
     // =========================================================================
@@ -262,7 +211,24 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
       });
     }
 
-    // 4. Khai báo tạm trú & hồ sơ
+    // 4. Nhắc nợ cước SaaS từ Web Admin nền tảng
+    const activeSaasReminders = (saasReminders || []).filter((r) => {
+      const matchedInv = (saasInvoices || []).find((inv) => inv.code === r.invoiceCode || inv.id === r.invoiceId);
+      return !matchedInv || matchedInv.status !== 'PAID';
+    });
+    activeSaasReminders.forEach((remind) => {
+      addNotif({
+        id: remind.id,
+        type: 'URGENT',
+        title: `⚠️ Web Admin Nhắc Nợ: Cước SaaS [${remind.invoiceCode}]`,
+        desc: `Ban Quản Trị nền tảng đã gửi thông báo nhắc thanh toán ${remind.packageName || 'Gói Chuyên Nghiệp (PRO - Không Giới Hạn Cơ Sở)'} (${Number(remind.amount || 4990000).toLocaleString('vi-VN')} đ). Hạn chót: ${remind.dueDate || '15/10/2026'}. Vui lòng nộp cước để duy trì hoạt động phần mềm.`,
+        time: remind.time || 'Vừa xong',
+        defaultRead: false,
+        link: '/invoices/saas'
+      });
+    });
+
+    // 5. Khai báo tạm trú & hồ sơ
     addNotif({
       id: `staff-records-check-${staffHouseCode}`,
       type: 'CONTRACT',
@@ -579,9 +545,9 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
     return String(val);
   };
 
-  const tenant1Room = formatRooms(tenantRooms?.tenant1 || tenantRooms?.['Nguyễn Văn An'] || (user?.username === 'tenant1' ? user.rooms : 'P.101'), 'P.101');
-  const tenant2Room = formatRooms(tenantRooms?.tenant2 || tenantRooms?.['Phạm Minh Cường'] || (user?.username === 'tenant2' ? user.rooms : 'P.103'), 'P.103');
-  const tenantNewRoom = formatRooms(tenantRooms?.tenant_new || tenantRooms?.['Hoàng Văn Nam'] || (user?.username === 'tenant_new' ? user.rooms : null), '');
+  const tenant1Room = formatRooms(tenantRooms?.tenant1 ?? tenantRooms?.['Nguyễn Văn An'] ?? (user?.username === 'tenant1' ? user.rooms : ['P.101']), '');
+  const tenant2Room = formatRooms(tenantRooms?.tenant2 ?? tenantRooms?.['Phạm Minh Cường'] ?? (user?.username === 'tenant2' ? user.rooms : ['P.103']), '');
+  const tenantNewRoom = formatRooms(tenantRooms?.tenant_new ?? tenantRooms?.['Hoàng Văn Nam'] ?? (user?.username === 'tenant_new' ? user.rooms : []), '');
 
   const accountKey = user?.username || user?.role || 'ADMIN';
 
@@ -618,7 +584,10 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
         systemNotices: dataContext.systemNotices || [],
         roomPaymentNotices: dataContext.roomPaymentNotices || [],
         roommateLeaveNotices: dataContext.roommateLeaveNotices || [],
-        tenantRooms
+        tenantRooms,
+        saasReminders: dataContext.saasReminders || [],
+        saasInvoices: dataContext.saasInvoices || [],
+        landlords: dataContext.landlords || []
       },
       new Set(readNotifIds)
     );
@@ -773,40 +742,56 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
 
           <button
             onClick={() => switchRole('TENANT_1')}
-            title={`Khách thuê 1: Nguyễn Văn An đang ở ${tenant1Room}`}
+            title={`Khách thuê 1: Nguyễn Văn An ${tenant1Room ? 'đang ở ' + tenant1Room : '(Chưa thuê)'}`}
             className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press flex items-center gap-1 ${
               role === 'TENANT' && (user?.username === 'tenant' || user?.username === 'tenant1')
                 ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25 scale-[1.02]'
                 : 'text-slate-600 hover:text-emerald-700 hover:bg-white/60'
             }`}
           >
-            <span>👤</span> Khách 1 <span className="text-[10px] opacity-80">(${tenant1Room})</span>
+            <span>👤</span> Khách 1 <span className="text-[10px] opacity-80">({tenant1Room || 'Chưa thuê'})</span>
           </button>
 
           <button
             onClick={() => switchRole('TENANT_2')}
-            title={`Khách thuê 2: Phạm Minh Cường đang ở ${tenant2Room}`}
+            title={`Khách thuê 2: Phạm Minh Cường ${tenant2Room ? 'đang ở ' + tenant2Room : '(Chưa thuê)'}`}
             className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press flex items-center gap-1 ${
               role === 'TENANT' && user?.username === 'tenant2'
                 ? 'bg-teal-600 text-white shadow-md shadow-teal-600/25 scale-[1.02]'
                 : 'text-slate-600 hover:text-teal-700 hover:bg-white/60'
             }`}
           >
-            <span>👤</span> Khách 2 <span className="text-[10px] opacity-80">(${tenant2Room})</span>
+            <span>👤</span> Khách 2 <span className="text-[10px] opacity-80">({tenant2Room || 'Chưa thuê'})</span>
           </button>
 
           <button
             onClick={() => switchRole('TENANT_NEW')}
-            title="Khách mới: Hoàng Văn Nam (Chưa có phòng, đang đi tìm phòng)"
+            title={`Khách mới: Hoàng Văn Nam ${tenantNewRoom ? 'đang ở ' + tenantNewRoom : '(Chưa có phòng)'}`}
             className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press flex items-center gap-1 ${
               role === 'TENANT' && user?.username === 'tenant_new'
                 ? 'bg-amber-600 text-white shadow-md shadow-amber-600/25 scale-[1.02]'
                 : 'text-slate-600 hover:text-amber-700 hover:bg-white/60'
             }`}
           >
-            <span>🔍</span> Khách Mới <span className="text-[10px] opacity-80 font-normal">(Chưa thuê)</span>
+            <span>🔍</span> Khách Mới <span className="text-[10px] opacity-80 font-normal">({tenantNewRoom || 'Chưa thuê'})</span>
           </button>
         </div>
+
+        {/* Nút Khôi Phục Gốc - Làm sạch dữ liệu demo */}
+        <button
+          onClick={() => {
+            if (window.confirm('Bạn có chắc muốn khôi phục toàn bộ dữ liệu về trạng thái mẫu ban đầu? (Tất cả dữ liệu thử nghiệm trong bộ nhớ tạm sẽ được làm sạch)')) {
+              const keysToRemove = Object.keys(localStorage).filter(k => k.startsWith('rental_'));
+              keysToRemove.forEach(k => localStorage.removeItem(k));
+              sessionStorage.clear();
+              window.location.reload();
+            }
+          }}
+          title="Dọn sạch cache và khôi phục dữ liệu ban đầu"
+          className="hidden lg:flex items-center gap-1 px-2.5 py-1.5 text-slate-500 hover:text-purple-700 hover:bg-purple-50 rounded-xl text-xs font-bold transition border border-dashed border-slate-300 hover:border-purple-300 cursor-pointer btn-press"
+        >
+          <span>🔄 Khôi Phục Gốc</span>
+        </button>
 
         {/* Chuyển đổi vai trò rút gọn trên Di động & Tablet (Dạng Select tiện lợi) */}
         <div className="xl:hidden flex items-center bg-slate-100/90 px-2 py-1 rounded-xl border border-slate-200/90 text-xs font-bold shadow-2xs">

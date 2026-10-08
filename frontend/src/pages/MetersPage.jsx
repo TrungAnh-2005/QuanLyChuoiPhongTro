@@ -156,7 +156,7 @@ export default function MetersPage() {
     const numElec = Number(tempElecPrice);
     const numWater = Number(tempWaterPrice);
     if (!numElec || numElec <= 0 || !numWater || numWater <= 0) {
-      alert('Đơn giá điện và nước phải lớn hơn 0!');
+      setSaveToast({ type: 'ERROR', message: 'Đơn giá điện và nước phải lớn hơn 0!' }); setTimeout(() => setSaveToast(null), 4000);
       return;
     }
 

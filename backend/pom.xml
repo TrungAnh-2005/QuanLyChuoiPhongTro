@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -42,9 +42,7 @@
         <module>services/billing-service</module>
         <module>services/payment-service</module>
         <module>services/maintenance-service</module>
-        <module>services/notification-service</module>
         <module>services/report-service</module>
-        <module>services/property-service</module>
         <module>services/ai-service</module>
     </modules>
 
@@ -148,3 +146,4 @@
         </pluginManagement>
     </build>
 </project>
+

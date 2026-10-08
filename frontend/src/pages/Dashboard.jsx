@@ -225,6 +225,23 @@ export default function Dashboard() {
   };
 
   // Khách thuê: Quy tắc Single Active Lease (1 Khách - 1 Phòng duy nhất)
+  // Phân quyền Người đại diện HĐ vs Người ở ghép (UC-T06 vs UC-T07)
+  const isRepresentative = useMemo(() => {
+    if (!isTenant) return false;
+    const rNum = (user?.room || user?.rooms?.[0] || 'P.101');
+    const repMember = (roomMembers || []).find(
+      (m) => (m.roomNumber === rNum || (contracts || []).some(c => c.roomNumber === m.roomNumber)) && m.roleInRoom === 'REPRESENTATIVE'
+    );
+    if (!repMember) return true; // Mặc định là đại diện nếu chưa có thành viên khác
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    const uPhone = (user?.phone || '').trim();
+    return (
+      (repMember.fullName && repMember.fullName.toLowerCase().includes(uName)) ||
+      (uPhone && repMember.phone === uPhone) ||
+      (user?.username === 'tenant' || user?.username === 'tenant1')
+    );
+  }, [isTenant, user, roomMembers, contracts]);
+
   const myRoomNumber = useMemo(() => {
     if (!isTenant) return 'P.101';
     // Nghiệp vụ cốt lõi: Chưa thanh toán cọc & chưa ký HĐ thì CHƯA CÓ phòng chính thức!
@@ -441,11 +458,13 @@ export default function Dashboard() {
       setTimeout(() => setCopiedGateField(null), 2000);
     };
 
-    const handleConfirmDepositAndSign = () => {
+    const handleConfirmDepositAndSign = (cccdData = null) => {
       if (payDepositAndSignContract) {
-        payDepositAndSignContract(myContract.id);
-        setPaySuccessToast(`🎉 Chúc mừng bạn! Hợp đồng phòng ${targetRoomNum} đã được kích hoạt thành công. Bạn chính thức là cư dân!`);
-        setTimeout(() => setPaySuccessToast(null), 6000);
+        payDepositAndSignContract(myContract.id, { cccdData });
+        setPaySuccessToast(
+          `🎉 Ký HĐ thành công! Dữ liệu CCCD đã được gửi đến Quản lý cơ sở để làm thủ tục Tạm Trú (VNeID) phòng ${targetRoomNum}.`
+        );
+        setTimeout(() => setPaySuccessToast(null), 7000);
       }
     };
 
@@ -487,7 +506,7 @@ export default function Dashboard() {
 
     const handleSyncFromSepay = async () => {
       if (!sepayForm.apiKey) {
-        alert('Vui lòng dán SePay API Token trước khi đồng bộ!');
+        setPaySuccessToast('⚠️ Vui lòng dán SePay API Token trước khi đồng bộ!'); setTimeout(() => setPaySuccessToast(null), 4000);
         return;
       }
       setIsSyncingSepay(true);
@@ -503,9 +522,9 @@ export default function Dashboard() {
         setSepayForm(updated);
         setSepayConfig(updated);
         saveSePayConfig(updated);
-        alert(`Đã đồng bộ thành công tài khoản ${res.account.account_number} (${res.account.bank_short_name}) từ SePay!`);
+        setPaySuccessToast(`✓ Đã đồng bộ thành công tài khoản ${res.account.account_number} (${res.account.bank_short_name}) từ SePay!`); setTimeout(() => setPaySuccessToast(null), 4000);
       } else {
-        alert('Không thể kết nối tài khoản SePay. Vui lòng kiểm tra lại API Token!');
+        setPaySuccessToast('⚠️ Không thể kết nối tài khoản SePay. Vui lòng kiểm tra lại API Token!'); setTimeout(() => setPaySuccessToast(null), 4000);
       }
     };
 
@@ -613,10 +632,11 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* 2 Cột Quy Trình Bắt Buộc: Font chữ rõ ràng, dễ đọc, bố cục cân xứng không khoảng trắng */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+                {/* Nếu còn hạn giữ chỗ: Hiển thị 2 Cột Quy Trình Bắt Buộc */}
+        {holdingSecondsLeft > 0 ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
           {/* CỘT 1: NỘP CỌC SEPAY */}
-          <div className="bento-card p-5 sm:p-6 border border-purple-200/80 bg-white shadow-xl rounded-2xl space-y-3.5">
+          <div className="bento-card p-5 sm:p-6 border border-purple-200/80 bg-white shadow-xl rounded-2xl h-full flex flex-col justify-between space-y-3.5">
             {/* Header Cột 1 */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-3">
@@ -661,10 +681,10 @@ export default function Dashboard() {
             </div>
 
             {/* Thông tin chuyển khoản & Mã SePay QR */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 items-center">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 items-stretch flex-1 my-1">
               {/* Cụm thông tin tài khoản */}
-              <div className="space-y-2 text-xs sm:text-sm">
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/70">
+              <div className="space-y-2 text-xs sm:text-sm flex flex-col justify-between h-full">
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/70 flex-1 flex flex-col justify-center">
                   <span className="text-slate-500 block text-xs font-medium">Ngân hàng & Số tài khoản:</span>
                   <div className="flex items-center justify-between mt-1">
                     <div>
@@ -682,7 +702,7 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/70">
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/70 flex-1 flex flex-col justify-center">
                   <span className="text-slate-500 block text-xs font-medium">Chủ tài khoản thụ hưởng:</span>
                   <div className="flex items-center justify-between mt-1">
                     <span className="font-extrabold text-slate-900 text-xs sm:text-sm uppercase tracking-wide">{accountHolder}</span>
@@ -697,7 +717,7 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/70">
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/70 flex-1 flex flex-col justify-center">
                   <span className="text-slate-500 block text-xs font-medium">Số tiền cọc chính xác:</span>
                   <div className="flex items-center justify-between mt-1">
                     <span className="font-mono font-black text-purple-700 text-sm sm:text-base">{depositAmount.toLocaleString('vi-VN')} ₫</span>
@@ -712,7 +732,7 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/70">
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/70 flex-1 flex flex-col justify-center">
                   <span className="text-slate-500 block text-xs font-medium">Nội dung chuyển khoản chuẩn SePay:</span>
                   <div className="flex items-center justify-between mt-1">
                     <span className="font-mono font-black text-slate-900 text-xs sm:text-sm truncate mr-1">{transferMemo}</span>
@@ -728,15 +748,10 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Khối Ảnh QR SePay */}
+                            {/* Khối Ảnh QR SePay */}
               <div 
-                onClick={() => {
-                  setIsDepositPaid(true);
-                  setPaySuccessToast(`⚡ Đã ghi nhận chuyển cọc ${depositAmount.toLocaleString('vi-VN')} đ thành công! Nút Ký Hợp Đồng đã sáng lên.`);
-                  setTimeout(() => setPaySuccessToast(null), 4000);
-                }}
-                title="Bấm vào để kích hoạt nhanh trạng thái đã chuyển tiền cọc"
-                className="p-3 bg-gradient-to-b from-purple-50/40 to-white border border-purple-200/80 rounded-xl shadow-xs relative group cursor-pointer hover:border-purple-400 transition-all flex flex-col items-center justify-center text-center"
+                title="Quét mã QR SePay để chuyển khoản qua Napas 247"
+                className="p-3 bg-gradient-to-b from-purple-50/40 to-white border border-purple-200/80 rounded-xl shadow-xs relative group flex flex-col items-center justify-center text-center h-full"
               >
                 <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-[10px] font-black rounded tracking-wider shadow-xs">
                   SEPAY
@@ -744,15 +759,29 @@ export default function Dashboard() {
                 <img
                   src={depositSepayQr}
                   alt="SePay QR nộp tiền cọc"
-                  className="w-36 h-36 mx-auto object-contain rounded-lg shadow-xs group-hover:scale-105 transition-transform"
+                  className="w-36 h-36 sm:w-40 sm:h-40 mx-auto object-contain rounded-lg shadow-xs transition-transform"
                 />
                 <span className="text-xs font-bold text-purple-900 mt-2 block">Quét QR SePay để chuyển cọc</span>
                 <span className="text-[11px] text-slate-500 block mt-0.5">Tự động nhận diện sau 3-5 giây</span>
+
+                {/* Nút Thử Nghiệm Demo tách biệt hoàn toàn dưới chân ảnh QR */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDepositPaid(true);
+                    setPaySuccessToast(`⚡ [Thử Nghiệm Demo] Giả lập nhận chuyển cọc ${depositAmount.toLocaleString('vi-VN')} đ thành công! Nút Ký Hợp Đồng đã mở khóa.`);
+                    setTimeout(() => setPaySuccessToast(null), 4000);
+                  }}
+                  className="mt-2.5 w-full py-2 px-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs btn-press"
+                  title="Dành riêng cho buổi Demo / Chấm thi: Bấm để mở khóa nút Ký Hợp Đồng mà không cần chuyển tiền thật"
+                >
+                  <span>⚡ [Thử Nghiệm Demo] Giả Lập Chuyển Tiền Cọc Thành Công</span>
+                </button>
               </div>
             </div>
 
             {/* Footer Cột 1 */}
-            <div className="pt-2 border-t border-slate-100">
+            <div className="mt-auto pt-3 border-t border-slate-100">
               <div className="flex items-center justify-between text-xs text-slate-700 bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200/60 font-medium">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -766,7 +795,7 @@ export default function Dashboard() {
           </div>
 
           {/* CỘT 2: KÝ HỢP ĐỒNG ĐIỆN TỬ */}
-          <div className="bento-card p-5 sm:p-6 border border-indigo-200/80 bg-white shadow-xl rounded-2xl space-y-3.5">
+          <div className="bento-card p-5 sm:p-6 border border-indigo-200/80 bg-white shadow-xl rounded-2xl h-full flex flex-col justify-between space-y-3.5">
             {/* Header Cột 2 */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-3">
@@ -864,7 +893,7 @@ export default function Dashboard() {
             </div>
 
             {/* Nút Ký Hợp Đồng: Chữ to rõ ràng, nổi bật */}
-            <div className="pt-2 border-t border-slate-100 space-y-1.5">
+            <div className="mt-auto pt-3 border-t border-slate-100 space-y-1.5">
               <button
                 type="button"
                 disabled={!isDepositPaid}
@@ -902,6 +931,31 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+        ) : (
+          /* Khi đã quá hạn 15 phút: Đóng Onboarding, hiển thị màn hình thông báo giải phóng phòng */
+          <div className="bento-card p-8 sm:p-10 text-center space-y-5 border border-rose-300 bg-gradient-to-b from-rose-50/80 to-white rounded-3xl shadow-xl">
+            <div className="w-16 h-16 mx-auto rounded-3xl bg-rose-100 text-rose-600 flex items-center justify-center text-3xl font-black shadow-inner">
+              ⚠️
+            </div>
+            <div className="max-w-lg mx-auto space-y-2">
+              <h3 className="text-lg sm:text-xl font-black text-rose-950 uppercase tracking-tight">
+                ĐÃ HẾT HẠN GIỮ CHỖ NỘP CỌC (15 PHÚT)
+              </h3>
+              <p className="text-xs sm:text-sm text-rose-800 leading-relaxed font-medium">
+                Lệnh giữ phòng trước đó đã kết thúc do quá thời gian 15 phút nộp cọc. Phòng đã được hệ thống tự động giải phóng và mở lại trên sàn cho khách khác thuê.
+              </p>
+            </div>
+            <div className="pt-2 flex flex-wrap justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => navigate('/rooms')}
+                className="px-6 py-3 rounded-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:to-indigo-800 text-white font-extrabold text-xs sm:text-sm shadow-xl shadow-purple-600/30 transition-all cursor-pointer btn-press inline-flex items-center gap-2"
+              >
+                <span>🔍 Khám Phá Phòng Trống Khác</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Modal Xem Toàn Văn Hợp Đồng Điện Tử */}
         <ResidentContractModal
@@ -1146,22 +1200,19 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Hero Banner Khách Thuê: Sleek Bento Card with Ambient Glow */}
-        <div className="bento-card-dark relative overflow-hidden p-6 sm:p-7 rounded-3xl border border-indigo-500/25 shadow-2xl">
-          <div className="absolute -right-16 -top-16 w-80 h-80 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none animate-float-slow" />
-          <div className="absolute -left-16 -bottom-16 w-64 h-64 bg-purple-500/15 rounded-full blur-3xl pointer-events-none animate-float-reverse" />
-
+        {/* Hero Banner Khách Thuê: Clean Light Bento Card matching reference */}
+        <div className="bg-white relative overflow-hidden p-6 sm:p-7 rounded-3xl border border-slate-100 shadow-sm">
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
             <div className="space-y-2">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-emerald-400 text-xs font-semibold backdrop-blur-md border border-white/10">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold border border-emerald-200/60">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 <span>Cổng Cư Dân Trực Tuyến • Định Danh CCCD (1 Khách - 1 Phòng)</span>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
                 Xin chào, {user?.fullName || 'Khách thuê'}!
               </h1>
-              <p className="text-slate-300 text-xs sm:text-sm max-w-xl">
-                Bạn đang thuê phòng <strong className="text-white font-mono bg-white/20 px-2.5 py-0.5 rounded-lg border border-white/10">{myRoomNumber}</strong> tại {currentRoomObj.house}.
+              <p className="text-slate-500 text-xs sm:text-sm max-w-xl">
+                Bạn đang thuê phòng <strong className="text-purple-700 font-mono bg-purple-100 px-2 py-0.5 rounded-md">{myRoomNumber}</strong> tại {currentRoomObj.house}.
               </p>
             </div>
 
@@ -1169,17 +1220,24 @@ export default function Dashboard() {
             <div className="flex items-center gap-2.5 flex-wrap">
               <button
                 onClick={() => setShowContractModal(true)}
-                className="btn-press px-4 py-2.5 bg-white hover:bg-slate-100 text-slate-900 font-bold rounded-2xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer"
+                className="btn-press px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold rounded-2xl text-xs border border-slate-200/80 transition-all shadow-xs flex items-center gap-2 cursor-pointer"
               >
                 <FileText className="w-4 h-4 text-indigo-600" />
                 <span>Hợp Đồng Điện Tử (UC-T01)</span>
               </button>
               <Link
                 to="/maintenance"
-                className="btn-press px-4 py-2.5 bg-white/10 hover:bg-white/15 text-white font-bold rounded-2xl text-xs transition-all border border-white/15 flex items-center gap-2 backdrop-blur-md"
+                className="btn-press px-4 py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold rounded-2xl text-xs border border-purple-200/80 transition-all flex items-center gap-2"
               >
-                <Wrench className="w-4 h-4 text-purple-300" />
+                <Wrench className="w-4 h-4 text-purple-600" />
                 <span>Báo Sự Cố</span>
+              </Link>
+              <Link
+                to="/rooms"
+                className="btn-press px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold rounded-2xl text-xs border border-rose-200/80 transition-all flex items-center gap-2"
+              >
+                <LogOut className="w-4 h-4 text-rose-500" />
+                <span>Rời Phòng Ở Ghép (UC-T07)</span>
               </Link>
             </div>
           </div>
@@ -1260,11 +1318,11 @@ export default function Dashboard() {
               </div>
             ) : myCurrentInvoice?.status === 'PAID' ? (
               <div className="space-y-2">
-                <div className="text-2xl font-black text-emerald-700 font-mono tracking-tight">
-                  {(myCurrentInvoice?.total || 0).toLocaleString('vi-VN')} ₫
+                <div className="text-2xl font-black text-emerald-600 font-mono tracking-tight">
+                  0 ₫
                 </div>
                 <div className="flex items-center justify-between gap-1 flex-wrap pt-0.5">
-                  <span className="status-pill status-pill-success">✓ Đã thanh toán kỳ này</span>
+                  <span className="status-pill status-pill-success">✓ Đã đóng đủ kỳ này ({(myCurrentInvoice?.total || 0).toLocaleString('vi-VN')} ₫)</span>
                   <button
                     type="button"
                     onClick={() => {
