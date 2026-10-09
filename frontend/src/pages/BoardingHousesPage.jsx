@@ -13,6 +13,8 @@ import {
   Search,
   ExternalLink,
   CheckCircle2,
+  Clock,
+  AlertCircle,
   TrendingUp,
   Sparkles,
   Receipt,
@@ -22,6 +24,8 @@ import { Link } from 'react-router-dom';
 import api from '../services/api';
 import Modal from '../components/common/Modal';
 import HouseServiceConfigModal from '../components/staff/HouseServiceConfigModal';
+
+const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
 
 const initialHouses = [
   {
@@ -80,7 +84,16 @@ export default function BoardingHousesPage() {
   const staffHouseCode = isStaff ? (user?.houseCode || 'CS-01') : null;
   const [houseScopeTab, setHouseScopeTab] = useState('ALL'); // 'ALL' | 'ASSIGNED'
 
-  const [rawHouses, setHouses] = useState(initialHouses);
+  const [rawHouses, setHouses] = useState(() => {
+    try {
+      const saved = localStorage.getItem('rental_boarding_houses');
+      if (saved) return JSON.parse(saved);
+      if (isZeroSandbox) return [];
+      return initialHouses;
+    } catch {
+      return isZeroSandbox ? [] : initialHouses;
+    }
+  });
 
   // TÍNH TOÁN DỮ LIỆU ĐỘNG CHUẨN XÁC THEO THỜI GIAN THỰC (TASK 3 FIX)
   const enrichedHouses = useMemo(() => {
@@ -196,7 +209,7 @@ export default function BoardingHousesPage() {
   // Scoping theo quyền Staff: Mỗi Staff chỉ quản lý DUY NHẤT 1 cơ sở được phân công
 
   const filtered = houses.filter(h => {
-    if (staffHouseCode && h.code !== staffHouseCode) {
+    if (staffHouseCode && h.code !== staffHouseCode && !isZeroSandbox && houseScopeTab === 'ASSIGNED') {
       return false;
     }
     return (
@@ -206,11 +219,38 @@ export default function BoardingHousesPage() {
     );
   });
 
+
+  const handleApproveHouse = (code) => {
+    const nextList = rawHouses.map((h) => (h.code === code ? { ...h, status: 'ACTIVE' } : h));
+    setHouses(nextList);
+    try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
+  };
+
+  const handleToggleLockHouse = (code) => {
+    const nextList = rawHouses.map((h) => {
+      if (h.code === code) {
+        return { ...h, status: h.status === 'LOCKED' ? 'ACTIVE' : 'LOCKED' };
+      }
+      return h;
+    });
+    setHouses(nextList);
+    try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
+  };
+
+  const handleDeleteHouse = (code) => {
+    if (window.confirm(`Xác nhận xóa cơ sở ${code}? Dữ liệu phòng thuộc cơ sở này sẽ cần được cập nhật lại.`)) {
+      const nextList = rawHouses.filter((h) => h.code !== code);
+      setHouses(nextList);
+      try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
+    }
+  };
+
   const handleCreate = async (e) => {
     e.preventDefault();
     if (!newHouse.name || !newHouse.address) return;
     
     const newCode = `CS-0${houses.length + 1}`;
+    const initialStatus = isStaff ? 'PENDING_APPROVAL' : 'ACTIVE';
     const payload = {
       code: newCode,
       name: newHouse.name,
@@ -219,7 +259,7 @@ export default function BoardingHousesPage() {
       managerPhone: newHouse.managerPhone,
       totalFloors: Number(newHouse.floors),
       totalRooms: Number(newHouse.totalRooms),
-      status: 'ACTIVE',
+      status: initialStatus,
       facilities: [
         { facilityName: 'Khóa cổng vân tay' },
         { facilityName: 'Camera an ninh 24/7' },
@@ -241,9 +281,12 @@ export default function BoardingHousesPage() {
       availableRooms: Number(newHouse.totalRooms),
       maintenanceRooms: 0,
       monthlyRevenue: 0,
+      status: initialStatus,
       features: ['Khóa cổng vân tay', 'Camera an ninh 24/7', 'Nhà để xe']
     };
-    setHouses([...houses, created]);
+    const nextList = [...rawHouses, created];
+    setHouses(nextList);
+    try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
     setShowModal(false);
     setNewHouse({ name: '', address: '', manager: '', managerPhone: '', floors: 4, totalRooms: 10 });
   };
@@ -299,7 +342,7 @@ export default function BoardingHousesPage() {
         <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs card-interactive stagger-item stagger-3">
           <div className="text-xs font-bold text-slate-500 uppercase">Tỷ lệ lấp đầy toàn chuỗi</div>
           <div className="text-2xl font-black text-emerald-600 mt-1">
-            {Math.round((houses.reduce((acc, h) => acc + h.occupiedRooms, 0) / houses.reduce((acc, h) => acc + h.totalRooms, 0)) * 100)}%
+            {houses.reduce((acc, h) => acc + (h.totalRooms || 0), 0) > 0 ? Math.round((houses.reduce((acc, h) => acc + (h.occupiedRooms || 0), 0) / houses.reduce((acc, h) => acc + (h.totalRooms || 0), 0)) * 100) : 0}%
           </div>
           <div className="text-xs text-emerald-600 font-semibold mt-1">Hiệu suất khai thác cao</div>
         </div>
@@ -354,8 +397,25 @@ export default function BoardingHousesPage() {
       </div>
 
       {/* Chain Houses Cards Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {filtered.map((house, idx) => {
+      {filtered.length === 0 ? (
+        <div className="text-center py-16 px-4 bg-white rounded-3xl border border-dashed border-slate-300 shadow-xs">
+          <div className="w-16 h-16 bg-gradient-to-tr from-purple-100 to-indigo-100 text-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-inner">
+            <Building2 className="w-8 h-8" />
+          </div>
+          <h3 className="text-lg font-bold text-slate-800">Chưa có cơ sở nhà trọ nào</h3>
+          <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 mb-5">
+            Hệ thống đang ở chế độ làm sạch (Sandbox 0). Bạn có thể bấm nút bên dưới để tạo cơ sở tòa nhà trọ đầu tiên (CS-01, CS-02...) và bắt đầu quản lý!
+          </p>
+          <button
+            onClick={() => setShowModal(true)}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-600/25 transition-all btn-press cursor-pointer"
+          >
+            <Plus className="w-4 h-4" /> Thêm Cơ Sở Nhà Trọ
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {filtered.map((house, idx) => {
           const occupancyRate = Math.round((house.occupiedRooms / house.totalRooms) * 100);
           const houseImg = house.code === 'CS-03' ? '/assets/images/house_dong_da.jpg' : '/assets/images/house_cau_giay.jpg';
 
@@ -375,10 +435,23 @@ export default function BoardingHousesPage() {
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-transparent to-black/20 pointer-events-none" />
 
-                  <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5">
+                  <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 flex-wrap">
                     <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase bg-purple-600/90 text-white backdrop-blur-md border border-white/20 shadow-md">
                       {house.code}
                     </span>
+                    {house.status === 'PENDING_APPROVAL' ? (
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase bg-amber-500 text-white backdrop-blur-md border border-white/20 shadow-md animate-pulse flex items-center gap-1">
+                        <Clock className="w-3 h-3" /> Chờ Admin Duyệt
+                      </span>
+                    ) : house.status === 'LOCKED' ? (
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase bg-rose-600 text-white backdrop-blur-md border border-white/20 shadow-md">
+                        Đã Khóa
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase bg-emerald-600 text-white backdrop-blur-md border border-white/20 shadow-md">
+                        Hoạt Động
+                      </span>
+                    )}
                     {house.isAssignedToStaff && (
                       <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-400 text-slate-950 shadow-md border border-white/40">
                         ⭐ Cơ sở của bạn
@@ -485,8 +558,28 @@ export default function BoardingHousesPage() {
                 </div>
               </div>
 
+              {/* Thông báo cơ sở chờ duyệt cho Chủ trọ */}
+              {house.status === 'PENDING_APPROVAL' && (
+                <div className="mt-3 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-medium flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Cơ sở đang chờ Quản trị viên (Admin) thẩm định giấy tờ & phê duyệt đưa vào hoạt động chính thức.</span>
+                </div>
+              )}
+
               {/* Action */}
-              <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+              <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+                {/* Nút Phê Duyệt / Khóa dành riêng cho ADMIN */}
+                {role === 'ADMIN' && house.status === 'PENDING_APPROVAL' && (
+                  <button
+                    type="button"
+                    onClick={() => handleApproveHouse(house.code)}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 rounded-xl shadow-sm transition btn-press cursor-pointer"
+                    title="Phê duyệt cơ sở nhà trọ đưa vào hoạt động"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Duyệt Cơ Sở Ngay</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -511,7 +604,8 @@ export default function BoardingHousesPage() {
             </div>
           );
         })}
-      </div>
+        </div>
+      )}
 
       {/* Modal Thêm Cơ Sở Nhà Trọ */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} maxWidth="max-w-lg">

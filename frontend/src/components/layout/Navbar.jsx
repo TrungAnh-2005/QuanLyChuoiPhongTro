@@ -575,6 +575,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
 export default function Navbar({ onOpenMobileMenu = () => {} }) {
   const { user, logout, switchRole, tenantRooms } = useAuth();
   const dataContext = useData() || {};
+  const { resetToZeroSandbox, restoreDefaultDemoData } = dataContext;
   const role = user?.role || 'ADMIN';
 
   const formatRooms = (val, defaultVal = '') => {
@@ -815,18 +816,45 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
           </button>
         </div>
 
-        {/* Nút Khôi Phục Gốc - Làm sạch dữ liệu demo */}
+        {/* Nút Reset Về 0 Để Test Từ Đầu */}
         <button
+          type="button"
           onClick={() => {
-            if (window.confirm('Bạn có chắc muốn khôi phục toàn bộ dữ liệu về trạng thái mẫu ban đầu? (Tất cả dữ liệu thử nghiệm trong bộ nhớ tạm sẽ được làm sạch)')) {
-              const keysToRemove = Object.keys(localStorage).filter(k => k.startsWith('rental_'));
-              keysToRemove.forEach(k => localStorage.removeItem(k));
-              sessionStorage.clear();
-              window.location.reload();
+            if (dataContext && dataContext.resetToZeroSandbox) {
+              dataContext.resetToZeroSandbox();
+            } else {
+              try {
+                const keys = Object.keys(localStorage).filter((k) => k.startsWith('rental_'));
+                keys.forEach((k) => localStorage.removeItem(k));
+                localStorage.setItem('rental_is_zero_sandbox', 'true');
+                sessionStorage.clear();
+              } catch {}
+              window.location.href = window.location.href.split('#')[0];
             }
           }}
-          title="Dọn sạch cache và khôi phục dữ liệu ban đầu"
-          className="hidden lg:flex items-center gap-1 px-2.5 py-1.5 text-slate-500 hover:text-purple-700 hover:bg-purple-50 rounded-xl text-xs font-bold transition border border-dashed border-slate-300 hover:border-purple-300 cursor-pointer btn-press"
+          title="Đưa toàn bộ hệ thống về 0 để test từ đầu (Khách 1 & 2 thành khách mới, phòng trống 100%, doanh thu 0, Staff chưa mua gói)"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white rounded-xl text-xs font-black transition-all shadow-md shadow-amber-500/25 cursor-pointer btn-press"
+        >
+          <span>🧪 Reset Về 0 Test</span>
+        </button>
+
+        {/* Nút Khôi Phục Gốc - Làm sạch dữ liệu demo */}
+        <button
+          type="button"
+          onClick={() => {
+            if (dataContext && dataContext.restoreDefaultDemoData) {
+              dataContext.restoreDefaultDemoData();
+            } else {
+              try {
+                const keys = Object.keys(localStorage).filter((k) => k.startsWith('rental_'));
+                keys.forEach((k) => localStorage.removeItem(k));
+                sessionStorage.clear();
+              } catch {}
+              window.location.href = window.location.href.split('#')[0];
+            }
+          }}
+          title="Khôi phục lại dữ liệu mẫu demo ban đầu"
+          className="flex items-center gap-1 px-2.5 py-1.5 text-slate-600 hover:text-purple-700 hover:bg-purple-50 rounded-xl text-xs font-bold transition border border-dashed border-slate-300 hover:border-purple-300 cursor-pointer btn-press"
         >
           <span>🔄 Khôi Phục Gốc</span>
         </button>

@@ -58,13 +58,26 @@ const FACILITIES = [
   { code: 'CS-03', name: 'Nhà Trọ Đống Đa - Cơ Sở 3' }
 ];
 
+const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+
 export default function ReportsPage() {
   const { user } = useAuth();
-  const { rooms = [], invoices = [], landlords = [] } = useData();
+  const { rooms = [], invoices = [], landlords = [], saasInvoices = [] } = useData();
   const role = user?.role || 'ADMIN';
   const isStaff = role === 'STAFF';
   const isAdmin = role === 'ADMIN';
 
+  const totalSaasRevenue = useMemo(() => {
+    return (saasInvoices || [])
+      .filter((i) => i.status === 'PAID')
+      .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+  }, [saasInvoices]);
+
+  const totalGmv = useMemo(() => {
+    return (invoices || [])
+      .filter((i) => i.status === 'PAID')
+      .reduce((sum, i) => sum + (Number(i.total) || 0), 0);
+  }, [invoices]);
   const [selectedFacility, setSelectedFacility] = useState('ALL');
   const [timeRange, setTimeRange] = useState('9_MONTHS');
   const [pdfToast, setPdfToast] = useState(false);
@@ -309,7 +322,15 @@ export default function ReportsPage() {
         <div className="h-80 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
-              data={isAdmin ? saasPlatformData.map((d) => ({ month: d.month, revenue: d.saasFee, profit: d.saasFee * 0.82 })) : yearlyData}
+              data={
+    isZeroSandbox
+      ? yearlyData.map((d, idx) => ({
+          month: d.month,
+          revenue: idx === 8 ? totalGmv / 1000000 : 0,
+          profit: idx === 8 ? totalSaasRevenue / 1000000 : 0
+        }))
+      : (isAdmin ? saasPlatformData.map((d) => ({ month: d.month, revenue: d.saasFee, profit: d.saasFee * 0.82 })) : yearlyData)
+  }
               margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />

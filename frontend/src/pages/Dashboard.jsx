@@ -484,6 +484,25 @@ export default function Dashboard() {
     return (invoices || []).some((inv) => inv.room === myRoomNumber && inv.status !== 'PAID');
   }, [myRoomNumber, invoices]);
 
+  const myActiveContract = useMemo(() => {
+    if (myContract && myContract.status === 'ACTIVE') return myContract;
+    return (
+      contracts.find((c) => c.roomNumber === myRoomNumber && c.status === 'ACTIVE') ||
+      myContract || {
+        id: 'HD-2026-001',
+        contractCode: 'HD-2026-001',
+        roomNumber: myRoomNumber || 'P.101',
+        tenantName: user?.fullName || 'Nguyễn Văn An',
+        status: 'ACTIVE',
+        startDate: '01/01/2026',
+        endDate: '31/12/2026',
+        deposit: 3500000,
+        depositAmount: 3500000,
+        monthlyRent: 3500000
+      }
+    );
+  }, [contracts, myRoomNumber, myContract, user]);
+
   // Kiểm tra xem Hợp đồng hiện tại đã hết hạn chưa
   const isContractExpired = useMemo(() => {
     if (!myActiveContract || !myActiveContract.endDate) return false;
@@ -619,7 +638,7 @@ export default function Dashboard() {
 
   // Danh sách các bạn cùng phòng (ở ghép) - KHÔNG bao gồm chính khách thuê đang đăng nhập
   const roommates = useMemo(() => {
-    const myNameNorm = (currentTenant.fullName || '').toLowerCase().trim();
+    const myNameNorm = (currentTenant?.fullName || user?.fullName || '').toLowerCase().trim();
     const maxCapacity = currentRoomObj?.maxOccupants || 2;
     const maxAllowedRoommates = Math.max(0, maxCapacity - 1);
 
@@ -690,24 +709,7 @@ export default function Dashboard() {
     };
   }, [isTenant, isContractPending, myContract, sepayConfig, payDepositAndSignContract, user]);
 
-  const myActiveContract = useMemo(() => {
-    if (myContract && myContract.status === 'ACTIVE') return myContract;
-    return (
-      contracts.find((c) => c.roomNumber === myRoomNumber && c.status === 'ACTIVE') ||
-      myContract || {
-        id: 'HD-2026-001',
-        contractCode: 'HD-2026-001',
-        roomNumber: myRoomNumber || 'P.101',
-        tenantName: user?.fullName || 'Nguyễn Văn An',
-        status: 'ACTIVE',
-        startDate: '01/01/2026',
-        endDate: '31/12/2026',
-        deposit: 3500000,
-        depositAmount: 3500000,
-        monthlyRent: 3500000
-      }
-    );
-  }, [contracts, myRoomNumber, myContract, user]);
+
 
   const myCurrentInvoice = useMemo(() => {
     if (!myRoomNumber || isContractPending) return null;
@@ -1448,18 +1450,18 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div className="bento-card relative overflow-hidden p-6 sm:p-8 bg-gradient-to-br from-indigo-900 via-slate-900 to-indigo-950 text-white border border-indigo-500/20 shadow-xl">
-          <div className="absolute -right-16 -top-16 w-64 h-64 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
+        <div className="bento-card relative overflow-hidden p-6 sm:p-8 bg-gradient-to-r from-indigo-950 via-slate-900 to-purple-950 text-white border border-indigo-500/30 shadow-2xl">
+          <div className="absolute -right-16 -top-16 w-80 h-80 bg-indigo-500/25 rounded-full blur-3xl pointer-events-none animate-float-slow" />
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="space-y-2">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-indigo-300 text-xs font-semibold backdrop-blur-md border border-white/10">
-                <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/30 text-indigo-200 text-xs font-bold backdrop-blur-md border border-indigo-400/30">
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
                 <span>Chào Mừng Cư Dân Mới</span>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white drop-shadow-sm">
                 Xin chào, {user?.fullName || 'Quý khách'}!
               </h1>
-              <p className="text-slate-300 text-xs sm:text-sm max-w-xl leading-relaxed">
+              <p className="text-indigo-100 text-xs sm:text-sm max-w-xl leading-relaxed">
                 Tài khoản của bạn đã được khởi tạo thành công trên hệ thống. Hiện tại chưa có hợp đồng phòng nào liên kết trực tiếp với tài khoản này.
               </p>
             </div>
@@ -1500,7 +1502,7 @@ export default function Dashboard() {
             </div>
             <div className="bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200/60">
               <div className="text-slate-400 text-[11px] font-medium">Quê quán</div>
-              <div className="font-bold text-slate-900 mt-1">Thanh Hóa</div>
+              <div className="font-bold text-slate-900 mt-1">{currentTenant?.hometown || user?.hometown || 'Nam Định'}</div>
             </div>
           </div>
         </div>
@@ -1879,7 +1881,7 @@ export default function Dashboard() {
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold text-slate-900 text-sm">
-                        {currentTenant.fullName || user?.fullName}
+                        {currentTenant?.fullName || user?.fullName}
                       </span>
                       <span className="status-pill status-pill-indigo">
                         🔑 Đại Diện Ký Hợp Đồng
@@ -1898,19 +1900,19 @@ export default function Dashboard() {
                   <div className="bg-white/90 p-2 rounded-xl border border-slate-200/60">
                     <div className="text-slate-400 text-[10px] font-medium">Số CCCD 12 số</div>
                     <div className="font-mono font-bold text-slate-800 mt-0.5">
-                      {currentTenant.cccd ? currentTenant.cccd.slice(0, 8) + '****' : '00120101****'}
+                      {currentTenant?.cccd ? currentTenant.cccd.slice(0, 8) + '****' : '00120101****'}
                     </div>
                   </div>
                   <div className="bg-white/90 p-2 rounded-xl border border-slate-200/60">
                     <div className="text-slate-400 text-[10px] font-medium">Số điện thoại</div>
                     <div className="font-bold text-slate-800 mt-0.5">
-                      {currentTenant.phone || user?.phone || '0987.654.321'}
+                      {currentTenant?.phone || user?.phone || '0987.654.321'}
                     </div>
                   </div>
                   <div className="bg-white/90 p-2 rounded-xl border border-slate-200/60">
                     <div className="text-slate-400 text-[10px] font-medium">Quê quán</div>
                     <div className="font-bold text-slate-800 mt-0.5 truncate">
-                      {currentTenant.hometown || user?.hometown || 'Nam Định'}
+                      {currentTenant?.hometown || user?.hometown || 'Nam Định'}
                     </div>
                   </div>
                 </div>
@@ -2494,13 +2496,14 @@ export default function Dashboard() {
   const occupiedCount = scopedRooms.filter((r) => r.status === 'OCCUPIED').length;
   const availableCount = scopedRooms.filter((r) => r.status === 'AVAILABLE').length;
   const maintenanceCount = scopedRooms.filter((r) => r.status === 'MAINTENANCE').length;
-  const totalRooms = scopedRooms.length || (role === 'STAFF' ? (user?.houseCode === 'CS-02' ? 8 : 12) : 24);
-  const occupancyRate = Math.round((occupiedCount / (totalRooms || 1)) * 100) || 85;
+  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+  const totalRooms = scopedRooms.length;
+  const occupancyRate = totalRooms > 0 ? Math.round((occupiedCount / totalRooms) * 100) : 0;
 
   const roomStatusData = [
-    { name: 'Đang Thuê', value: occupiedCount || 16, color: '#6366f1' },
-    { name: 'Còn Trống', value: availableCount || 6, color: '#10b981' },
-    { name: 'Bảo Trì', value: maintenanceCount || 2, color: '#f59e0b' },
+    { name: 'Đang Thuê', value: occupiedCount, color: '#6366f1' },
+    { name: 'Còn Trống', value: availableCount, color: '#10b981' },
+    { name: 'Bảo Trì', value: maintenanceCount, color: '#f59e0b' },
   ];
 
   const pendingMeterCount = invoices.filter((i) => i.status === 'PENDING_METER').length;
@@ -2607,7 +2610,9 @@ export default function Dashboard() {
           </div>
           <div className="flex items-baseline justify-between">
             <span className="text-3xl font-black text-slate-900 tracking-tight">
-              {tenants.filter((t) => t.status === 'ACTIVE').length || 4}
+              {isZeroSandbox
+                ? tenants.filter((t) => t.status === 'ACTIVE' && (t.room || (t.rooms && t.rooms.length > 0))).length
+                : (tenants.filter((t) => t.status === 'ACTIVE').length || 4)}
             </span>
             <span className="text-xs font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-lg border border-purple-200">
               1 khách - 1 phòng
@@ -2625,7 +2630,13 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex items-baseline justify-between">
-            <span className="text-3xl font-black text-slate-900 font-mono tracking-tight">62.4M</span>
+            <span className="text-3xl font-black text-slate-900 font-mono tracking-tight">
+              {isZeroSandbox
+                ? (invoices.filter((i) => i.status === 'PAID').reduce((s, i) => s + (i.total || 0), 0) > 0
+                    ? (invoices.filter((i) => i.status === 'PAID').reduce((s, i) => s + (i.total || 0), 0) / 1000000).toFixed(1) + 'M'
+                    : '0 ₫')
+                : '62.4M'}
+            </span>
             <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1">
               <ArrowUpRight className="w-3.5 h-3.5" />
               <span>+6.8% MoM</span>

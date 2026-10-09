@@ -27,6 +27,43 @@ const DEFAULT_TICKETS = [
   { id: 4, room: 'P.101', issue: 'Cửa sổ ban công bị kẹt khóa', tenant: 'Nguyễn Văn Khách Thuê', date: '15/09/2026', priority: 'MEDIUM', status: 'RESOLVED' },
 ];
 
+const ZERO_SANDBOX_TENANTS = [
+  {
+    id: 1,
+    fullName: 'Nguyễn Văn An',
+    cccd: '001201012345',
+    phone: '0987.654.321',
+    email: 'an.nguyen@rental.vn',
+    hometown: 'Nam Định',
+    room: null,
+    rooms: [],
+    houseCode: null,
+    houseName: null,
+    contractStart: null,
+    contractEnd: null,
+    deposit: 0,
+    status: 'WAITING_ROOM',
+    daysSinceLeave: 0
+  },
+  {
+    id: 2,
+    fullName: 'Phạm Minh Cường',
+    cccd: '034203034567',
+    phone: '0912.888.999',
+    email: 'cuong.pm@gmail.com',
+    hometown: 'Hải Phòng',
+    room: null,
+    rooms: [],
+    houseCode: null,
+    houseName: null,
+    contractStart: null,
+    contractEnd: null,
+    deposit: 0,
+    status: 'WAITING_ROOM',
+    daysSinceLeave: 0
+  }
+];
+
 const DEFAULT_TENANTS = [
   {
     id: 1,
@@ -732,7 +769,10 @@ export const DEFAULT_LANDLORD_PROFILES = [
   }
 ];
 
+const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+
 export const DataProvider = ({ children }) => {
+  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
   const auth = useAuth();
   const updateTenantRoom = auth?.updateTenantRoom;
 
@@ -752,10 +792,10 @@ export const DataProvider = ({ children }) => {
       if (saved) return JSON.parse(saved);
       const m09 = localStorage.getItem('rental_meters')
         ? JSON.parse(localStorage.getItem('rental_meters'))
-        : DEFAULT_METERS;
+        : (isZeroSandbox ? [] : DEFAULT_METERS);
       return { '2026-09': m09 };
     } catch {
-      return { '2026-09': DEFAULT_METERS };
+      return { '2026-09': isZeroSandbox ? [] : DEFAULT_METERS };
     }
   });
 
@@ -766,10 +806,10 @@ export const DataProvider = ({ children }) => {
       if (saved) return JSON.parse(saved);
       const inv09 = localStorage.getItem('rental_invoices')
         ? JSON.parse(localStorage.getItem('rental_invoices'))
-        : DEFAULT_INVOICES;
+        : (isZeroSandbox ? [] : DEFAULT_INVOICES);
       return { '2026-09': inv09 };
     } catch {
-      return { '2026-09': DEFAULT_INVOICES };
+      return { '2026-09': isZeroSandbox ? [] : DEFAULT_INVOICES };
     }
   });
 
@@ -1085,20 +1125,23 @@ export const DataProvider = ({ children }) => {
   const [tickets, setTickets] = useState(() => {
     try {
       const saved = localStorage.getItem('rental_tickets');
-      return saved ? JSON.parse(saved) : DEFAULT_TICKETS;
+      return saved ? JSON.parse(saved) : (isZeroSandbox ? [] : DEFAULT_TICKETS);
     } catch {
-      return DEFAULT_TICKETS;
+      return isZeroSandbox ? [] : DEFAULT_TICKETS;
     }
   });
 
   // Tenants (Khách thuê)
   const [tenants, setTenants] = useState(() => {
-    let list = DEFAULT_TENANTS;
+    let list = isZeroSandbox ? ZERO_SANDBOX_TENANTS : DEFAULT_TENANTS;
     try {
       const saved = localStorage.getItem('rental_tenants');
       if (saved) list = JSON.parse(saved);
+      else if (isZeroSandbox) {
+        list = ZERO_SANDBOX_TENANTS;
+      }
     } catch {
-      list = DEFAULT_TENANTS;
+      list = isZeroSandbox ? ZERO_SANDBOX_TENANTS : DEFAULT_TENANTS;
     }
 
     // Tự động đồng bộ khách thuê đã được duyệt đơn (rental_room_requests)
@@ -1159,12 +1202,15 @@ export const DataProvider = ({ children }) => {
 
   // Rooms
   const [rooms, setRooms] = useState(() => {
-    let list = ALL_ROOMS;
+    let list = isZeroSandbox ? [] : ALL_ROOMS;
     try {
       const saved = localStorage.getItem('rental_rooms');
       if (saved) list = JSON.parse(saved);
+      else if (isZeroSandbox) {
+        list = [];
+      }
     } catch {
-      list = ALL_ROOMS;
+      list = isZeroSandbox ? [] : ALL_ROOMS;
     }
 
     // Tự động cập nhật số người dựa trên rental_room_members và rental_room_requests
@@ -1214,9 +1260,9 @@ export const DataProvider = ({ children }) => {
           });
         }
       }
-      return DEFAULT_ROOM_REQUESTS;
+      return isZeroSandbox ? [] : DEFAULT_ROOM_REQUESTS;
     } catch {
-      return DEFAULT_ROOM_REQUESTS;
+      return isZeroSandbox ? [] : DEFAULT_ROOM_REQUESTS;
     }
   });
 
@@ -1290,7 +1336,7 @@ export const DataProvider = ({ children }) => {
   // HÓA ĐƠN & BÁO PHÍ GỬI KHÁCH THUÊ:
   // QUY TẮC BẮT BUỘC: "Những phòng đã chốt tiền điện nước mới gửi thanh toán tiền phòng đến khách hàng, chưa chốt chưa gửi"
   const invoices = useMemo(() => {
-    const rawInvoices = invoicesHistory[billingMonth] || DEFAULT_INVOICES;
+    const rawInvoices = invoicesHistory[billingMonth] || (isZeroSandbox ? [] : DEFAULT_INVOICES);
     return rawInvoices.map((inv) => {
       // Tìm số liệu công tơ của phòng này trong meters
       const meter = meters.find(
@@ -2781,6 +2827,15 @@ export const DataProvider = ({ children }) => {
     };
   };
 
+  // 7B. Delete room (Staff or Admin)
+  const deleteRoom = (roomId) => {
+    setRooms((prev) => {
+      const next = prev.filter((r) => r.id !== roomId && r.number !== roomId);
+      try { localStorage.setItem('rental_rooms', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
   // 7. Add new room (Staff or Admin)
   const addRoom = (roomData) => {
     const newRoomEntry = {
@@ -2801,7 +2856,11 @@ export const DataProvider = ({ children }) => {
       status: roomData.status || 'AVAILABLE',
       amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh']
     };
-    setRooms((prev) => [newRoomEntry, ...prev]);
+    setRooms((prev) => {
+      const next = [newRoomEntry, ...prev];
+      try { localStorage.setItem('rental_rooms', JSON.stringify(next)); } catch {}
+      return next;
+    });
 
     // Đồng bộ ngay vào bảng chỉ số điện nước (metersHistory) của tất cả các kỳ
     setMetersHistory((prev) => {
@@ -2917,19 +2976,23 @@ export const DataProvider = ({ children }) => {
   const [saasInvoices, setSaasInvoices] = useState(() => {
     try {
       const s = localStorage.getItem('rental_saas_invoices');
-      const list = s ? JSON.parse(s) : DEFAULT_SAAS_INVOICES;
-      return list.map((inv) => {
-        if (inv.code === 'HD-SAAS-2026-02' || inv.id === 'SAAS-2026-002') {
-          return {
-            ...inv,
-            amount: 2000,
-            providerBank: '35825112005 - MBBank (ĐÀM TRUNG ANH)'
-          };
-        }
-        return inv;
-      });
-    } catch {
+      if (s) {
+        const list = JSON.parse(s);
+        return list.map((inv) => {
+          if (inv.code === 'HD-SAAS-2026-02' || inv.id === 'SAAS-2026-002') {
+            return {
+              ...inv,
+              amount: 2000,
+              providerBank: '35825112005 - MBBank (ĐÀM TRUNG ANH)'
+            };
+          }
+          return inv;
+        });
+      }
+      if (isZeroSandbox) return [];
       return DEFAULT_SAAS_INVOICES;
+    } catch {
+      return isZeroSandbox ? [] : DEFAULT_SAAS_INVOICES;
     }
   });
 
@@ -3036,9 +3099,44 @@ export const DataProvider = ({ children }) => {
   const [landlords, setLandlords] = useState(() => {
     try {
       const s = localStorage.getItem('rental_landlords');
-      return s ? JSON.parse(s) : DEFAULT_LANDLORDS;
-    } catch {
+      if (s) return JSON.parse(s);
+      if (isZeroSandbox) {
+        return [
+          {
+            id: 1,
+            username: 'staff',
+            fullName: 'Lê Thị Thu Ngân (Chủ trọ CS1)',
+            email: 'staff@rental.vn',
+            phone: '0912.888.666',
+            role: 'STAFF',
+            status: 'TRIAL',
+            subscriptionPackage: 'Chưa Đăng Ký Gói (Hết Hạn / Dùng Thử)',
+            packageCode: 'NONE',
+            housesCount: 0,
+            roomsCount: 0,
+            maxHousesLimit: 1,
+            createdAt: '01/01/2026'
+          },
+          {
+            id: 2,
+            username: 'staff2',
+            fullName: 'Đàm Văn Táo (Staff CS2 - Bách Khoa)',
+            email: 'staff2@rental.vn',
+            phone: '0988.777.999',
+            role: 'STAFF',
+            status: 'TRIAL',
+            subscriptionPackage: 'Chưa Đăng Ký Gói (Hết Hạn / Dùng Thử)',
+            packageCode: 'NONE',
+            housesCount: 0,
+            roomsCount: 0,
+            maxHousesLimit: 1,
+            createdAt: '15/02/2026'
+          }
+        ];
+      }
       return DEFAULT_LANDLORDS;
+    } catch {
+      return isZeroSandbox ? [] : DEFAULT_LANDLORDS;
     }
   });
 
@@ -3355,12 +3453,13 @@ export const DataProvider = ({ children }) => {
 
   // 4. Quản lý thành viên cùng phòng room_members (UC-T05 & UC-S02)
   const [roomMembers, setRoomMembers] = useState(() => {
-    let list = DEFAULT_ROOM_MEMBERS;
+    let list = isZeroSandbox ? [] : DEFAULT_ROOM_MEMBERS;
     try {
       const s = localStorage.getItem('rental_room_members');
       if (s) list = JSON.parse(s);
+      else if (isZeroSandbox) list = [];
     } catch {
-      list = DEFAULT_ROOM_MEMBERS;
+      list = isZeroSandbox ? [] : DEFAULT_ROOM_MEMBERS;
     }
     // Lọc bỏ triệt để thành viên ảo Nguyễn Văn Bình khỏi P.101
     list = list.filter((m) => !(m.roomNumber === 'P.101' && (m.fullName || '').includes('Bình')));
@@ -3630,9 +3729,9 @@ export const DataProvider = ({ children }) => {
           return c;
         });
       }
-      return DEFAULT_CONTRACTS;
+      return isZeroSandbox ? [] : DEFAULT_CONTRACTS;
     } catch {
-      return DEFAULT_CONTRACTS;
+      return isZeroSandbox ? [] : DEFAULT_CONTRACTS;
     }
   });
 
@@ -4406,9 +4505,63 @@ export const DataProvider = ({ children }) => {
     });
   };
 
+  // =========================================================================
+  // HÀM RESET TOÀN BỘ HỆ THỐNG VỀ 0 (ZERO SANDBOX) & KHÔI PHỤC DỮ LIỆU GỐC
+  // =========================================================================
+  const resetToZeroSandbox = () => {
+    try {
+      const keys = Object.keys(localStorage).filter((k) => k.startsWith('rental_'));
+      keys.forEach((k) => localStorage.removeItem(k));
+      localStorage.setItem('rental_is_zero_sandbox', 'true');
+      sessionStorage.clear();
+    } catch {}
+
+    setRooms([]);
+    setTenants(ZERO_SANDBOX_TENANTS);
+    setContracts([]);
+    setSaasInvoices([]);
+    setInvoicesHistory({ [billingMonth]: [] });
+    setMetersHistory({ [billingMonth]: [] });
+    setRoomRequests([]);
+    setRoomMembers([]);
+    setTickets([]);
+    setSystemNotices([]);
+    setRoomPaymentNotices([]);
+    setRoommateLeaveNotices([]);
+
+    if (typeof window !== 'undefined') {
+      window.location.href = window.location.href.split('#')[0];
+    }
+  };
+
+  const restoreDefaultDemoData = () => {
+    try {
+      const keys = Object.keys(localStorage).filter((k) => k.startsWith('rental_'));
+      keys.forEach((k) => localStorage.removeItem(k));
+      sessionStorage.clear();
+    } catch {}
+
+    setRooms(ALL_ROOMS);
+    setTenants(DEFAULT_TENANTS);
+    setContracts(DEFAULT_CONTRACTS);
+    setSaasInvoices(DEFAULT_SAAS_INVOICES);
+    setInvoicesHistory({ '2026-09': DEFAULT_INVOICES });
+    setMetersHistory({ '2026-09': DEFAULT_METERS });
+    setRoomRequests(DEFAULT_ROOM_REQUESTS);
+    setRoomMembers(DEFAULT_ROOM_MEMBERS);
+    setTickets(DEFAULT_TICKETS);
+    setLandlords(DEFAULT_LANDLORDS);
+
+    if (typeof window !== 'undefined') {
+      window.location.href = window.location.href.split('#')[0];
+    }
+  };
+
   return (
     <DataContext.Provider
       value={{
+        resetToZeroSandbox,
+        restoreDefaultDemoData,
         billingMonth,
         switchBillingMonth,
         resetMonthlyPayments,
@@ -4431,6 +4584,7 @@ export const DataProvider = ({ children }) => {
         updateRoomStatus,
         updateRoomPrice,
         addRoom,
+        deleteRoom,
         roomRequests,
         submitRoomRequest,
         cancelRoomHold,

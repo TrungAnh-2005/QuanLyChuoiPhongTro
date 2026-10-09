@@ -33,6 +33,8 @@ import { useData } from '../../contexts/DataContext';
 import Modal from '../../components/common/Modal';
 import CreateLandlordAiModal from './landlords/CreateLandlordAiModal';
 
+const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+
 export default function AdminLandlordsPage() {
   const {
     landlords = [],
@@ -41,7 +43,7 @@ export default function AdminLandlordsPage() {
     updateLandlordPackage,
     landlordProfiles = [],
     verifyLandlordKyc,
-    resetLandlordPassword
+    rooms = []
   } = useData();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -154,7 +156,8 @@ export default function AdminLandlordsPage() {
 
   const activeCount = landlords.filter((l) => l.status === 'ACTIVE').length;
   const lockedCount = landlords.filter((l) => l.status === 'LOCKED').length;
-  const totalFacilities = landlords.reduce((acc, l) => acc + (l.housesCount || 1), 0);
+  const totalFacilities = isZeroSandbox ? 0 : landlords.reduce((acc, l) => acc + (l.housesCount ?? 1), 0);
+  const totalRoomsCount = isZeroSandbox ? 0 : rooms.length;
   const pendingKycCount = landlordProfiles.filter((p) => p.kycStatus === 'PENDING').length;
 
   return (
@@ -245,7 +248,7 @@ export default function AdminLandlordsPage() {
           <div className="flex items-baseline justify-between">
             <div className="text-3xl font-black text-slate-900 tracking-tight">{totalFacilities} cơ sở</div>
             <span className="text-xs font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-lg border border-purple-200">
-              ~40 phòng toàn sàn
+              {totalRoomsCount} phòng toàn sàn
             </span>
           </div>
           <div className="text-xs text-slate-400 pt-1 border-t border-slate-100 flex items-center justify-between">
@@ -264,14 +267,12 @@ export default function AdminLandlordsPage() {
             </div>
           </div>
           <div className="flex items-baseline justify-between">
-            <div className="text-2xl font-black text-slate-900 tracking-tight">PRO & ENTERPRISE</div>
-            <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200">
-              Tự động gia hạn
-            </span>
+            <div className="text-2xl font-black text-slate-900 tracking-tight">{isZeroSandbox ? "CHƯA ĐĂNG KÝ GÓI" : "PRO & ENTERPRISE"}</div>
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-lg border ${isZeroSandbox ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-blue-50 text-blue-600 border-blue-200"}`}>{isZeroSandbox ? "Chưa kích hoạt" : "Tự động gia hạn"}</span>
           </div>
           <div className="text-xs text-slate-400 pt-1 border-t border-slate-100 flex items-center justify-between">
             <span>Hạn mức mở rộng:</span>
-            <span className="text-slate-700 font-semibold">Không giới hạn</span>
+            <span className="text-slate-700 font-semibold">{isZeroSandbox ? "0 cơ sở" : "Không giới hạn"}</span>
           </div>
         </div>
       </div>
@@ -526,11 +527,11 @@ export default function AdminLandlordsPage() {
                       <div className="space-y-1">
                         <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
                           <Building2 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                          <span>{landlord.housesCount || 1} cơ sở</span>
+                          <span>{landlord.housesCount ?? (isZeroSandbox ? 0 : 1)} cơ sở</span>
                         </div>
                         <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                          <span>{landlord.roomsCount || 10} phòng trọ</span>
+                          <span>{landlord.roomsCount ?? (isZeroSandbox ? 0 : 10)} phòng trọ</span>
                         </div>
                       </div>
                     </td>
@@ -539,6 +540,11 @@ export default function AdminLandlordsPage() {
                       {landlord.status === 'ACTIVE' ? (
                         <span className="status-pill status-pill-success">
                           Hoạt Động
+                        </span>
+                      ) : landlord.status === 'TRIAL' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-bold border border-amber-200">
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>Dùng Thử / Chưa Mua Gói</span>
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 text-xs font-bold border border-rose-200">

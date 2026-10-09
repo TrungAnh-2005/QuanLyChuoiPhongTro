@@ -26,10 +26,13 @@ import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import PaymentModal from '../components/payment/PaymentModal';
 import Modal from '../components/common/Modal';
+import BuySaasPackageModal from '../components/staff/BuySaasPackageModal';
+
+const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
 
 export default function InvoicesPage({ forcedTab }) {
   const { user, tenantRooms } = useAuth();
-  const { invoices, payInvoice, tenants, saasInvoices = [], paySaasInvoice, resetSaasInvoiceStatus } = useData();
+  const { invoices, payInvoice, tenants, saasInvoices = [], paySaasInvoice, resetSaasInvoiceStatus, createSaasInvoice, updateLandlordPackage, landlords = [] } = useData();
   const role = user?.role || 'ADMIN';
   const isTenant = role === 'TENANT';
 
@@ -42,6 +45,57 @@ export default function InvoicesPage({ forcedTab }) {
   const [selectedSaasInvoice, setSelectedSaasInvoice] = useState(null);
   const [payingSaasInvoice, setPayingSaasInvoice] = useState(null);
   const [saasPaySimulated, setSaasPaySimulated] = useState(false);
+  const [showBuyPackageModal, setShowBuyPackageModal] = useState(false);
+
+  // Xác định hồ sơ Chủ trọ hiện tại
+  const currentLandlord = useMemo(() => {
+    if (!user) return null;
+    return (landlords || []).find(
+      (l) =>
+        l.username === user.username ||
+        (l.phone && user.phone && l.phone.replace(/\D/g, '') === user.phone.replace(/\D/g, '')) ||
+        (l.email && user.email && l.email.toLowerCase() === user.email.toLowerCase())
+    ) || (landlords && landlords.length > 0 ? landlords[0] : null);
+  }, [user, landlords]);
+
+  const landlordPackageCode = currentLandlord?.packageCode || (isZeroSandbox ? 'NONE' : 'PRO');
+  const isTrialOrNone = landlordPackageCode === 'NONE' || currentLandlord?.status === 'TRIAL';
+
+  // Xử lý xác nhận mua gói từ BuySaasPackageModal
+  const handleConfirmPurchase = (planData) => {
+    setShowBuyPackageModal(false);
+    const newInv = {
+      id: `SAAS-${Date.now()}`,
+      code: `HD-SAAS-2026-${String(saasInvoices.length + 1).padStart(2, '0')}`,
+      landlordId: currentLandlord?.id || 1,
+      landlordName: currentLandlord?.fullName || user?.fullName || 'Lê Thị Thu Ngân (Chủ trọ CS1)',
+      landlordPhone: currentLandlord?.phone || user?.phone || '0912.888.666',
+      packageName: planData.packageName,
+      packageCode: planData.packageCode,
+      billingCycle: planData.billingCycle,
+      period: `${new Date().toLocaleDateString('vi-VN')} - ${new Date(Date.now() + planData.months * 30 * 86400000).toLocaleDateString('vi-VN')}`,
+      amount: planData.amount,
+      dueDate: new Date(Date.now() + 7 * 86400000).toLocaleDateString('vi-VN'),
+      status: 'UNPAID'
+    };
+
+    if (createSaasInvoice) {
+      createSaasInvoice(newInv);
+    }
+
+    if (updateLandlordPackage) {
+      updateLandlordPackage(currentLandlord?.id || 1, planData.packageCode);
+    }
+
+    // Mở modal thanh toán ngay để nộp cước
+    setPayingSaasInvoice(newInv);
+
+    setBatchSentToast({
+      success: true,
+      message: `Đã tạo hóa đơn mua ${planData.packageName}! Vui lòng nộp cước qua VietQR / VNPay / MoMo để hoàn tất.`
+    });
+    setTimeout(() => setBatchSentToast(null), 5000);
+  };
 
   // Lấy hồ sơ khách thuê hiện tại từ danh bạ tenants
   const currentTenant = (tenants || []).find((t) => {
@@ -171,6 +225,7 @@ export default function InvoicesPage({ forcedTab }) {
     setSaasPaySimulated(true);
     setTimeout(() => {
       paySaasInvoice(saasInv.id, 'VietQR Cổng Nền Tảng Web (Admin)');
+      if (updateLandlordPackage) { updateLandlordPackage(saasInv.landlordId || currentLandlord?.id || 1, saasInv.packageCode || 'PRO'); }
       setSaasPaySimulated(false);
       setPayingSaasInvoice(null);
       setBatchSentToast({
@@ -254,13 +309,19 @@ export default function InvoicesPage({ forcedTab }) {
                   <span>Bản Quyền Nền Tảng Quản Lý Chuỗi Trọ • B2B SaaS Subscription</span>
                 </div>
                 <h2 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-3">
-                  <span>Gói Chuyên Nghiệp (PRO)</span>
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                    Đang hoạt động (ACTIVE)
+                  <span>{isZeroSandbox ? 'Chưa Đăng Ký Gói Cước SaaS' : 'Gói Chuyên Nghiệp (PRO)'}</span>
+                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                    isZeroSandbox
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                      : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  }`}>
+                    {isZeroSandbox ? 'Dùng Thử / Chưa Kích Hoạt (TRIAL)' : 'Đang hoạt động (ACTIVE)'}
                   </span>
                 </h2>
                 <p className="text-purple-200 text-xs sm:text-sm max-w-2xl leading-relaxed">
-                  Quyền lợi tài khoản: Quản lý không giới hạn cơ sở, Quota 100 phòng trọ, AI Vision OCR nhận diện đồng hồ điện nước, Cổng VietQR tự động gạch nợ 24/7 và ký Hợp đồng điện tử.
+                  {isZeroSandbox
+                    ? 'Tài khoản chưa đăng ký gói dịch vụ. Hãy chọn một gói dịch vụ từ Admin để mở rộng hạn mức quản lý cơ sở và phòng trọ.'
+                    : 'Quyền lợi tài khoản: Quản lý không giới hạn cơ sở, Quota 100 phòng trọ, AI Vision OCR nhận diện đồng hồ điện nước, Cổng VietQR tự động gạch nợ 24/7 và ký Hợp đồng điện tử.'}
                 </p>
                 <div className="flex flex-wrap gap-4 text-xs text-purple-200/90 pt-1 font-mono">
                   <div>Hạn bản quyền: <strong className="text-white">31/12/2026</strong></div>
@@ -272,12 +333,58 @@ export default function InvoicesPage({ forcedTab }) {
               <div className="flex flex-col sm:flex-row lg:flex-col gap-3 shrink-0">
                 <div className="bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/15 text-center">
                   <div className="text-[11px] text-purple-200 uppercase font-bold tracking-wider">Cước Phí Duy Trì</div>
-                  <div className="text-2xl font-black text-amber-300 mt-0.5">499.000 đ<span className="text-xs font-normal text-purple-200">/tháng</span></div>
+                  <div className="text-2xl font-black text-amber-300 mt-0.5">
+                    {currentLandlord?.packageCode === 'ENTERPRISE'
+                      ? '999.000 đ'
+                      : currentLandlord?.packageCode === 'PRO'
+                      ? '499.000 đ'
+                      : currentLandlord?.packageCode === 'BASIC'
+                      ? '199.000 đ'
+                      : '0 đ'}
+                    <span className="text-xs font-normal text-purple-200">/tháng</span>
+                  </div>
                   <div className="text-[10px] text-purple-300 mt-1">Chu kỳ thanh toán linh hoạt</div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowBuyPackageModal(true)}
+                  className="btn-press btn-shimmer px-4 py-3 bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-slate-950 font-black text-xs sm:text-sm rounded-xl shadow-lg shadow-amber-500/25 flex items-center justify-center gap-2 cursor-pointer transition-all"
+                >
+                  <Sparkles className="w-4 h-4 text-slate-950" />
+                  <span>{isTrialOrNone ? '⚡ Mua Gói Bản Quyền SaaS' : '✨ Nâng Cấp / Đổi Gói'}</span>
+                </button>
               </div>
             </div>
           </div>
+
+          {/* CTA Banner Khuyến Khích Mua Gói nếu chưa mua hoặc đang dùng thử */}
+          {isTrialOrNone && (
+            <div className="bento-card p-6 bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-indigo-500/10 border-2 border-amber-300/80 rounded-3xl flex flex-col md:flex-row items-start md:items-center justify-between gap-5 shadow-sm">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-400 text-slate-950">
+                    Ưu Đãi Bản Quyền 🎁
+                  </span>
+                  <span className="text-xs font-bold text-amber-800">Tài khoản chưa đăng ký gói cước</span>
+                </div>
+                <h3 className="text-lg font-black text-slate-900">
+                  Kích Hoạt Gói Bản Quyền SaaS Để Mở Rộng Cơ Sở & Tự Động Hóa
+                </h3>
+                <p className="text-xs text-slate-600 max-w-xl">
+                  Gói cước giúp bạn quản lý không giới hạn cơ sở nhà trọ, kết nối VietQR tự động gạch nợ 24/7, xuất hóa đơn VAT và ký Hợp đồng điện tử.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBuyPackageModal(true)}
+                className="btn-press btn-shimmer px-5 py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black text-xs sm:text-sm rounded-2xl shadow-lg shadow-amber-500/25 flex items-center gap-2 cursor-pointer shrink-0"
+              >
+                <Sparkles className="w-4 h-4 text-slate-950" />
+                <span>Xem Bảng Giá & Mua Gói Ngay</span>
+              </button>
+            </div>
+          )}
 
           {/* Bảng danh sách hóa đơn SaaS đóng cho Web */}
           <div className="bento-card overflow-hidden">
@@ -307,7 +414,18 @@ export default function InvoicesPage({ forcedTab }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                  {saasInvoices.map((inv) => (
+                  {saasInvoices.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" className="py-12 text-center text-slate-400">
+                        <div className="space-y-2">
+                          <FileText className="w-10 h-10 mx-auto text-slate-300" />
+                          <p className="font-bold text-slate-600">Chưa có hóa đơn cước SaaS nào</p>
+                          <p className="text-xs text-slate-400">Tài khoản đang trong giai đoạn dùng thử / chưa phát sinh kỳ cước nộp cho Admin</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    saasInvoices.map((inv) => (
                     <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-4 px-5">
                         <div className="font-mono font-bold text-purple-700 text-sm">{inv.code}</div>
@@ -408,7 +526,7 @@ export default function InvoicesPage({ forcedTab }) {
                         )}
                       </td>
                     </tr>
-                  ))}
+                  )))}
                 </tbody>
               </table>
             </div>
@@ -822,6 +940,14 @@ export default function InvoicesPage({ forcedTab }) {
           </div>
         )}
       </Modal>
+
+      {/* Modal Mua Gói Bản Quyền SaaS Dành Cho Chủ Trọ */}
+      <BuySaasPackageModal
+        isOpen={showBuyPackageModal}
+        onClose={() => setShowBuyPackageModal(false)}
+        currentLandlord={currentLandlord}
+        onConfirmPurchase={handleConfirmPurchase}
+      />
 
       {/* Modal Quét VietQR Thanh Toán Hóa Đơn Gói Cho Web Admin */}
       <Modal isOpen={!!payingSaasInvoice} onClose={() => setPayingSaasInvoice(null)} maxWidth="max-w-md">

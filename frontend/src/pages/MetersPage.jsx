@@ -55,7 +55,8 @@ export default function MetersPage() {
     invoices = [],
     tenants = [],
     meterDisputes = [],
-    submitMeterDispute
+    submitMeterDispute,
+    contracts = []
   } = useData();
 
   const [showAiScanner, setShowAiScanner] = useState(false);
@@ -289,18 +290,35 @@ export default function MetersPage() {
     return Array.from(roomsSet);
   }, [isTenant, currentTenant, user, tenantRooms]);
 
+  // Tìm hợp đồng thuê có hiệu lực của khách thuê hiện tại
+  const activeContract = useMemo(() => {
+    if (!user || !contracts) return null;
+    const userName = (user.fullName || '').toLowerCase();
+    const userPhone = (user.phone || '').replace(/\D/g, '');
+    return (contracts || []).find((c) => {
+      const cTenant = (c.tenantName || '').toLowerCase();
+      const cPhone = (c.tenantPhone || '').replace(/\D/g, '');
+      const matchName = cTenant && userName && (cTenant.includes(userName) || userName.includes(cTenant));
+      const matchPhone = userPhone && cPhone && userPhone === cPhone;
+      return (matchName || matchPhone) && (c.status === 'ACTIVE' || c.status === 'APPROVED');
+    });
+  }, [user, contracts]);
+
   // Lấy thông tin phòng của khách thuê đang ở (Chỉ 1 phòng duy nhất theo quy định)
+  // Tuyệt đối không fallback P.101 nếu khách chưa được gán phòng / chưa có hợp đồng
   const myRoomNumber = useMemo(() => {
-    if (!isTenant) return 'P.101';
+    if (!isTenant) return null;
     if (myRentedRooms.length > 0) return myRentedRooms[0];
     const stored = tenantRooms?.[user?.username] || tenantRooms?.[user?.fullName];
     const dynamicRoom = (Array.isArray(stored) && stored.length > 0) ? stored[0] : (typeof stored === 'string' && stored ? stored : null);
     if (dynamicRoom) return dynamicRoom;
-    if (user?.username === 'tenant_new' || user?.fullName?.includes('Nam')) {
+    if (activeContract?.room) return activeContract.room;
+    if (user?.username === 'tenant_new') {
       return null;
     }
-    return user?.room || currentTenant?.room || (user?.rooms && user.rooms[0]) || 'P.101';
-  }, [isTenant, myRentedRooms, tenantRooms, user, currentTenant]);
+    const directRoom = user?.room || currentTenant?.room || (user?.rooms && user.rooms[0]) || (currentTenant?.rooms && currentTenant.rooms[0]);
+    return directRoom || null;
+  }, [isTenant, myRentedRooms, tenantRooms, user, currentTenant, activeContract]);
 
   // Thông tin ngày vào ở từ hồ sơ phòng hoặc thành viên
   const myMemberInfo = useMemo(() => {
@@ -313,7 +331,12 @@ export default function MetersPage() {
     );
   }, [roomMembers, myRoomNumber, user]);
 
-  const joinDateStr = myMemberInfo?.joinDate || currentTenant?.joinDate || '01/01/2026';
+  const joinDateStr = useMemo(() => {
+    if (activeContract?.startDate) return activeContract.startDate;
+    if (myMemberInfo?.joinDate) return myMemberInfo.joinDate;
+    if (currentTenant?.joinDate) return currentTenant.joinDate;
+    return '01/' + (billingMonth ? billingMonth.split('-')[1] + '/' + billingMonth.split('-')[0] : '09/2026');
+  }, [activeContract, myMemberInfo, currentTenant, billingMonth]);
 
   // Tính toán lịch sử chỉ số điện nước từng tháng từ khi vào ở đến nay
   const tenantMonthlyHistory = useMemo(() => {
@@ -348,9 +371,10 @@ export default function MetersPage() {
     const currentYear = 2026;
     const currentMonthNum = parseInt((billingMonth || '2026-09').split('-')[1], 10) || 9;
 
-    // Sinh danh sách các tháng từ tháng hiện tại lùi về tháng vào ở
+    // Sinh danh sách các tháng từ tháng hiện tại lùi về tháng vào ở (không sinh tháng trước khi vào)
     const monthsList = [];
-    for (let m = currentMonthNum; m >= startMonthNum; m--) {
+    const minMonth = Math.min(Math.max(1, startMonthNum), currentMonthNum);
+    for (let m = currentMonthNum; m >= minMonth; m--) {
       const monthKey = `${currentYear}-${String(m).padStart(2, '0')}`;
       monthsList.push({
         monthKey,

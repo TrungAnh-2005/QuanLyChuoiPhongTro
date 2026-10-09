@@ -3,6 +3,8 @@ import api from '../services/api';
 
 const AuthContext = createContext(null);
 
+const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+
 const DEMO_USERS = {
   ADMIN: {
     username: 'admin',
@@ -46,8 +48,8 @@ const DEMO_USERS = {
     fullName: 'Nguyễn Văn An',
     email: 'an.nguyen@rental.vn',
     phone: '0987.654.321',
-    room: 'P.101',
-    rooms: ['P.101'],
+    room: isZeroSandbox ? null : 'P.101',
+    rooms: isZeroSandbox ? [] : ['P.101'],
     role: 'TENANT',
     token: 'demo-tenant-token'
   },
@@ -56,8 +58,8 @@ const DEMO_USERS = {
     fullName: 'Nguyễn Văn An',
     email: 'an.nguyen@rental.vn',
     phone: '0987.654.321',
-    room: 'P.101',
-    rooms: ['P.101'],
+    room: isZeroSandbox ? null : 'P.101',
+    rooms: isZeroSandbox ? [] : ['P.101'],
     houseCode: 'CS-01',
     houseName: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
     role: 'TENANT',
@@ -68,8 +70,8 @@ const DEMO_USERS = {
     fullName: 'Phạm Minh Cường',
     email: 'cuong.pham@rental.vn',
     phone: '0912.888.999',
-    room: 'P.103',
-    rooms: ['P.103'],
+    room: isZeroSandbox ? null : 'P.103',
+    rooms: isZeroSandbox ? [] : ['P.103'],
     houseCode: 'CS-01',
     houseName: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
     role: 'TENANT',
@@ -101,14 +103,23 @@ const normalizeRoomList = (val) => {
 };
 
 const getStoredTenantRooms = () => {
-  let res = {
-    tenant1: ['P.101'],
-    'Nguyễn Văn An': ['P.101'],
-    tenant2: ['P.103'],
-    'Phạm Minh Cường': ['P.103'],
-    tenant_new: [],
-    'Hoàng Văn Nam': []
-  };
+  let res = isZeroSandbox
+    ? {
+        tenant1: [],
+        'Nguyễn Văn An': [],
+        tenant2: [],
+        'Phạm Minh Cường': [],
+        tenant_new: [],
+        'Hoàng Văn Nam': []
+      }
+    : {
+        tenant1: ['P.101'],
+        'Nguyễn Văn An': ['P.101'],
+        tenant2: ['P.103'],
+        'Phạm Minh Cường': ['P.103'],
+        tenant_new: [],
+        'Hoàng Văn Nam': []
+      };
   try {
     const s = localStorage.getItem('rental_tenant_rooms');
     if (s) {
@@ -468,6 +479,100 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+
+  const register = async ({ role = 'STAFF', fullName, username, email, phone, password, identityCard = '' }) => {
+    setLoading(true);
+    try {
+      const isLandlord = role === 'STAFF' || role === 'LANDLORD';
+      const actualRole = isLandlord ? 'STAFF' : 'TENANT';
+      const newUserObj = {
+        username: (username || '').trim(),
+        fullName: (fullName || '').trim(),
+        email: (email || '').trim(),
+        phone: (phone || '').trim() || '0900.000.000',
+        role: actualRole,
+        token: 'demo-registered-' + Date.now(),
+        identityCard: (identityCard || '').trim(),
+        houseCode: isLandlord ? null : null,
+        houseName: isLandlord ? null : null,
+        room: null,
+        rooms: [],
+        createdAt: new Date().toISOString()
+      };
+
+      // 1. Lưu mật khẩu vào rental_user_passwords
+      try {
+        const sPwds = localStorage.getItem('rental_user_passwords');
+        const pwds = sPwds ? JSON.parse(sPwds) : {};
+        pwds[newUserObj.username] = password;
+        localStorage.setItem('rental_user_passwords', JSON.stringify(pwds));
+      } catch {}
+
+      // 2. Nếu là Chủ trọ (STAFF/LANDLORD): Đồng bộ vào hồ sơ Admin quản lý
+      if (isLandlord) {
+        try {
+          const sL = localStorage.getItem('rental_landlords');
+          const landlords = sL ? JSON.parse(sL) : [];
+          const newLandlord = {
+            id: Date.now(),
+            code: 'CT-' + String(landlords.length + 1).padStart(2, '0'),
+            fullName: newUserObj.fullName,
+            username: newUserObj.username,
+            email: newUserObj.email,
+            phone: newUserObj.phone,
+            packageCode: 'TRIAL',
+            packageName: 'Gói Dùng Thử 14 Ngày',
+            status: 'PENDING_KYC',
+            isLocked: false,
+            identityCard: identityCard.trim() || 'Chưa cung cấp',
+            totalHouses: 0,
+            totalRooms: 0,
+            activeTenants: 0,
+            registeredDate: new Date().toLocaleDateString('vi-VN')
+          };
+          landlords.unshift(newLandlord);
+          localStorage.setItem('rental_landlords', JSON.stringify(landlords));
+
+          const sP = localStorage.getItem('rental_landlord_profiles');
+          const profiles = sP ? JSON.parse(sP) : [];
+          profiles.unshift({
+            id: newLandlord.id,
+            landlordId: newLandlord.id,
+            fullName: newLandlord.fullName,
+            phone: newLandlord.phone,
+            email: newLandlord.email,
+            identityCard: newLandlord.identityCard,
+            status: 'PENDING',
+            submittedAt: new Date().toISOString()
+          });
+          localStorage.setItem('rental_landlord_profiles', JSON.stringify(profiles));
+        } catch (err) {
+          console.warn('Lỗi lưu landlord profile:', err);
+        }
+      } else {
+        try {
+          const sRooms = localStorage.getItem('rental_tenant_rooms');
+          const tRooms = sRooms ? JSON.parse(sRooms) : {};
+          tRooms[newUserObj.username] = [];
+          tRooms[newUserObj.fullName] = [];
+          localStorage.setItem('rental_tenant_rooms', JSON.stringify(tRooms));
+        } catch {}
+      }
+
+      sessionStorage.setItem('rental_token', newUserObj.token);
+      sessionStorage.setItem('rental_user', JSON.stringify(newUserObj));
+      localStorage.setItem('rental_token', newUserObj.token);
+      localStorage.setItem('rental_user', JSON.stringify(newUserObj));
+      setUser(newUserObj);
+
+      return { success: true, user: newUserObj };
+    } catch (err) {
+      return { success: false, error: err.message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const logout = () => {
     sessionStorage.removeItem('rental_token');
     sessionStorage.removeItem('rental_user');
@@ -477,7 +582,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, switchRole, loading, updateTenantRoom, tenantRooms }}>
+    <AuthContext.Provider value={{ user, login, logout, register, switchRole, loading, updateTenantRoom, tenantRooms }}>
       {children}
     </AuthContext.Provider>
   );

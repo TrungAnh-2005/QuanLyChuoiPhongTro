@@ -217,7 +217,16 @@ export default function AdminSaasInvoicesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-              {filteredInvoices.map((inv) => (
+              {filteredInvoices.length === 0 ? (
+                <tr>
+                  <td colSpan="7" className="py-12 text-center text-slate-400">
+                    <Receipt className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                    <div className="font-bold text-slate-600">Chưa có hóa đơn thu phí SaaS nào</div>
+                    <div className="text-xs text-slate-400 mt-0.5">Bấm nút [+ Xuất Hóa Đơn Cước Mới] ở góc phải để tạo hóa đơn thu phí chủ trọ</div>
+                  </td>
+                </tr>
+              ) : (
+                filteredInvoices.map((inv) => (
                 <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="py-4 px-5">
                     <div className="font-mono font-bold text-purple-700 text-sm">{inv.code}</div>
@@ -304,7 +313,8 @@ export default function AdminSaasInvoicesPage() {
                     )}
                   </td>
                 </tr>
-              ))}
+              ))
+              )}
             </tbody>
           </table>
         </div>

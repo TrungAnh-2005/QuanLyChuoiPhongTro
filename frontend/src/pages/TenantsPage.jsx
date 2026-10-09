@@ -518,19 +518,43 @@ export default function TenantsPage() {
     }));
   };
 
-  const filteredTenants = tenants.filter((t) => {
-    const matchesSearch =
-      t.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.cccd.includes(searchTerm) ||
-      t.phone.includes(searchTerm) ||
-      (t.room && t.room.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (t.rooms && t.rooms.some((r) => r.toLowerCase().includes(searchTerm.toLowerCase())));
+  const staffHouseCode = user?.role === 'STAFF' ? (user.houseCode || 'CS-01') : null;
 
-    if (statusFilter === 'ALL') return matchesSearch;
-    if (statusFilter === 'ACTIVE') return matchesSearch && t.status === 'ACTIVE';
-    if (statusFilter === 'INACTIVE') return matchesSearch && t.status === 'INACTIVE';
-    return matchesSearch;
-  });
+  // Lấy tập hợp khách thuộc phạm vi cơ sở (Tenant Scoping & Multi-tenancy Isolation)
+  // Tuyệt đối không hiển thị khách tự do chưa thuê bất kỳ phòng nào trong danh bạ quản lý của Staff
+  const scopedTenants = useMemo(() => {
+    return (tenants || []).filter((t) => {
+      // 1. Nếu là Staff: chỉ quản lý khách thuộc cơ sở do Staff này phụ trách
+      if (staffHouseCode) {
+        const matchHouse = t.houseCode === staffHouseCode || (t.house && t.house.includes(staffHouseCode));
+        if (!matchHouse) return false;
+      }
+
+      // 2. Chỉ hiển thị khách ĐANG THUÊ hoặc ĐÃ TỪNG THUÊ tại cơ sở này
+      const tenantRoomsList = t.rooms && t.rooms.length > 0 ? t.rooms : (t.room ? [t.room] : []);
+      const hasRoom = tenantRoomsList.length > 0;
+      const isPastTenant = t.status === 'INACTIVE' && (t.daysSinceLeave || 0) > 0;
+
+      // Khách vãng lai / chưa có phòng (WAITING_ROOM) không thuộc cơ sở nào -> không cho Staff xem
+      return hasRoom || isPastTenant;
+    });
+  }, [tenants, staffHouseCode]);
+
+  const filteredTenants = useMemo(() => {
+    return scopedTenants.filter((t) => {
+      const matchesSearch =
+        (t.fullName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (t.cccd || '').includes(searchTerm) ||
+        (t.phone || '').includes(searchTerm) ||
+        (t.room && t.room.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (t.rooms && t.rooms.some((r) => r.toLowerCase().includes(searchTerm.toLowerCase())));
+
+      if (statusFilter === 'ALL') return matchesSearch;
+      if (statusFilter === 'ACTIVE') return matchesSearch && t.status === 'ACTIVE';
+      if (statusFilter === 'INACTIVE') return matchesSearch && t.status === 'INACTIVE';
+      return matchesSearch;
+    });
+  }, [scopedTenants, searchTerm, statusFilter]);
 
   const handleCreateTenant = (e) => {
     e.preventDefault();
@@ -748,7 +772,7 @@ export default function TenantsPage() {
                 : 'text-slate-600 hover:text-purple-700'
             }`}
           >
-            Tất cả ({tenants.length})
+            Tất cả ({scopedTenants.length})
           </button>
           <button
             onClick={() => setStatusFilter('ACTIVE')}
@@ -758,7 +782,7 @@ export default function TenantsPage() {
                 : 'text-slate-600 hover:text-emerald-700'
             }`}
           >
-            Đang thuê ({tenants.filter((t) => t.status === 'ACTIVE').length})
+            Đang thuê ({scopedTenants.filter((t) => t.status === 'ACTIVE').length})
           </button>
           <button
             onClick={() => setStatusFilter('INACTIVE')}
@@ -768,7 +792,7 @@ export default function TenantsPage() {
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Đã trả phòng ({tenants.filter((t) => t.status === 'INACTIVE').length})
+            Đã trả phòng ({scopedTenants.filter((t) => t.status === 'INACTIVE').length})
           </button>
         </div>
       </div>
@@ -851,25 +875,37 @@ export default function TenantsPage() {
 
                       {/* Hạn hợp đồng */}
                       <td className="py-3 px-4 text-slate-600">
-                        <div>
-                          <span className="text-[11px] text-slate-500">Từ:</span>{' '}
-                          <strong>{t.contractStart || t.startDate || '01/01/2026'}</strong>
-                        </div>
-                        <div className="text-[11px] text-slate-400">
-                          Đến: {t.contractEnd || '31/12/2026'}
-                        </div>
+                        {t.contractStart ? (
+                          <div>
+                            <div>
+                              <span className="text-[11px] text-slate-500">Từ:</span>{' '}
+                              <strong>{t.contractStart || t.startDate}</strong>
+                            </div>
+                            <div className="text-[11px] text-slate-400">
+                              Đến: {t.contractEnd || 'Chưa xác định'}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 italic text-[11px]">
+                            Chưa có hợp đồng
+                          </span>
+                        )}
                       </td>
 
                       {/* Trạng thái */}
                       <td className="py-3 px-4 text-center">
-                        {t.status === 'ACTIVE' ? (
+                        {t.status === 'ACTIVE' && roomCount > 0 ? (
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs inline-flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                             <span>Đang Thuê</span>
                           </span>
-                        ) : (
+                        ) : t.status === 'INACTIVE' ? (
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 inline-flex items-center gap-1">
                             <span>Đã rời ({t.daysSinceLeave || 0} ngày)</span>
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 inline-flex items-center gap-1">
+                            <span>Chờ nhận phòng</span>
                           </span>
                         )}
                       </td>

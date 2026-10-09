@@ -23,6 +23,7 @@ import {
   ArrowLeft,
   ChevronRight,
   ShieldCheck,
+  ShieldAlert,
   DollarSign,
   Phone,
   Send,
@@ -47,6 +48,8 @@ import MoveOutSettlementModal from '../components/settlement/MoveOutSettlementMo
 import { ALL_ROOMS, HOUSES_LIST, getRoomImage } from '../data/roomsData';
 export { ALL_ROOMS, HOUSES_LIST };
 
+const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+
 export default function RoomsPage() {
   const { user, tenantRooms } = useAuth();
   const role = user?.role || 'ADMIN';
@@ -60,6 +63,7 @@ export default function RoomsPage() {
     updateRoomStatus,
     updateRoomPrice,
     addRoom,
+    deleteRoom,
     submitRoomRequest,
     cancelRoomHold,
     submitCheckoutRequest,
@@ -86,6 +90,31 @@ export default function RoomsPage() {
     invoices = [],
     payInvoice
   } = useData();
+
+  const dynamicHousesList = useMemo(() => {
+    try {
+      const saved = localStorage.getItem('rental_boarding_houses');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.length > 0) {
+          return [
+            { code: 'ALL', name: 'Tất Cả Các Cơ Sở', totalRooms: (rooms || []).length },
+            ...parsed.map((p) => ({
+              code: p.code,
+              name: p.name,
+              totalRooms: (rooms || []).filter((r) => r.houseCode === p.code).length
+            }))
+          ];
+        }
+      }
+    } catch {}
+    return isZeroSandbox
+      ? [{ code: 'ALL', name: 'Tất Cả Các Cơ Sở', totalRooms: (rooms || []).length }]
+      : (HOUSES_LIST || []).map((h) => ({
+          ...h,
+          totalRooms: h.code === 'ALL' ? (rooms || []).length : (rooms || []).filter((r) => r.houseCode === h.code).length
+        }));
+  }, [rooms]);
   const [selectedHouse, setSelectedHouse] = useState(rawParam);
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -752,9 +781,26 @@ export default function RoomsPage() {
     updateRoomStatus(id, newStatus);
   };
 
+  // Kiểm tra hạn mức gói cước SaaS cho Chủ Trọ khi Thêm Phòng
+  const [quotaExceededModal, setQuotaExceededModal] = useState(false);
+  const { landlords = [] } = useData();
+
+  // Xác định gói cước hiện tại của chủ trọ
+  const currentLandlord = landlords.find(l => l.username === user?.username || l.fullName === user?.fullName) || landlords[0];
+  const landlordPackage = currentLandlord?.packageCode || 'BASIC';
+  const maxRoomsAllowed = landlordPackage === 'ENTERPRISE' ? 99999 : landlordPackage === 'PRO' ? 100 : 30;
+
   const handleCreateRoom = (e) => {
     e.preventDefault();
     if (!newRoom.number) return;
+
+    // Kiểm tra giới hạn số phòng của gói cước
+    if (rooms.length >= maxRoomsAllowed) {
+      setShowModal(false);
+      setQuotaExceededModal(true);
+      return;
+    }
+
     addRoom(newRoom);
     setShowModal(false);
     setNewRoom({
@@ -768,7 +814,7 @@ export default function RoomsPage() {
     });
   };
 
-  const currentHouseInfo = HOUSES_LIST.find(
+  const currentHouseInfo = dynamicHousesList.find(
     (h) =>
       h.code === selectedHouse ||
       (selectedHouse === '1' && h.code === 'CS-01') ||
@@ -1034,10 +1080,26 @@ export default function RoomsPage() {
 
       {/* Grid Danh Sách Phòng */}
       {filteredRooms.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-2xl border border-slate-200">
-          <Home className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-          <p className="text-slate-600 font-bold">Không tìm thấy phòng trọ nào phù hợp</p>
-          <p className="text-xs text-slate-400 mt-1">Thử đổi từ khóa tìm kiếm hoặc bỏ chọn bộ lọc trạng thái</p>
+        <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-slate-300 p-6 shadow-xs">
+          <div className="w-16 h-16 bg-gradient-to-tr from-purple-100 to-indigo-100 text-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-inner">
+            <Home className="w-8 h-8" />
+          </div>
+          <p className="text-slate-800 font-extrabold text-base">
+            {rooms.length === 0 ? 'Chưa có phòng trọ nào trong hệ thống' : 'Không tìm thấy phòng trọ nào phù hợp'}
+          </p>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-5">
+            {rooms.length === 0
+              ? 'Hệ thống đang ở chế độ làm sạch (Sandbox 0). Bạn có thể bấm nút bên dưới để tạo phòng trọ mới từ đầu!'
+              : 'Thử đổi từ khóa tìm kiếm hoặc bỏ chọn bộ lọc trạng thái'}
+          </p>
+          {!isTenant && (
+            <button
+              onClick={() => setShowModal(true)}
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-600/25 transition-all btn-press cursor-pointer"
+            >
+              <Plus className="w-4 h-4" /> Thêm Phòng Trọ Mới
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -1302,6 +1364,10 @@ export default function RoomsPage() {
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} maxWidth="max-w-md">
         <h2 className="text-lg font-bold text-slate-900 mb-4">Thêm Phòng Trọ Mới</h2>
         <form onSubmit={handleCreateRoom} className="space-y-4">
+          <div className="p-2.5 bg-purple-50/70 border border-purple-200/80 rounded-xl flex items-center gap-2 text-xs text-purple-900">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>Phòng mới được kích hoạt ngay - <strong>Không cần Admin duyệt</strong> (Kiểm soát theo gói: {rooms.length}/{maxRoomsAllowed} phòng).</span>
+          </div>
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">Mã / Số phòng</label>
             <input
@@ -1320,11 +1386,19 @@ export default function RoomsPage() {
               onChange={(e) => setNewRoom({ ...newRoom, houseCode: e.target.value })}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-semibold focus:outline-none focus:bg-white focus:border-purple-500"
             >
-              {HOUSES_LIST.filter((h) => h.code !== 'ALL').map((h) => (
-                <option key={h.code} value={h.code}>
-                  {h.name} ({h.code})
-                </option>
-              ))}
+              {dynamicHousesList.filter((h) => h.code !== 'ALL').length > 0 ? (
+                dynamicHousesList.filter((h) => h.code !== 'ALL').map((h) => (
+                  <option key={h.code} value={h.code}>
+                    {h.name} ({h.code})
+                  </option>
+                ))
+              ) : (
+                <>
+                  <option value="CS-01">Nhà Trọ Cầu Giấy - Cơ Sở 1 (CS-01)</option>
+                  <option value="CS-02">Nhà Trọ Bách Khoa - Cơ Sở 2 (CS-02)</option>
+                  <option value="CS-03">Nhà Trọ Đống Đa - Cơ Sở 3 (CS-03)</option>
+                </>
+              )}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -3597,6 +3671,50 @@ export default function RoomsPage() {
         room={rooms.find((r) => r.number === activeSettlementModal?.roomNumber)}
         contract={contracts.find((c) => c.id === activeSettlementModal?.contractId)}
       />
+
+      {/* Modal Cảnh Báo Vượt Hạn Mức Gói Cước SaaS */}
+      <Modal isOpen={quotaExceededModal} onClose={() => setQuotaExceededModal(false)} maxWidth="max-w-md">
+        <div className="text-center p-2">
+          <div className="w-14 h-14 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-inner">
+            <ShieldAlert className="w-8 h-8" />
+          </div>
+          <h3 className="text-lg font-black text-slate-900">Vượt Quá Giới Hạn Gói Cước ({landlordPackage})</h3>
+          <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+            Hệ thống quy định: <strong>Phòng trọ do Chủ trọ toàn quyền thêm & kích hoạt tự do (KHÔNG CẦN ADMIN DUYỆT)</strong>, nhưng phải tuân thủ hạn mức gói cước SaaS đã đăng ký.
+          </p>
+          <div className="my-4 p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs">
+            <div className="flex justify-between py-1">
+              <span className="text-slate-500">Gói cước hiện tại:</span>
+              <span className="font-bold text-purple-700">{landlordPackage}</span>
+            </div>
+            <div className="flex justify-between py-1">
+              <span className="text-slate-500">Hạn mức tối đa:</span>
+              <span className="font-bold text-slate-800">{maxRoomsAllowed} phòng</span>
+            </div>
+            <div className="flex justify-between py-1 border-t border-slate-200 mt-1 pt-1">
+              <span className="text-slate-500">Số phòng hiện tại:</span>
+              <span className="font-black text-rose-600">{rooms.length} / {maxRoomsAllowed} phòng</span>
+            </div>
+          </div>
+          <div className="flex gap-2.5">
+            <button
+              type="button"
+              onClick={() => setQuotaExceededModal(false)}
+              className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
+            >
+              Đóng
+            </button>
+            <Link
+              to="/invoices/saas"
+              className="flex-1 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-purple-600/25 transition text-center flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span>Nâng Cấp Gói Ngay</span>
+            </Link>
+          </div>
+        </div>
+      </Modal>
+
     </div>
   );
 }
