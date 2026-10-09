@@ -130,21 +130,38 @@ const getStoredTenantRooms = () => {
       pReqs.forEach((req) => {
         if (req.status === 'APPROVED' && req.targetRoom && req.tenant) {
           const tNorm = req.tenant.toLowerCase();
-          if (tNorm.includes('nam')) {
-            // Khách 3 (Nam): Chưa thuê phòng nào! Tuyệt đối không gán phòng khi chưa ký hợp đồng & đóng cọc hoàn tất
-            if (!req.depositPaid || req.type === 'ROOMMATE') {
-              return;
+          // NẾU LÀ ĐƠN RỜI PHÒNG HOẶC TRẢ PHÒNG -> PHẢI XÓA PHÒNG KHỎI KHÁCH!
+          if (req.type === 'LEAVE_ROOM' || req.type === 'CHECKOUT') {
+            if (tNorm.includes('an')) {
+              res.tenant1 = [];
+              res['Nguyễn Văn An'] = [];
+            } else if (tNorm.includes('cường')) {
+              res.tenant2 = [];
+              res['Phạm Minh Cường'] = [];
+            } else if (tNorm.includes('nam')) {
+              res.tenant_new = [];
+              res['Hoàng Văn Nam'] = [];
+            } else {
+              res[req.tenant] = [];
             }
-            res.tenant_new = [req.targetRoom];
-            res['Hoàng Văn Nam'] = [req.targetRoom];
-          } else if (tNorm.includes('an')) {
-            res.tenant1 = [req.targetRoom];
-            res['Nguyễn Văn An'] = [req.targetRoom];
-          } else if (tNorm.includes('cường')) {
-            res.tenant2 = [req.targetRoom];
-            res['Phạm Minh Cường'] = [req.targetRoom];
-          } else {
-            res[req.tenant] = [req.targetRoom];
+            return;
+          }
+
+          // Chỉ gán phòng khi là đơn thuê mới hoặc chuyển phòng
+          if (req.type === 'RENT' || req.type === 'NEW_RENT' || req.type === 'TRANSFER') {
+            if (tNorm.includes('nam')) {
+              if (!req.depositPaid && req.type !== 'TRANSFER') return;
+              res.tenant_new = [req.targetRoom];
+              res['Hoàng Văn Nam'] = [req.targetRoom];
+            } else if (tNorm.includes('an')) {
+              res.tenant1 = [req.targetRoom];
+              res['Nguyễn Văn An'] = [req.targetRoom];
+            } else if (tNorm.includes('cường')) {
+              res.tenant2 = [req.targetRoom];
+              res['Phạm Minh Cường'] = [req.targetRoom];
+            } else {
+              res[req.tenant] = [req.targetRoom];
+            }
           }
         }
       });
@@ -182,25 +199,27 @@ export const AuthProvider = ({ children }) => {
     const injectRooms = (u) => {
       if (!u || u.role !== 'TENANT') return u;
       if (u.username === 'tenant2' || u.fullName?.includes('Cường')) {
-        const matched = currentRoomsMap.tenant2 || currentRoomsMap['Phạm Minh Cường'] || ['P.103'];
+        const matched = currentRoomsMap.tenant2 !== undefined ? currentRoomsMap.tenant2 : (currentRoomsMap['Phạm Minh Cường'] !== undefined ? currentRoomsMap['Phạm Minh Cường'] : ['P.103']);
         const roomsList = normalizeRoomList(matched);
+        const hasRooms = roomsList.length > 0;
         return {
           ...u,
-          rooms: roomsList.length > 0 ? roomsList : ['P.103'],
-          room: roomsList[0] || 'P.103',
-          houseCode: 'CS-01',
-          houseName: 'Nhà Trọ Cầu Giấy - Cơ Sở 1'
+          rooms: roomsList,
+          room: hasRooms ? roomsList[0] : null,
+          houseCode: hasRooms ? 'CS-01' : null,
+          houseName: hasRooms ? 'Nhà Trọ Cầu Giấy - Cơ Sở 1' : null
         };
       }
       if (u.username === 'tenant' || u.username === 'tenant1' || u.fullName?.includes('An')) {
-        const matched = currentRoomsMap.tenant1 || currentRoomsMap['Nguyễn Văn An'] || ['P.101'];
+        const matched = currentRoomsMap.tenant1 !== undefined ? currentRoomsMap.tenant1 : (currentRoomsMap['Nguyễn Văn An'] !== undefined ? currentRoomsMap['Nguyễn Văn An'] : ['P.101']);
         const roomsList = normalizeRoomList(matched);
+        const hasRooms = roomsList.length > 0;
         return {
           ...u,
-          rooms: roomsList.length > 0 ? roomsList : ['P.101'],
-          room: roomsList[0] || 'P.101',
-          houseCode: 'CS-01',
-          houseName: 'Nhà Trọ Cầu Giấy - Cơ Sở 1'
+          rooms: roomsList,
+          room: hasRooms ? roomsList[0] : null,
+          houseCode: hasRooms ? 'CS-01' : null,
+          houseName: hasRooms ? 'Nhà Trọ Cầu Giấy - Cơ Sở 1' : null
         };
       }
       if (u.username === 'tenant_new' || u.fullName?.includes('Nam')) {

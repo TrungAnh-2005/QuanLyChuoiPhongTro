@@ -124,6 +124,22 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
       defaultRead: true,
       link: '/admin/system'
     });
+
+    // 5. Đơn đăng ký thuê phòng mới từ khách (Dành cho Chủ trọ / Admin toàn sàn)
+    const pendingRentalForAdmin = (roomRequests || []).filter((r) =>
+      r.status === 'PENDING' || r.status === 'WAITING_ROOMMATES' || r.status === 'ROOMMATES_APPROVED'
+    );
+    pendingRentalForAdmin.forEach((req) => {
+      addNotif({
+        id: `admin-req-${req.id}`,
+        type: 'URGENT',
+        title: `🔑 Đơn thuê mới (${req.houseCode || 'Toàn sàn'}): Phòng ${req.targetRoom}`,
+        desc: `Khách ${req.tenant} gửi đơn đăng ký thuê phòng ${req.targetRoom} tại ${req.house || 'Nhà trọ'}. Vui lòng duyệt hồ sơ để mở cổng nộp cọc.`,
+        time: req.date || 'Hôm nay',
+        defaultRead: false,
+        link: '/rooms'
+      });
+    });
   } else if (role === 'STAFF') {
     // =========================================================================
     // 💼 STAFF: Phân quyền chính xác theo từng cơ sở (CS-01 hoặc CS-02)
@@ -356,7 +372,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
         }
       } else if (req.type === 'CHECKOUT') {
         const isTargetMyRoom = userRooms.includes(req.targetRoom);
-        const isOtherTenant = req.tenant.toLowerCase() !== (fullName || '').toLowerCase();
+        const isOtherTenant = (req.tenant || '').toLowerCase() !== (fullName || '').toLowerCase();
         if (isTargetMyRoom && req.status === 'WAITING_ROOMMATES' && isOtherTenant) {
           addNotif({
             id: `tenant-checkout-vote-${req.id}`,
@@ -372,7 +388,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
 
       // Kiểm tra đơn do chính khách thuê này gửi đi (ví dụ: Khách mới nộp đơn, Khách 1 xin đổi phòng/trả phòng)
       const isMyRequest =
-        req.tenant.toLowerCase().includes((fullName || '').toLowerCase()) ||
+        (req.tenant || '').toLowerCase().includes((fullName || '').toLowerCase()) ||
         (user?.phone && req.phone === user.phone);
 
       if (isMyRequest) {
@@ -406,6 +422,28 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
               time: 'Vừa xong',
               defaultRead: false,
               link: '/rooms'
+            });
+          }
+        } else if (req.type === 'RENT' || req.type === 'NEW_RENT') {
+          if (req.status === 'PENDING') {
+            addNotif({
+              id: `my-rent-req-${req.id}`,
+              type: 'CONTRACT',
+              title: `Đơn đăng ký thuê phòng ${req.targetRoom}`,
+              desc: `Đơn của bạn đang chờ Ban Quản Lý phê duyệt hồ sơ. Cổng nộp tiền cọc sẽ mở sau khi được duyệt.`,
+              time: req.date || 'Hôm nay',
+              defaultRead: false,
+              link: '/rooms'
+            });
+          } else if (req.status === 'APPROVED') {
+            addNotif({
+              id: `my-rent-approved-${req.id}`,
+              type: 'URGENT',
+              title: `🎉 Đơn thuê phòng ${req.targetRoom} đã được duyệt!`,
+              desc: `Quản lý đã phê duyệt hồ sơ của bạn. Cổng nộp tiền cọc SePay và ký hợp đồng giữ chỗ đã mở trong 15 phút. Hãy vào Trang Chủ hoàn tất nhận phòng!`,
+              time: req.approvedAt || 'Vừa xong',
+              defaultRead: false,
+              link: '/'
             });
           }
         } else if (req.type === 'TRANSFER') {

@@ -279,7 +279,7 @@ export default function ReportsPage() {
             <div className="text-2xl font-black text-emerald-700 mt-2">99.98%</div>
             <div className="text-xs text-emerald-600 font-bold mt-1 flex items-center gap-1">
               <ShieldCheck className="w-3.5 h-3.5" />
-              <span>12 Microservices Healthy</span>
+              <span>10 Microservices Healthy</span>
             </div>
           </div>
         </div>

@@ -34,7 +34,8 @@ import {
   Copy,
   Shield,
   ArrowRight,
-  Settings
+  Settings,
+  PieChart as PieChartIcon
 } from 'lucide-react';
 import {
   generateSePayQrUrl,
@@ -113,12 +114,16 @@ export default function Dashboard() {
     rooms = [],
     tenants = [],
     contracts = [],
+    roomRequests = [],
     roomMembers = [],
     resetRoomPaymentStatus,
     signContractElectronically,
     payDepositAndSignContract,
     transferRoom,
     leaveRoom,
+    submitCheckoutRequest,
+    transferContractHolder,
+    voteRoommateRequest,
     cancelRoomHold
   } = useData();
 
@@ -131,6 +136,22 @@ export default function Dashboard() {
   const [payingInvoice, setPayingInvoice] = useState(null);
   const [paySuccessToast, setPaySuccessToast] = useState(null);
   const [copiedGateField, setCopiedGateField] = useState(null);
+  // Modal Rời phòng & Trả phòng dành cho Cổng Khách Thuê
+  const [leaveModal, setLeaveModal] = useState(null);
+  const [leaveReason, setLeaveReason] = useState('');
+  const [agreedForfeitLeave, setAgreedForfeitLeave] = useState(false);
+  const [leaveSuccess, setLeaveSuccess] = useState(false);
+
+  const [checkoutModal, setCheckoutModal] = useState(null);
+  const [checkoutReason, setCheckoutReason] = useState('');
+  const [agreedForfeitDeposit, setAgreedForfeitDeposit] = useState(false);
+  const [checkoutSuccess, setCheckoutSuccess] = useState(false);
+  // Trạng thái chuyển giao Hợp đồng khi Người đại diện rời phòng
+  const [selectedSuccessor, setSelectedSuccessor] = useState('');
+  // Thông tin nhận lại cọc khi trả phòng đúng hạn kết thúc HĐ
+  const [refundBank, setRefundBank] = useState('Vietcombank');
+  const [refundAccountNumber, setRefundAccountNumber] = useState('');
+  const [refundAccountName, setRefundAccountName] = useState('');
 
   // SePay Integration for Deposit & Onboarding Gate
   const [sepayConfig, setSepayConfig] = useState(() => getSePayConfig());
@@ -152,28 +173,100 @@ export default function Dashboard() {
 
 
 
+  // Đơn đăng ký thuê phòng của khách đã được Quản lý/Staff phê duyệt
+  const hasApprovedRentalRequest = useMemo(() => {
+    if (!isTenant) return null;
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    const uPhone = (user?.phone || '').trim();
+    return (roomRequests || []).find((r) =>
+      (r.type === 'RENT' || r.type === 'NEW_RENT') &&
+      r.status === 'APPROVED' &&
+      ((uName && r.tenant?.toLowerCase().includes(uName)) || (uPhone && r.phone === uPhone) || (user?.username === 'tenant_new'))
+    );
+  }, [isTenant, user, roomRequests]);
+
   // Tìm hợp đồng của khách thuê
   const myContract = useMemo(() => {
     if (!isTenant) return null;
     const list = contracts || [];
-    return (
-      list.find((c) => user?.fullName && c.tenantName?.toLowerCase().includes(user.fullName.toLowerCase())) ||
-      list.find((c) => user?.phone && c.tenantPhone === user.phone) ||
-      (user?.username === 'tenant_new' ? list.find((c) => c.contractCode === 'HD-2026-007') : null)
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    const uPhone = (user?.phone || '').trim();
+
+    // 1. Ưu tiên số 1: Hợp đồng PENDING_DEPOSIT hoặc PENDING_SIGN
+    const pendingContract = list.find((c) =>
+      (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN') &&
+      ((uName && c.tenantName?.toLowerCase().includes(uName)) ||
+       (uPhone && c.tenantPhone === uPhone) ||
+       (user?.username === 'tenant_new' && (c.tenantName?.toLowerCase().includes('nam') || c.contractCode === 'HD-2026-007')))
     );
-  }, [contracts, user, isTenant]);
+    if (pendingContract) return pendingContract;
+
+    // 2. Nếu khách có đơn thuê phòng đã được Staff APPROVED, tự động sinh hợp đồng Onboarding nếu chưa có
+    if (hasApprovedRentalRequest) {
+      const matchApproved = list.find((c) =>
+        c.roomNumber === hasApprovedRentalRequest.targetRoom &&
+        ((uName && c.tenantName?.toLowerCase().includes(uName)) || (uPhone && c.tenantPhone === uPhone) || user?.username === 'tenant_new')
+      );
+      if (matchApproved) {
+        return {
+          ...matchApproved,
+          status: matchApproved.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING_DEPOSIT'
+        };
+      }
+
+      const targetRoomObj = (rooms || []).find(r => r.number === hasApprovedRentalRequest.targetRoom);
+      const price = targetRoomObj?.price || 2800000;
+      return {
+        id: Date.now(),
+        contractCode: user?.username === 'tenant_new' ? 'HD-2026-007' : `HD-2026-${String(Date.now()).slice(-4)}`,
+        roomNumber: hasApprovedRentalRequest.targetRoom || 'P.102',
+        houseCode: hasApprovedRentalRequest.houseCode || 'CS-02',
+        houseName: hasApprovedRentalRequest.house || 'Nhà Trọ Bách Khoa - Cơ Sở 2',
+        tenantName: user?.fullName || hasApprovedRentalRequest.tenant || 'Hoàng Văn Nam',
+        tenantPhone: user?.phone || hasApprovedRentalRequest.phone || '0966.123.456',
+        startDate: new Date().toLocaleDateString('vi-VN'),
+        endDate: '31/12/2026',
+        rentalPrice: price,
+        depositAmount: price,
+        status: 'PENDING_DEPOSIT',
+        depositPaid: false,
+        signedElectronically: false,
+        holdingUntil: Date.now() + 15 * 60 * 1000
+      };
+    }
+
+    // 3. Tìm hợp đồng thông thường
+    return (
+      list.find((c) => uName && c.tenantName?.toLowerCase().includes(uName)) ||
+      list.find((c) => uPhone && c.tenantPhone === uPhone) ||
+      (user?.username === 'tenant_new' ? list.find((c) => c.tenantName?.toLowerCase().includes('nam') || c.contractCode === 'HD-2026-007') : null)
+    );
+  }, [contracts, user, isTenant, hasApprovedRentalRequest, rooms]);
 
   // Kiểm tra hợp đồng đang chờ nộp cọc hoặc chờ ký:
-  // Nghiệp vụ: Khách 1 & 2 có HĐ ACTIVE đã nộp cọc không bị chặn; Chỉ chặn khi hợp đồng chưa ACTIVE (PENDING_DEPOSIT / PENDING_SIGN)
+  // Mở Onboarding Gate khi: HĐ có status PENDING_DEPOSIT / PENDING_SIGN HOẶC đơn thuê phòng đã được Staff APPROVED
   const isContractPending = Boolean(
     myContract &&
-    myContract.status !== 'ACTIVE' && (
+    myContract.status !== 'ACTIVE' &&
+    myContract.status !== 'CANCELLED' && (
       myContract.status === 'PENDING_DEPOSIT' ||
       myContract.status === 'PENDING_SIGN' ||
-      !myContract.depositPaid ||
-      !myContract.signedElectronically
-    )
+      Boolean(hasApprovedRentalRequest)
+    ) &&
+    (!myContract.depositPaid || !myContract.signedElectronically)
   );
+
+  // Đơn đăng ký thuê phòng đang chờ Quản lý duyệt hồ sơ
+  const myPendingRentalRequest = useMemo(() => {
+    if (!isTenant) return null;
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    const uPhone = (user?.phone || '').trim();
+    return (roomRequests || []).find((r) =>
+      (r.type === 'RENT' || r.type === 'NEW_RENT') &&
+      r.status === 'PENDING' &&
+      ((uName && r.tenant?.toLowerCase().includes(uName)) || (uPhone && r.phone === uPhone) || (user?.username === 'tenant_new'))
+    );
+  }, [isTenant, user, roomRequests]);
 
   // Đếm ngược thời hạn nộp cọc giữ phòng (Countdown Timer cho Onboarding Gate)
   const [holdingSecondsLeft, setHoldingSecondsLeft] = useState(15 * 60);
@@ -247,19 +340,72 @@ export default function Dashboard() {
     // Nghiệp vụ cốt lõi: Chưa thanh toán cọc & chưa ký HĐ thì CHƯA CÓ phòng chính thức!
     if (isContractPending) return null;
 
-    if (user?.username === 'tenant2' || user?.fullName?.includes('Cường')) {
-      const stored = tenantRooms?.tenant2 || tenantRooms?.['Phạm Minh Cường'] || user?.room || user?.rooms?.[0];
-      return (Array.isArray(stored) ? stored[0] : stored) || 'P.103';
-    }
-    if (user?.username === 'tenant' || user?.username === 'tenant1' || user?.fullName?.includes('An')) {
-      const stored = tenantRooms?.tenant1 || tenantRooms?.['Nguyễn Văn An'] || user?.room || user?.rooms?.[0];
-      return (Array.isArray(stored) ? stored[0] : stored) || 'P.101';
-    }
-    if (user?.username === 'tenant_new' || user?.fullName?.includes('Nam')) {
-      const stored = tenantRooms?.tenant_new || tenantRooms?.['Hoàng Văn Nam'] || user?.room || user?.rooms?.[0];
-      return (Array.isArray(stored) && stored.length > 0 ? stored[0] : (typeof stored === 'string' && stored ? stored : null));
+    // Kiểm tra hợp đồng thực tế: Nếu tất cả hợp đồng của khách đã TERMINATED hoặc COMPLETED thì KHÔNG CÒN PHÒNG
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    const userContracts = (contracts || []).filter((c) => {
+      const cName = (c.tenantName || '').toLowerCase().trim();
+      return (
+        cName.includes(uName) ||
+        uName.includes(cName) ||
+        (uName.includes('an') && cName.includes('an')) ||
+        (uName.includes('cường') && cName.includes('cường')) ||
+        (uName.includes('nam') && cName.includes('nam'))
+      );
+    });
+    const hasActiveContract = userContracts.some((c) => c.status === 'ACTIVE');
+    const allContractsEnded = userContracts.length > 0 && userContracts.every((c) => c.status === 'TERMINATED' || c.status === 'COMPLETED');
+
+    if (allContractsEnded && !hasActiveContract) {
+      return null;
     }
 
+    if (user?.username === 'tenant2' || uName.includes('cường')) {
+      const stored = tenantRooms?.tenant2 !== undefined ? tenantRooms?.tenant2 : tenantRooms?.['Phạm Minh Cường'];
+      if (Array.isArray(stored)) {
+        if (stored.length === 0) return null;
+        return stored[0];
+      }
+      if (typeof stored === 'string') return stored || null;
+      if (user?.rooms && user.rooms.length === 0 && !user?.room) return null;
+      if (user?.room) return user.room;
+      if (user?.rooms && user.rooms.length > 0) return user.rooms[0];
+      const matchContract = (contracts || []).find((c) => c.status === 'ACTIVE' && c.tenantName?.includes('Cường'));
+      return matchContract?.roomNumber || null;
+    }
+
+    if (user?.username === 'tenant' || user?.username === 'tenant1' || uName.includes('an')) {
+      const stored = tenantRooms?.tenant1 !== undefined ? tenantRooms?.tenant1 : tenantRooms?.['Nguyễn Văn An'];
+      if (Array.isArray(stored)) {
+        if (stored.length === 0) return null;
+        return stored[0];
+      }
+      if (typeof stored === 'string') return stored || null;
+      if (user?.rooms && user.rooms.length === 0 && !user?.room) return null;
+      if (user?.room) return user.room;
+      if (user?.rooms && user.rooms.length > 0) return user.rooms[0];
+      const matchContract = (contracts || []).find((c) => c.status === 'ACTIVE' && c.tenantName?.includes('An'));
+      return matchContract?.roomNumber || null;
+    }
+
+    if (user?.username === 'tenant_new' || uName.includes('nam')) {
+      const stored = tenantRooms?.tenant_new !== undefined ? tenantRooms?.tenant_new : tenantRooms?.['Hoàng Văn Nam'];
+      if (Array.isArray(stored)) {
+        if (stored.length === 0) return null;
+        return stored[0];
+      }
+      if (typeof stored === 'string' && stored) return stored;
+      if (user?.room) return user.room;
+      if (user?.rooms && user.rooms.length > 0) return user.rooms[0];
+      const matchContract = (contracts || []).find((c) => c.status === 'ACTIVE' && c.tenantName?.includes('Nam'));
+      return matchContract?.roomNumber || null;
+    }
+
+    const stored = tenantRooms?.[user?.username] || tenantRooms?.[user?.fullName];
+    if (Array.isArray(stored)) {
+      if (stored.length === 0) return null;
+      return stored[0];
+    }
+    if (user?.rooms && user.rooms.length === 0 && !user?.room) return null;
     if (user?.room) return user.room;
     if (user?.rooms && user.rooms.length > 0) return user.rooms[0];
 
@@ -268,8 +414,144 @@ export default function Dashboard() {
         (user?.fullName && t.fullName?.toLowerCase().includes(user.fullName.toLowerCase())) ||
         (user?.phone && t.phone === user.phone)
     );
-    return found?.room || found?.rooms?.[0] || 'P.101';
-  }, [isTenant, user, tenants, tenantRooms, isContractPending]);
+    if (found?.status === 'INACTIVE' || (found?.rooms && found.rooms.length === 0)) return null;
+    return found?.room || found?.rooms?.[0] || null;
+  }, [isTenant, user, tenants, tenantRooms, isContractPending, contracts]);
+
+  // Tự động mở modal trả phòng hoặc rời phòng khi có action từ URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const action = params.get('action');
+    if (action === 'checkout' && myRoomNumber) {
+      if (isRepresentative) {
+        setCheckoutModal(myRoomNumber);
+        setAgreedForfeitDeposit(false);
+        setCheckoutReason('');
+        setCheckoutSuccess(false);
+      } else {
+        setLeaveModal(myRoomNumber);
+        setAgreedForfeitLeave(false);
+        setLeaveReason('');
+        setLeaveSuccess(false);
+      }
+    } else if (action === 'leave' && myRoomNumber) {
+      setLeaveModal(myRoomNumber);
+      setAgreedForfeitLeave(false);
+      setLeaveReason('');
+      setLeaveSuccess(false);
+    }
+  }, [myRoomNumber, isRepresentative]);
+
+  const selectedLeaveRoomObj = useMemo(() => {
+    if (!leaveModal) return null;
+    const num = typeof leaveModal === 'string' ? leaveModal : leaveModal?.number;
+    return (rooms || []).find((r) => r.number === num);
+  }, [leaveModal, rooms]);
+
+  const selectedCheckoutRoomObj = useMemo(() => {
+    if (!checkoutModal) return null;
+    const num = typeof checkoutModal === 'string' ? checkoutModal : checkoutModal?.number;
+    return (rooms || []).find((r) => r.number === num);
+  }, [checkoutModal, rooms]);
+
+  const isCheckoutRoomMulti = (selectedCheckoutRoomObj?.occupants || 1) > 1;
+
+  // Lọc hóa đơn chưa thanh toán trước khi rời phòng (ĐIỀU KIỆN TIÊN QUYẾT)
+  const unpaidInvoicesForLeave = useMemo(() => {
+    if (!leaveModal) return [];
+    const roomNum = typeof leaveModal === 'string' ? leaveModal : leaveModal?.number;
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    return (invoices || []).filter((inv) => {
+      if (inv.room !== roomNum || inv.status === 'PAID') return false;
+      const invTenant = (inv.tenant || '').toLowerCase().trim();
+      return (
+        invTenant.includes(uName) ||
+        uName.includes(invTenant) ||
+        (uName.includes('an') && invTenant.includes('an')) ||
+        (uName.includes('cường') && invTenant.includes('cường')) ||
+        (uName.includes('nam') && invTenant.includes('nam')) ||
+        !invTenant
+      );
+    });
+  }, [leaveModal, invoices, user]);
+
+  const hasUnpaidBillsForLeave = unpaidInvoicesForLeave.length > 0;
+  const totalUnpaidForLeave = unpaidInvoicesForLeave.reduce((sum, inv) => sum + (inv.total || 0), 0);
+
+  // Kiểm tra công nợ phòng để làm mờ nút [Trả Toàn Bộ Phòng]
+  const hasUnpaidBillsForCheckout = useMemo(() => {
+    if (!myRoomNumber) return false;
+    return (invoices || []).some((inv) => inv.room === myRoomNumber && inv.status !== 'PAID');
+  }, [myRoomNumber, invoices]);
+
+  // Kiểm tra xem Hợp đồng hiện tại đã hết hạn chưa
+  const isContractExpired = useMemo(() => {
+    if (!myActiveContract || !myActiveContract.endDate) return false;
+    try {
+      const parts = myActiveContract.endDate.split('/');
+      if (parts.length === 3) {
+        const endD = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+        return endD <= new Date();
+      }
+    } catch {}
+    return false;
+  }, [myActiveContract]);
+
+  // Danh sách các bạn cùng phòng hiện tại (dùng để chuyển giao HĐ hoặc biểu quyết)
+  const otherRoommates = useMemo(() => {
+    if (!myRoomNumber) return [];
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    return (roomMembers || []).filter(
+      (m) =>
+        m.roomNumber === myRoomNumber &&
+        m.status !== 'MOVED_OUT' &&
+        !(m.fullName || '').toLowerCase().trim().includes(uName)
+    );
+  }, [myRoomNumber, roomMembers, user]);
+
+  // Các đơn đang chờ phòng này biểu quyết (WAITING_ROOMMATES)
+  const pendingRoommateRequests = useMemo(() => {
+    if (!myRoomNumber) return [];
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    return (roomRequests || []).filter((req) => {
+      const isTarget = req.targetRoom === myRoomNumber;
+      const isWaiting = req.status === 'WAITING_ROOMMATES';
+      const hasNotVoted = !(req.roommateVotes || []).some(
+        (v) => (v.voter || '').toLowerCase().trim() === uName
+      );
+      return isTarget && isWaiting && hasNotVoted;
+    });
+  }, [myRoomNumber, roomRequests, user]);
+
+  const handleSendLeave = (e) => {
+    e.preventDefault();
+    if (!leaveModal || !agreedForfeitLeave || hasUnpaidBillsForLeave) return;
+    const roomNumber = typeof leaveModal === 'string' ? leaveModal : leaveModal.number;
+    const res = leaveRoom(roomNumber, user?.fullName);
+    if (res?.success) {
+      setLeaveSuccess(true);
+    } else {
+      alert(res?.message || 'Không thể rời phòng do chưa hoàn tất nghĩa vụ tài chính.');
+    }
+  };
+
+  const handleSendCheckout = (e) => {
+    e.preventDefault();
+    if (!checkoutModal || (!isContractExpired && !agreedForfeitDeposit)) return;
+    const roomNumber = typeof checkoutModal === 'string' ? checkoutModal : checkoutModal.number;
+    submitCheckoutRequest({
+      room: roomNumber,
+      reason: checkoutReason,
+      forfeitDeposit: !isContractExpired,
+      tenantName: user?.fullName || 'Khách thuê',
+      phone: user?.phone || '0901234567',
+      refundBank,
+      refundAccountNumber,
+      refundAccountName: refundAccountName || user?.fullName || 'Khách thuê',
+      isContractExpired
+    });
+    setCheckoutSuccess(true);
+  };
 
   // Thông tin hồ sơ chi tiết của khách thuê hiện tại (Định danh chính xác theo tài khoản)
   const currentTenant = useMemo(() => {
@@ -382,7 +664,7 @@ export default function Dashboard() {
     if (!isTenant || !isContractPending || !myContract) return;
     let isMounted = true;
     const targetRoomNum = myContract.roomNumber || 'P.102';
-    const transferMemo = `COC ${targetRoomNum.replace('.', '')} ${(user?.fullName || myContract.tenantName || 'NAM').replace(/\s+/g, ' ').toUpperCase()}`.trim();
+    const transferMemo = `COC ${String(targetRoomNum || 'P.102').replace('.', '')} ${String(user?.fullName || myContract?.tenantName || 'NAM').replace(/\s+/g, ' ').toUpperCase()}`.trim();
     const depositAmount = myContract.depositAmount || 2800000;
     const bankAccount = sepayConfig.accountNumber || '35825112005';
 
@@ -443,7 +725,7 @@ export default function Dashboard() {
     const bankAccount = sepayConfig.accountNumber || '35825112005';
     const bankName = sepayConfig.bank || 'MBBank';
     const accountHolder = sepayConfig.accountName || 'DAM TRUNG ANH';
-    const transferMemo = `COC ${targetRoomNum.replace('.', '')} ${(user?.fullName || myContract.tenantName || 'NAM').replace(/\s+/g, ' ').toUpperCase()}`.trim();
+    const transferMemo = `COC ${String(targetRoomNum || 'P.102').replace('.', '')} ${String(user?.fullName || myContract?.tenantName || 'NAM').replace(/\s+/g, ' ').toUpperCase()}`.trim();
     const depositSepayQr = generateSePayQrUrl({
       accountNumber: bankAccount,
       bank: bankName,
@@ -1121,6 +1403,51 @@ export default function Dashboard() {
   if (isTenant && !myRoomNumber) {
     return (
       <div className="space-y-6 page-enter">
+        {/* BANNER NỔI BẬT: ĐƠN ĐĂNG KÝ THUÊ PHÒNG ĐANG CHỜ BAN QUẢN LÝ PHÊ DUYỆT */}
+        {myPendingRentalRequest && (
+          <div className="bento-card p-6 border-2 border-amber-300 bg-gradient-to-br from-amber-50/90 via-white to-amber-50/40 rounded-3xl shadow-lg space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-amber-200/70">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-lg shadow-inner">
+                  ⏳
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-amber-950">
+                    Đơn Đăng Ký Thuê Phòng Đang Chờ Ban Quản Lý Phê Duyệt
+                  </h3>
+                  <p className="text-xs text-amber-800 font-medium">
+                    Phòng <strong className="font-mono text-purple-700 font-black">{myPendingRentalRequest.targetRoom}</strong> • {myPendingRentalRequest.house || 'Cơ sở trọ'} (Ngày đăng ký: {myPendingRentalRequest.date})
+                  </p>
+                </div>
+              </div>
+              <span className="px-3 py-1.5 rounded-full text-xs font-black bg-amber-100 text-amber-800 border border-amber-300 shrink-0 flex items-center gap-1.5 shadow-2xs">
+                <span>🟡</span>
+                <span>Chờ Staff Duyệt Hồ Sơ</span>
+              </span>
+            </div>
+
+            <div className="p-4 bg-white/90 rounded-2xl border border-amber-200 text-xs text-slate-700 space-y-2.5">
+              <div className="flex items-center gap-2 font-bold text-slate-900">
+                <span>🔒</span>
+                <span>Cổng nộp tiền cọc trọ đang tạm khóa (Chưa mở):</span>
+              </div>
+              <p className="leading-relaxed text-slate-600">
+                Theo quy định của hệ thống, chỉ khi <strong>Quản lý cơ sở (Staff)</strong> kiểm tra hồ sơ và bấm <strong>[✅ Phê Duyệt & Mở Cổng Nộp Cọc]</strong>, cổng thanh toán tiền cọc giữ phòng (SePay QR) và ký hợp đồng điện tử mới được kích hoạt trong 15 phút.
+              </p>
+              <div className="p-3 bg-indigo-50/70 rounded-xl border border-indigo-200/60 text-indigo-900 font-medium text-[11px] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span>💡 <strong>Hướng dẫn bảo vệ đồ án:</strong> Bạn có thể chuyển sang tài khoản <strong>Staff 2 (CS2)</strong> ở thanh trên cùng ➔ Vào <strong>Quản Lý Phòng</strong> ➔ Tab <strong>Duyệt Yêu Cầu</strong> để phê duyệt đơn này!</span>
+                <Link
+                  to="/rooms"
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition shrink-0 inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Xem Chi Tiết Phòng</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="bento-card relative overflow-hidden p-6 sm:p-8 bg-gradient-to-br from-indigo-900 via-slate-900 to-indigo-950 text-white border border-indigo-500/20 shadow-xl">
           <div className="absolute -right-16 -top-16 w-64 h-64 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -1200,6 +1527,60 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* BANNER BIỂU QUYẾT NỘI BỘ PHÒNG (Xin ở ghép hoặc Trả phòng) */}
+        {pendingRoommateRequests.length > 0 && (
+          <div className="space-y-3">
+            {pendingRoommateRequests.map((req) => (
+              <div
+                key={req.id}
+                className="p-4 bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 border-2 border-indigo-300 rounded-3xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-bold text-lg shadow-sm">
+                    {req.type === 'CHECKOUT' ? '📤' : '👥'}
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-sm text-indigo-950">
+                      {req.type === 'CHECKOUT'
+                        ? 'Yêu Cầu Biểu Quyết: Đồng Ý Trả Phòng Để Cả Phòng Cùng Dọn Đi?'
+                        : `Xin Vào Ở Ghép: Bạn ${req.tenant} muốn xin vào ở ghép phòng bạn!`}
+                    </h4>
+                    <p className="text-xs text-indigo-800">
+                      {req.type === 'CHECKOUT'
+                        ? `Người đại diện ${req.tenant} đã đề xuất trả toàn bộ phòng ${req.targetRoom}. Bạn có đồng ý dọn đi không?`
+                        : `Lời nhắn từ ${req.tenant}: "${req.note || 'Em muốn xin vào ở ghép cùng các bạn'}"`}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (voteRoommateRequest) {
+                        voteRoommateRequest(req.id, user?.fullName, false);
+                      }
+                    }}
+                    className="px-4 py-2 bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 font-bold rounded-xl text-xs transition-colors btn-press-ghost cursor-pointer"
+                  >
+                    ❌ Từ Chối
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (voteRoommateRequest) {
+                        voteRoommateRequest(req.id, user?.fullName, true);
+                      }
+                    }}
+                    className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-emerald-600/20 btn-press cursor-pointer flex items-center gap-1.5"
+                  >
+                    <span>✅ Đồng Ý</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Hero Banner Khách Thuê: Clean Light Bento Card matching reference */}
         <div className="bg-white relative overflow-hidden p-6 sm:p-7 rounded-3xl border border-slate-100 shadow-sm">
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
@@ -1232,13 +1613,54 @@ export default function Dashboard() {
                 <Wrench className="w-4 h-4 text-purple-600" />
                 <span>Báo Sự Cố</span>
               </Link>
-              <Link
-                to="/rooms"
-                className="btn-press px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold rounded-2xl text-xs border border-rose-200/80 transition-all flex items-center gap-2"
+                            {/* Nút 1: Rời Phòng (Dọn Ra Ngoài) - Cho mọi cư dân cá nhân */}
+              <button
+                type="button"
+                onClick={() => {
+                  setLeaveModal(myRoomNumber);
+                  setAgreedForfeitLeave(false);
+                  setLeaveReason('');
+                  setLeaveSuccess(false);
+                }}
+                className="btn-press px-4 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded-2xl text-xs border border-amber-200/80 transition-all flex items-center gap-2 cursor-pointer shadow-xs"
+                title="Cá nhân dọn ra ngoài, không bắt buộc bạn cùng phòng phải trả theo"
               >
-                <LogOut className="w-4 h-4 text-rose-500" />
-                <span>Rời Phòng Ở Ghép (UC-T07)</span>
-              </Link>
+                <LogOut className="w-4 h-4 text-amber-600" />
+                <span>Rời Phòng (Dọn Ra Ngoài)</span>
+              </button>
+
+              {/* Nút 2: Trả Toàn Bộ Phòng (HĐ) - Nút mờ khi còn nợ tiền phòng/hóa đơn */}
+              {isRepresentative && (
+                <button
+                  type="button"
+                  disabled={hasUnpaidBillsForCheckout}
+                  onClick={() => {
+                    if (hasUnpaidBillsForCheckout) return;
+                    setCheckoutModal(myRoomNumber);
+                    setAgreedForfeitDeposit(false);
+                    setCheckoutReason('');
+                    setCheckoutSuccess(false);
+                  }}
+                  className={`btn-press px-4 py-2.5 font-bold rounded-2xl text-xs border transition-all flex items-center gap-2 shadow-xs ${
+                    hasUnpaidBillsForCheckout
+                      ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
+                      : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200/80 cursor-pointer'
+                  }`}
+                  title={
+                    hasUnpaidBillsForCheckout
+                      ? 'Nút trả phòng đang bị mờ do phòng còn hóa đơn chưa thanh toán. Vui lòng thanh toán hết tiền phòng/điện nước để mở khóa!'
+                      : 'Báo trả toàn bộ phòng & Quyết toán hoàn cọc (Chỉ Người đại diện ký HĐ mới có quyền)'
+                  }
+                >
+                  <LogOut className="w-4 h-4 text-rose-600" />
+                  <span>Trả Toàn Bộ Phòng (HĐ)</span>
+                  {hasUnpaidBillsForCheckout && (
+                    <span className="text-[10px] bg-rose-200 text-rose-800 px-1.5 py-0.5 rounded-md font-extrabold">
+                      Khóa do còn nợ
+                    </span>
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1582,6 +2004,478 @@ export default function Dashboard() {
           invoice={payingInvoice || undefined}
         />
 
+        {/* Modal Rời Phòng Cá Nhân (Dọn ra ngoài) */}
+        <Modal
+          isOpen={!!leaveModal}
+          onClose={() => {
+            setLeaveModal(null);
+            setLeaveSuccess(false);
+            setAgreedForfeitLeave(false);
+            setLeaveReason('');
+          }}
+          maxWidth="max-w-md"
+        >
+          {leaveModal && (
+            <div>
+              {leaveSuccess ? (
+                <div className="text-center py-6">
+                  <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4 success-pop-icon">
+                    <CheckCircle2 className="w-8 h-8 stroke-[2.5]" />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900 mb-1">
+                    Đã Rời Phòng Thành Công!
+                  </h3>
+                  <p className="text-xs text-slate-500 mb-4 max-w-xs mx-auto">
+                    Bạn đã rút tên khỏi <strong className="text-emerald-700">Phòng {typeof leaveModal === 'string' ? leaveModal : leaveModal?.number}</strong>. Cổng khách thuê đã được cập nhật về trạng thái chưa thuê phòng.
+                  </p>
+
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-5 text-left text-xs space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Phòng đã rời:</span>
+                      <span className="font-bold text-slate-900">
+                        {typeof leaveModal === 'string' ? leaveModal : leaveModal?.number}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Tình trạng:</span>
+                      <span className="font-bold text-emerald-700">Đã cập nhật cổng khách thuê</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Bạn cùng phòng:</span>
+                      <span className="font-semibold text-slate-800">Không bị ảnh hưởng</span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLeaveModal(null);
+                      setLeaveSuccess(false);
+                      setAgreedForfeitLeave(false);
+                      setLeaveReason('');
+                    }}
+                    className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-md btn-press cursor-pointer"
+                  >
+                    Đóng Thông Báo
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
+                        <LogOut className="w-5 h-5 text-amber-600" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-base text-slate-900">
+                          Rời Khỏi Phòng Thuê (Cá Nhân)
+                        </h3>
+                        <p className="text-[11px] text-slate-500">
+                          Phòng {typeof leaveModal === 'string' ? leaveModal : leaveModal?.number}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setLeaveModal(null)}
+                      className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 btn-press-ghost cursor-pointer"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <div className="my-3 p-3.5 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 space-y-1.5">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-950">
+                      <span>🚪</span>
+                      <span>Quyền lợi Rời phòng cá nhân</span>
+                    </div>
+                    <p className="text-[11px] text-amber-800 leading-relaxed">
+                      Bạn đang thực hiện rời khỏi phòng <strong>{typeof leaveModal === 'string' ? leaveModal : leaveModal?.number}</strong>. Thao tác này chỉ rút tên riêng của bạn khỏi phòng này, <strong>không yêu cầu bạn cùng phòng biểu quyết</strong> và <strong>không làm gián đoạn hợp đồng của các bạn cùng phòng khác</strong>.
+                    </p>
+                    <p className="text-[11px] text-rose-700 font-semibold pt-1 border-t border-amber-200/60">
+                      ⚠️ Lưu ý: Tự nguyện rời phòng trước hạn sẽ không được hoàn lại tiền cọc cá nhân.
+                    </p>
+                  </div>
+
+                  {/* Kiểm tra điều kiện tiên quyết: Hóa đơn còn nợ */}
+                  {hasUnpaidBillsForLeave ? (
+                    <div className="my-3 p-3.5 bg-rose-50 rounded-2xl border-2 border-rose-200 text-xs text-rose-950 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 font-bold text-rose-900">
+                          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                          <span>Chưa đủ điều kiện rời phòng ({unpaidInvoicesForLeave.length} hóa đơn chưa nộp)</span>
+                        </div>
+                        <span className="font-extrabold font-mono text-rose-700 bg-rose-100 px-2 py-0.5 rounded-lg">
+                          {totalUnpaidForLeave.toLocaleString('vi-VN')} đ
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-rose-800 leading-relaxed">
+                        Theo quy định, bạn phải hoàn tất thanh toán toàn bộ hóa đơn tiền phòng & sinh hoạt trước khi rời phòng:
+                      </p>
+                      <div className="space-y-1.5 pt-1">
+                        {unpaidInvoicesForLeave.map((inv) => (
+                          <div key={inv.id} className="p-2.5 bg-white/90 rounded-xl border border-rose-200 flex items-center justify-between text-xs">
+                            <div>
+                              <div className="font-bold text-slate-800">{inv.code} - {inv.title || 'Hóa đơn tiền phòng'}</div>
+                              <div className="text-[11px] text-slate-500 font-mono font-bold text-rose-600">
+                                {(inv.total || 0).toLocaleString('vi-VN')} đ
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                payInvoice(inv.id, 'SePay VietQR');
+                                setPaySuccessToast(`Đã thanh toán nhanh thành công hóa đơn ${inv.code}!`);
+                                setTimeout(() => setPaySuccessToast(null), 5000);
+                              }}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] transition-all flex items-center gap-1 shadow-xs cursor-pointer btn-press"
+                            >
+                              <Zap className="w-3.5 h-3.5" />
+                              <span>Thanh Toán Nhanh</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="my-3 p-3 bg-emerald-50 rounded-2xl border border-emerald-200 text-xs text-emerald-900 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span className="font-medium">
+                        Bạn đã hoàn tất toàn bộ hóa đơn tiền phòng & sinh hoạt. Đủ điều kiện rời phòng.
+                      </span>
+                    </div>
+                  )}
+
+                  <form onSubmit={(e) => {
+                    e.preventDefault();
+                    if (isRepresentative && otherRoommates.length > 0) {
+                      if (!selectedSuccessor) {
+                        alert('Vui lòng chọn 1 bạn cùng phòng để bàn giao quyền đại diện Hợp đồng trước khi rời phòng!');
+                        return;
+                      }
+                      if (transferContractHolder) {
+                        transferContractHolder(myRoomNumber, user?.fullName, selectedSuccessor);
+                        setLeaveSuccess(true);
+                      }
+                    } else {
+                      handleSendLeave(e);
+                    }
+                  }} className="space-y-4 text-xs">
+                    {/* Bắt buộc bàn giao hợp đồng nếu là Người đại diện và còn người ở lại */}
+                    {isRepresentative && otherRoommates.length > 0 ? (
+                      <div className="p-3.5 bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-300 rounded-2xl space-y-2">
+                        <div className="flex items-center gap-2 font-bold text-purple-950">
+                          <span>👑</span>
+                          <span>Bắt buộc bàn giao Hợp đồng đại diện</span>
+                        </div>
+                        <p className="text-[11px] text-purple-900 leading-relaxed">
+                          Bạn hiện là <strong>Người đại diện đứng tên Hợp đồng</strong> của phòng {myRoomNumber}. Vì phòng vẫn còn {otherRoommates.length} bạn cùng phòng tiếp tục ở, bạn bắt buộc phải chọn 1 người để chuyển giao quyền đại diện Hợp đồng trước khi rời phòng.
+                        </p>
+                        <div>
+                          <label className="block font-bold text-purple-950 mb-1">
+                            Chọn bạn cùng phòng nhận lại Hợp đồng:
+                          </label>
+                          <select
+                            value={selectedSuccessor}
+                            onChange={(e) => setSelectedSuccessor(e.target.value)}
+                            className="w-full bg-white border border-purple-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                            required
+                          >
+                            <option value="">-- Chọn thành viên tiếp quản hợp đồng --</option>
+                            {otherRoommates.map((m) => (
+                              <option key={m.id || m.fullName} value={m.fullName}>
+                                {m.fullName} ({m.phone || 'Thành viên phòng'})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <p className="text-[10px] text-purple-700 italic pt-1 border-t border-purple-200/60">
+                          💡 Khi bàn giao, Hợp đồng sẽ tự động cập nhật tên người ký mới. Ngày hết hạn, tiền cọc và điều khoản hợp đồng được giữ nguyên vẹn.
+                        </p>
+                      </div>
+                    ) : null}
+
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">
+                        Lý do bạn rời phòng:
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={leaveReason}
+                        onChange={(e) => setLeaveReason(e.target.value)}
+                        placeholder="Ví dụ: Em chuyển chỗ làm/dọn ra ở riêng..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-amber-500"
+                      />
+                    </div>
+
+                    <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl">
+                      <label className="flex items-start gap-2.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={agreedForfeitLeave}
+                          onChange={(e) => setAgreedForfeitLeave(e.target.checked)}
+                          className="mt-0.5 w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-slate-300 cursor-pointer"
+                        />
+                        <span className="text-xs text-amber-950 font-semibold leading-snug">
+                          Tôi xác nhận tự nguyện dọn ra ngoài, hoàn tất bàn giao và chấp nhận các điều khoản rời phòng cá nhân.
+                        </span>
+                      </label>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setLeaveModal(null)}
+                        className="px-4 py-2 text-slate-600 hover:bg-slate-100 font-bold rounded-xl transition-colors btn-press-ghost"
+                      >
+                        Hủy bỏ
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={!agreedForfeitLeave || hasUnpaidBillsForLeave || (isRepresentative && otherRoommates.length > 0 && !selectedSuccessor)}
+                        className={`px-5 py-2.5 font-bold rounded-xl shadow-md transition-all btn-press flex items-center gap-1.5 cursor-pointer ${
+                          agreedForfeitLeave && !hasUnpaidBillsForLeave && (!isRepresentative || otherRoommates.length === 0 || selectedSuccessor)
+                            ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/30'
+                            : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                        }`}
+                      >
+                        <span>{isRepresentative && otherRoommates.length > 0 ? 'Bàn Giao HĐ & Rời Phòng' : 'Xác Nhận Rời Phòng'}</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+            </div>
+          )}
+        </Modal>
+
+        {/* Modal Trả Toàn Bộ Phòng (HĐ) - Đại diện ký hợp đồng */}
+        <Modal
+          isOpen={!!checkoutModal}
+          onClose={() => {
+            setCheckoutModal(null);
+            setCheckoutSuccess(false);
+            setAgreedForfeitDeposit(false);
+            setCheckoutReason('');
+          }}
+          maxWidth="max-w-md"
+        >
+          {checkoutModal && (
+            <div>
+              {checkoutSuccess ? (
+                <div className="text-center py-6">
+                  <div className="w-16 h-16 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-4 success-pop-icon">
+                    <CheckCircle2 className="w-8 h-8 stroke-[2.5]" />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900 mb-1">
+                    {isCheckoutRoomMulti ? 'Đã Gửi Yêu Cầu Biểu Quyết Trả Phòng!' : 'Đã Gửi Yêu Cầu Trả Phòng!'}
+                  </h3>
+                  <p className="text-xs text-slate-500 mb-4 max-w-xs mx-auto">
+                    {isCheckoutRoomMulti ? (
+                      <>
+                        Do phòng <strong className="text-rose-600">Phòng {typeof checkoutModal === 'string' ? checkoutModal : checkoutModal?.number}</strong> hiện có {selectedCheckoutRoomObj?.occupants || 2} người ở, yêu cầu trả phòng đã được gửi tới tất cả bạn cùng phòng để biểu quyết. Khi tất cả cùng đồng ý, đơn sẽ tự động chuyển tới Ban Quản Lý phê duyệt.
+                      </>
+                    ) : (
+                      <>
+                        Phòng chỉ có 1 mình bạn nên yêu cầu đã được chuyển thẳng tới Ban Quản Lý để xếp lịch kiểm kê và hoàn tất thủ tục thanh lý.
+                      </>
+                    )}
+                  </p>
+
+                  <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-[11px] text-amber-900 mb-5 text-left">
+                    📞 Nhân viên quản lý cơ sở sẽ liên hệ trực tiếp sau khi hoàn tất các thủ tục theo quy định.
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCheckoutModal(null);
+                      setCheckoutSuccess(false);
+                      setAgreedForfeitDeposit(false);
+                      setCheckoutReason('');
+                    }}
+                    className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-md btn-press cursor-pointer"
+                  >
+                    Đóng Thông Báo
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  {/* Modal Header */}
+                  <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold">
+                        <AlertCircle className="w-5 h-5 text-rose-600" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-base text-slate-900">
+                          {isCheckoutRoomMulti ? 'Yêu Cầu Biểu Quyết Trả Toàn Bộ Phòng' : 'Yêu Cầu Trả Toàn Bộ Phòng'}
+                        </h3>
+                        <p className="text-[11px] text-slate-500">
+                          Phòng {typeof checkoutModal === 'string' ? checkoutModal : checkoutModal?.number} (Hiện có {selectedCheckoutRoomObj?.occupants || 1} người đang ở)
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCheckoutModal(null)}
+                      className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 btn-press-ghost cursor-pointer"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Multi-occupant Rule Notice */}
+                  {isCheckoutRoomMulti && (
+                    <div className="my-3 p-3.5 bg-indigo-50 border border-indigo-200 rounded-2xl text-xs space-y-1.5 text-indigo-900">
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <span>👥</span>
+                        <span>Quy Định Phòng Có Người Khác: Phải Hỏi Tất Cả Mọi Người</span>
+                      </div>
+                      <p className="text-[11px] text-indigo-800 leading-relaxed font-medium">
+                        Phòng này hiện có <strong>{selectedCheckoutRoomObj?.occupants} người</strong>. Vì việc trả phòng ảnh hưởng đến toàn bộ cư dân trong phòng, hệ thống sẽ gửi thông báo biểu quyết tới <strong>tất cả các bạn cùng phòng</strong>. Đơn chỉ được chuyển tới Ban Quản Lý khi <strong>tất cả mọi người đều đồng ý</strong>.
+                      </p>
+                      <p className="text-[11px] text-amber-900 font-semibold pt-1 border-t border-indigo-200/60">
+                        💡 Mẹo: Nếu bạn chỉ muốn dọn ra ngoài một mình và để các bạn khác tiếp tục ở, vui lòng chọn <strong>[Rời phòng]</strong> (không cần biểu quyết).
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Important Forfeit Notice */}
+                  {isContractExpired ? (
+                    <div className="my-3.5 p-3.5 bg-emerald-50 rounded-2xl border-2 border-emerald-300 text-xs space-y-2">
+                      <div className="flex items-center gap-2 font-bold text-emerald-950">
+                        <span>🟢</span>
+                        <span>Hợp đồng đã hết hạn: Đủ điều kiện hoàn cọc</span>
+                      </div>
+                      <p className="text-[11px] text-emerald-900 leading-relaxed">
+                        Hợp đồng thuê phòng của bạn đã kết thúc đúng hạn. Ban Quản Lý sẽ nghiệm thu phòng và hoàn lại tiền cọc (ước tính: <strong>3.500.000 đ</strong> sau khi trừ chi phí hư hỏng nếu có).
+                      </p>
+                      <div className="p-3 bg-white rounded-xl border border-emerald-200 space-y-2">
+                        <div className="font-bold text-slate-800 text-xs">Thông tin nhận hoàn cọc của bạn:</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[10px] text-slate-500 font-bold mb-0.5">Ngân hàng:</label>
+                            <input
+                              type="text"
+                              value={refundBank}
+                              onChange={(e) => setRefundBank(e.target.value)}
+                              placeholder="VD: Vietcombank, MB..."
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs focus:bg-white"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-slate-500 font-bold mb-0.5">Số tài khoản:</label>
+                            <input
+                              type="text"
+                              value={refundAccountNumber}
+                              onChange={(e) => setRefundAccountNumber(e.target.value)}
+                              placeholder="Số tài khoản..."
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-mono font-bold focus:bg-white"
+                              required
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <label className="block text-[10px] text-slate-500 font-bold mb-0.5">Tên chủ tài khoản:</label>
+                            <input
+                              type="text"
+                              value={refundAccountName}
+                              onChange={(e) => setRefundAccountName(e.target.value)}
+                              placeholder="Họ và tên chủ tài khoản..."
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-bold uppercase focus:bg-white"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="my-3.5 p-3.5 bg-gradient-to-br from-rose-50 to-amber-50 rounded-2xl border-2 border-rose-300 text-xs">
+                      <div className="flex items-start gap-2.5">
+                        <span className="text-xl">⚠️</span>
+                        <div>
+                          <h4 className="font-black text-rose-900 uppercase tracking-wide text-[11px] mb-1">
+                            Cảnh báo: Trả phòng chưa hết hạn hợp đồng!
+                          </h4>
+                          <p className="text-rose-800 leading-relaxed font-medium">
+                            Hợp đồng thuê phòng vẫn còn hiệu lực. Theo quy định tại Hợp đồng thuê phòng, việc đơn phương trả phòng trước thời hạn sẽ{' '}
+                            <strong className="text-rose-950 font-black underline">
+                              KHÔNG ĐƯỢC HOÀN LẠI TIỀN CỌC
+                            </strong>{' '}
+                            (ước tính:{' '}
+                            <span className="font-bold text-rose-950">
+                              {(currentTenant?.deposit || 3500000).toLocaleString('vi-VN')} đ
+                            </span>
+                            ).
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleSendCheckout} className="space-y-4 text-xs">
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">
+                        Lý do bạn muốn trả phòng:
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={checkoutReason}
+                        onChange={(e) => setCheckoutReason(e.target.value)}
+                        placeholder="Ví dụ: Em đổi chỗ làm/về quê gấp nên không thể tiếp tục thuê..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-rose-500"
+                      />
+                    </div>
+
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                      <label className="flex items-start gap-2.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={agreedForfeitDeposit}
+                          onChange={(e) => setAgreedForfeitDeposit(e.target.checked)}
+                          className="mt-0.5 w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 cursor-pointer"
+                        />
+                        <span className="text-xs text-amber-950 font-semibold leading-snug">
+                          Tôi xác nhận đã đọc, hiểu rõ và chấp nhận điều khoản{' '}
+                          <span className="text-rose-700 font-extrabold underline">
+                            MẤT TOÀN BỘ TIỀN CỌC
+                          </span>{' '}
+                          khi gửi yêu cầu trả phòng trước hạn.
+                        </span>
+                      </label>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setCheckoutModal(null)}
+                        className="px-4 py-2 text-slate-600 hover:bg-slate-100 font-bold rounded-xl transition-colors btn-press-ghost"
+                      >
+                        Hủy bỏ
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={!agreedForfeitDeposit}
+                        className={`px-5 py-2.5 font-bold rounded-xl shadow-md transition-all btn-press flex items-center gap-1.5 cursor-pointer ${
+                          agreedForfeitDeposit
+                            ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/30'
+                            : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                        }`}
+                      >
+                        <span>
+                          {isCheckoutRoomMulti
+                            ? 'Gửi Lấy Ý Kiến Bạn Cùng Phòng'
+                            : 'Xác Nhận Trả Phòng (Mất Cọc)'}
+                        </span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+            </div>
+          )}
+        </Modal>
+
       </div>
     );
   }
@@ -1815,7 +2709,7 @@ export default function Dashboard() {
         <div className="bento-card p-6 space-y-4 flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <PieChart className="w-4 h-4 text-purple-600" />
+              <PieChartIcon className="w-4 h-4 text-purple-600" />
               <span>Cơ Cấu Tình Trạng Phòng</span>
             </h2>
             <span className="text-xs text-slate-400 font-semibold">Tổng: {totalRooms} phòng</span>

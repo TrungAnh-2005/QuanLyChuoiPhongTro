@@ -32,7 +32,9 @@ import {
   LogOut,
   Pencil,
   Lock,
-  Clock
+  Clock,
+  AlertTriangle,
+  ArrowRight
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
@@ -80,7 +82,9 @@ export default function RoomsPage() {
     reviewRoommateRequest,
     moveOutSettlements = [],
     submitMoveOutNotice,
-    settleMoveOut
+    settleMoveOut,
+    invoices = [],
+    payInvoice
   } = useData();
   const [selectedHouse, setSelectedHouse] = useState(rawParam);
   const [filterStatus, setFilterStatus] = useState('ALL');
@@ -120,7 +124,19 @@ export default function RoomsPage() {
   const [requestFilter, setRequestFilter] = useState('ALL');
 
   // Tenant room request modal states (Chuyển phòng / Thuê thêm / Ở ghép)
-  const [requestModal, setRequestModal] = useState(null); // { room, type: 'TRANSFER' | 'ADDITIONAL_RENT' | 'ROOMMATE', fromRoom? }
+  const [requestModal, setRequestModal] = useState(null);
+  // Modal Nghiệm thu tài sản & Quyết toán hoàn cọc khi duyệt trả phòng
+  const [inspectionModal, setInspectionModal] = useState(null);
+  const [inspectionDamages, setInspectionDamages] = useState([
+    { id: 1, name: 'Điều hòa / Máy lạnh Inverter', damaged: false, cost: 1200000 },
+    { id: 2, name: 'Bình nước nóng lạnh', damaged: false, cost: 800000 },
+    { id: 3, name: 'Giường ngủ & Nệm', damaged: false, cost: 500000 },
+    { id: 4, name: 'Tủ quần áo', damaged: false, cost: 400000 },
+    { id: 5, name: 'Khóa cửa vân tay / Khóa phòng', damaged: false, cost: 600000 },
+    { id: 6, name: 'Thiết bị vệ sinh & Vòi sen', damaged: false, cost: 300000 }
+  ]);
+  const [customDamageCost, setCustomDamageCost] = useState(0);
+  const [inspectionNotes, setInspectionNotes] = useState(''); // { room, type: 'TRANSFER' | 'ADDITIONAL_RENT' | 'ROOMMATE', fromRoom? }
   const [transferFromRoom, setTransferFromRoom] = useState('');
   const [requestPhone, setRequestPhone] = useState(user?.phone || '0987654321');
   const [requestNote, setRequestNote] = useState('');
@@ -180,23 +196,40 @@ export default function RoomsPage() {
   const myRentedRoom = useMemo(() => {
     if (!isTenant) return null;
 
-    // Khách 3 (Hoàng Văn Nam - Khách mới): Chưa thuê phòng nào -> Chế độ Marketplace toàn sàn
+    // Khách 3 (Hoàng Văn Nam - Khách mới)
     if (user?.username === 'tenant_new' || user?.fullName?.includes('Nam')) {
+      const stored = tenantRooms?.tenant_new || tenantRooms?.['Hoàng Văn Nam'];
+      if (Array.isArray(stored) && stored.length > 0) return stored[0];
+      if (typeof stored === 'string' && stored) return stored;
+      if (user?.room) return user.room;
+      if (user?.rooms && user.rooms.length > 0) return user.rooms[0];
+      const matchContract = contracts.find(c => c.status === 'ACTIVE' && c.tenantName?.includes('Nam'));
+      if (matchContract?.roomNumber) return matchContract.roomNumber;
       return null;
     }
 
-    // Khách 2 (Phạm Minh Cường): Đang cọc/thuê phòng P.103 tại CS-01 của chủ A
+    // Khách 2 (Phạm Minh Cường)
     if (user?.username === 'tenant2' || user?.fullName?.includes('Cường')) {
-      const stored = tenantRooms?.tenant2 || tenantRooms?.['Phạm Minh Cường'];
-      const dynamicRoom = (Array.isArray(stored) && stored.length > 0) ? stored[0] : (typeof stored === 'string' && stored ? stored : null);
-      return dynamicRoom || user?.room || 'P.103';
+      const stored = tenantRooms?.tenant2 !== undefined ? tenantRooms?.tenant2 : tenantRooms?.['Phạm Minh Cường'];
+      if (Array.isArray(stored)) {
+        if (stored.length === 0) return null;
+        return stored[0];
+      }
+      if (typeof stored === 'string' && stored) return stored;
+      if (user?.rooms && user.rooms.length === 0 && !user?.room) return null;
+      return user?.room || null;
     }
 
-    // Khách 1 (Nguyễn Văn An): Đang cọc/thuê phòng P.101 tại CS-01 của chủ A
+    // Khách 1 (Nguyễn Văn An)
     if (user?.username === 'tenant' || user?.username === 'tenant1' || user?.fullName?.includes('An')) {
-      const stored = tenantRooms?.tenant1 || tenantRooms?.['Nguyễn Văn An'];
-      const dynamicRoom = (Array.isArray(stored) && stored.length > 0) ? stored[0] : (typeof stored === 'string' && stored ? stored : null);
-      return dynamicRoom || user?.room || 'P.101';
+      const stored = tenantRooms?.tenant1 !== undefined ? tenantRooms?.tenant1 : tenantRooms?.['Nguyễn Văn An'];
+      if (Array.isArray(stored)) {
+        if (stored.length === 0) return null;
+        return stored[0];
+      }
+      if (typeof stored === 'string' && stored) return stored;
+      if (user?.rooms && user.rooms.length === 0 && !user?.room) return null;
+      return user?.room || null;
     }
 
     const stored = tenantRooms?.[user?.username] || tenantRooms?.[user?.fullName];
@@ -213,28 +246,29 @@ export default function RoomsPage() {
     return myRentedRoom ? [myRentedRoom] : [];
   }, [myRentedRoom]);
 
-  // KIỂM TRA TRẠNG THÁI GIỮ CHỖ CHỜ NỘP CỌC CỦA KHÁCH (TASK 4 FIX)
-  // 1. Kiểm tra hợp đồng PENDING_DEPOSIT / PENDING_SIGN
+  // KIỂM TRA TRẠNG THÁI GIỮ CHỖ CHỜ NỘP CỌC CỦA KHÁCH
+  // 1. Kiểm tra hợp đồng PENDING_DEPOSIT / PENDING_SIGN (CHỈ KHI ĐÃ ĐƯỢC STAFF DUYỆT)
   const myPendingDepositContract = useMemo(() => {
     if (!isTenant) return null;
     const uName = (user?.fullName || '').toLowerCase().trim();
     const uPhone = (user?.phone || '').trim();
     return (contracts || []).find((c) => {
-      const isPending = (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN' || (!c.depositPaid && c.status !== 'ACTIVE' && c.status !== 'CANCELLED' && c.status !== 'EXPIRED'));
+      // Chỉ khi hợp đồng thật sự là PENDING_DEPOSIT hoặc PENDING_SIGN (đã được Staff duyệt) thì mới coi là đang giữ chỗ nộp cọc!
+      const isPending = (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN') && !c.depositPaid;
       if (!isPending) return false;
       const cName = (c.tenantName || '').toLowerCase().trim();
       const cPhone = (c.tenantPhone || '').trim();
       return (
         (uName && (cName.includes(uName) || uName.includes(cName))) ||
         (uPhone && cPhone === uPhone) ||
-        (user?.username === 'tenant_new' && (cName.includes('nam') || c.contractCode === 'HD-2026-007')) ||
+        (user?.username === 'tenant_new' && cName.includes('nam') && c.status === 'PENDING_DEPOSIT') ||
         (user?.username === 'tenant' && cName.includes('an')) ||
         (user?.username === 'tenant2' && cName.includes('cường'))
       );
     });
   }, [isTenant, user, contracts]);
 
-  // 2. Kiểm tra phòng trong danh sách rooms có status HOLDING khớp với khách này
+  // 2. Kiểm tra phòng trong danh sách rooms có status HOLDING khớp với khách này (Và còn thời hạn giữ chỗ)
   const myHeldRoom = useMemo(() => {
     if (!isTenant) return null;
     const uName = (user?.fullName || '').toLowerCase().trim();
@@ -248,15 +282,29 @@ export default function RoomsPage() {
         (
           (contractRoom && r.number === contractRoom) ||
           (uName && (r.holdingBy || '').toLowerCase().includes(uName)) ||
-          (uPhone && r.holdingPhone === uPhone) ||
-          (user?.username === 'tenant_new' && ((r.holdingBy || '').toLowerCase().includes('nam') || r.number === 'P.102'))
+          (uPhone && r.holdingPhone === uPhone)
         )
     );
   }, [isTenant, user, rooms, currentTime, myPendingDepositContract]);
 
   // Trạng thái giữ chỗ kích hoạt: MỜ VÀ KHÓA TẤT CẢ NÚT THUÊ PHÒNG & XIN Ở GHÉP PHÒNG KHÁC (TASK 4)
-  const isCurrentlyHolding = Boolean(isTenant && (myHeldRoom || myPendingDepositContract));
-  const heldRoomNumber = myHeldRoom?.number || myPendingDepositContract?.roomNumber || 'đang giữ chỗ';
+  // Đơn đăng ký thuê phòng đang chờ duyệt của khách
+  const myPendingRentalRequest = useMemo(() => {
+    if (!isTenant) return null;
+    return (roomRequests || []).find((req) => {
+      const isPending = req.status === 'PENDING' || req.status === 'WAITING_ROOMMATES' || req.status === 'HOLDING';
+      const isRental = req.type === 'RENT' || req.type === 'NEW_RENT' || req.type === 'ROOMMATE';
+      const uName = (user?.fullName || '').toLowerCase().trim();
+      const reqTenant = (req.tenant || '').toLowerCase().trim();
+      const matchUser = (reqTenant && uName && (reqTenant.includes(uName) || uName.includes(reqTenant))) ||
+        (user?.phone && req.phone === user.phone);
+      return isPending && isRental && matchUser;
+    });
+  }, [isTenant, roomRequests, user]);
+
+  // Khách đang giữ chỗ hoặc đang có 1 đơn đăng ký chờ duyệt -> Nút đăng ký các phòng khác bị MỜ
+  const isCurrentlyHolding = Boolean(isTenant && (myHeldRoom || myPendingDepositContract || myPendingRentalRequest));
+  const heldRoomNumber = myHeldRoom?.number || myPendingDepositContract?.roomNumber || myPendingRentalRequest?.targetRoom || 'đang xử lý';
   const heldHouseCode = myHeldRoom?.houseCode || myPendingDepositContract?.houseCode || 'CS-01';
 
   // Thông tin chi tiết phòng đang thuê của cư dân - Xác định CHÍNH XÁC cơ sở (CS-01 hoặc CS-02)
@@ -362,12 +410,36 @@ export default function RoomsPage() {
     return (rooms || []).find((r) => r.number === num);
   }, [leaveModal, rooms]);
 
+  const leaveRoomNumber = typeof leaveModal === 'string' ? leaveModal : leaveModal?.number;
+  const unpaidInvoicesForLeave = useMemo(() => {
+    if (!leaveRoomNumber) return [];
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    return (invoices || []).filter((inv) => {
+      if (inv.room !== leaveRoomNumber || inv.status === 'PAID') return false;
+      const invTenant = (inv.tenant || '').toLowerCase().trim();
+      return (
+        invTenant.includes(uName) ||
+        uName.includes(invTenant) ||
+        (uName.includes('an') && invTenant.includes('an')) ||
+        (uName.includes('cường') && invTenant.includes('cường')) ||
+        (uName.includes('nam') && invTenant.includes('nam')) ||
+        !invTenant
+      );
+    });
+  }, [leaveRoomNumber, invoices, user]);
+  const hasUnpaidBillsForLeave = unpaidInvoicesForLeave.length > 0;
+  const totalUnpaidForLeave = unpaidInvoicesForLeave.reduce((sum, inv) => sum + (inv.total || 0), 0);
+
   const handleSendLeave = (e) => {
     e.preventDefault();
-    if (!leaveModal || !agreedForfeitLeave) return;
+    if (!leaveModal || !agreedForfeitLeave || hasUnpaidBillsForLeave) return;
     const roomNumber = typeof leaveModal === 'string' ? leaveModal : leaveModal.number;
-    leaveRoom(roomNumber, user?.fullName);
-    setLeaveSuccess(true);
+    const res = leaveRoom(roomNumber, user?.fullName);
+    if (res?.success) {
+      setLeaveSuccess(true);
+    } else {
+      alert(res?.message || 'Kh?ng th? r?i ph?ng do ch?a ho?n t?t ngh?a v? t?i ch?nh.');
+    }
   };
 
   // Contract Renewal modal states (Gia hạn hợp đồng: 3, 6, 12 tháng do khách chọn)
@@ -633,16 +705,25 @@ export default function RoomsPage() {
       }
 
       if (isTenant) {
-        if (myRentedRoom) {
-          // NGHIỆP VỤ 8: Giai đoạn 1 - ĐANG THUÊ (Active Lease)
-          // Khách chỉ được xem các phòng thuộc cùng cơ sở / chuỗi của Chủ trọ đang thuê (Data Isolation)
-          const myHouseCode = myRentedRoomObj?.houseCode || 'CS-01';
+        // Kiểm tra xem khách có đang trong thời gian chờ duyệt trả phòng không
+        const hasPendingCheckout = (roomRequests || []).some(
+          (req) =>
+            req.type === 'CHECKOUT' &&
+            (req.status === 'PENDING' || req.status === 'WAITING_ROOMMATES' || req.status === 'ROOMMATES_APPROVED') &&
+            ((req.tenant && user?.fullName && req.tenant.toLowerCase().includes(user.fullName.toLowerCase())) ||
+             (req.targetRoom && (req.targetRoom === myRentedRoom || req.targetRoom === user?.room)))
+        );
+
+        if (myRentedRoom || hasPendingCheckout) {
+          // Khách đang thuê hoặc đang chờ duyệt trả phòng:
+          // CHỈ ĐƯỢC XEM CÁC PHÒNG THUỘC CÙNG CHỦ TRỌ / CÙNG CƠ SỞ ĐANG THUÊ
+          const myHouseCode = myRentedRoomObj?.houseCode || user?.houseCode || 'CS-01';
           if (r.houseCode !== myHouseCode) {
             return false;
           }
         } else {
-          // NGHIỆP VỤ 8: Giai đoạn 2 - KHÁCH ĐĂNG KÝ QUA WEB HOẶC ĐÃ TRẢ PHÒNG (Marketplace toàn sàn)
-          // Xem được TẤT CẢ các cơ sở và các phòng trên toàn hệ thống
+          // Khách mới hoặc đã trả phòng thành công:
+          // XEM ĐƯỢC TẤT CẢ CÁC PHÒNG CỦA MỌI CHỦ TRỌ TRÊN TOÀN SÀN
         }
       }
 
@@ -833,167 +914,6 @@ export default function RoomsPage() {
                 <span>{pendingVoteForMe.type === 'CHECKOUT' ? '👎 Không Đồng Ý Trả' : '👎 Từ Chối'}</span>
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Tenant Informational Banner - Single Active Lease (1 Khách - 1 Phòng duy nhất) */}
-      {isTenant && (
-        <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 border border-purple-200/90 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
-          <div className="flex items-start sm:items-center gap-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white flex items-center justify-center font-bold shadow-md shadow-purple-600/20 shrink-0">
-              <Home className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Cổng Khách Thuê:
-                </span>
-                <span className="text-sm font-extrabold text-slate-900">
-                  {user?.fullName || 'Khách thuê'}
-                </span>
-              </div>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                <span className="text-xs font-bold text-purple-950">
-                  Phòng bạn đang thuê:
-                </span>
-                {myRentedRoom ? (
-                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-white border border-purple-200 rounded-xl shadow-2xs">
-                    <span className="font-mono font-black text-purple-800 text-xs flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                      <span>Phòng {myRentedRoom} ({myRentedRoomObj?.houseCode || 'CS-01'})</span>
-                    </span>
-                    <button
-                      onClick={() => {
-                        const targetRoom = rooms.find((r) => r.number === myRentedRoom && (!myRentedRoomObj?.houseCode || r.houseCode === myRentedRoomObj.houseCode)) || myRentedRoomObj;
-                        if (targetRoom) {
-                          setSelectedRoomDetails(targetRoom);
-                          setRoomDetailsTab('MEMBERS');
-                        }
-                      }}
-                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
-                      title="Xem thông tin và danh sách bạn cùng phòng"
-                    >
-                      [👥 Bạn cùng phòng ({roomMembers.filter((m) => m.roomNumber === myRentedRoom).length})]
-                    </button>
-                    <button
-                      onClick={() => setShowRoommateModal(true)}
-                      className="text-[11px] font-bold text-teal-600 hover:text-teal-800 hover:underline cursor-pointer"
-                      title="Đăng ký thêm bạn cùng phòng ở ghép (CCCD 12 số)"
-                    >
-                      [+ Ở ghép (UC-T07)]
-                    </button>
-                    {isRepresentative ? (
-                      <button
-                        onClick={() => {
-                          setCheckoutModal(myRentedRoom);
-                          setAgreedForfeitDeposit(false);
-                          setCheckoutReason('');
-                          setCheckoutSuccess(false);
-                        }}
-                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer btn-press"
-                        title="Báo trả phòng & Quyết toán hoàn cọc (Chỉ Người đại diện ký HĐ mới có quyền)"
-                      >
-                        <span>📤</span>
-                        <span>Báo Trả Phòng & Hoàn Cọc (UC-T06)</span>
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          setLeaveModal(myRentedRoom);
-                          setAgreedForfeitLeave(false);
-                          setLeaveReason('');
-                          setLeaveSuccess(false);
-                        }}
-                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer btn-press"
-                        title="Rời phòng ở ghép (Cá nhân dọn đi, thông báo cho cả phòng)"
-                      >
-                        <span>🚪</span>
-                        <span>Rời Phòng Ở Ghép (UC-T07)</span>
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <span className="text-xs text-indigo-700 font-bold bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-xl">
-                    Chưa có phòng (Đang tìm phòng mới trên toàn sàn)
-                  </span>
-                )}
-              </div>
-
-              {/* Chú thích phạm vi quyền xem phòng */}
-              {myRentedRoom ? (
-                <div className="mt-2.5 text-[11px] text-purple-800 bg-purple-100/70 border border-purple-200 px-3 py-1.5 rounded-xl flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-purple-600 shrink-0" />
-                  <span>
-                    <strong>Chế độ Cư dân:</strong> Bạn đang thuê phòng <strong>{myRentedRoom}</strong> tại <strong>{myRentedRoomObj?.house || 'Cơ sở hiện tại'}</strong>. Hệ thống hiển thị các phòng thuộc cùng cơ sở của Chủ trọ này để đảm bảo bảo mật và hỗ trợ bạn khi có nhu cầu chuyển đổi phòng nội bộ.
-                  </span>
-                </div>
-              ) : (
-                <div className="mt-2.5 text-[11px] text-indigo-800 bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200 px-3.5 py-2 rounded-xl flex items-center gap-2 shadow-2xs">
-                  <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
-                  <span>
-                    <strong>🌐 Chế độ Tìm phòng mới toàn sàn:</strong> Bạn chưa có hợp đồng thuê nào. Hệ thống đang hiển thị danh mục các phòng còn trống (<code>AVAILABLE</code>) của <strong>TẤT CẢ các Chủ trọ</strong> trên nền tảng để bạn tham khảo và gửi yêu cầu giữ chỗ.
-                  </span>
-                </div>
-              )}
-
-              {/* Thông báo nếu đang có phòng giữ chỗ tạm thời */}
-              {myHeldRoom && (
-                <div className="mt-2.5 p-3 text-xs text-amber-900 bg-amber-50 border border-amber-300 rounded-xl flex flex-wrap items-center justify-between gap-2 shadow-xs animate-in fade-in">
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-amber-600 animate-spin" />
-                    <span>
-                      ⭐ <strong>Bạn đang tạm khóa giữ chỗ phòng {myHeldRoom.number} ({myHeldRoom.houseCode}):</strong> Thời gian nộp cọc còn lại: <strong className="font-mono text-rose-600 text-sm font-black">{formatHoldingTime(myHeldRoom.holdingUntil)}</strong>.
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Link
-                      to="/?tab=contract"
-                      className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg font-bold text-xs shadow-xs cursor-pointer flex items-center gap-1"
-                    >
-                      <span>⚡ Nộp Cọc & Ký HĐ Ngay</span>
-                    </Link>
-                    <button
-                      onClick={() => cancelRoomHold && cancelRoomHold(myHeldRoom.number, myHeldRoom.houseCode)}
-                      className="px-2.5 py-1.5 bg-white hover:bg-rose-50 text-slate-700 hover:text-rose-700 border border-slate-300 hover:border-rose-300 rounded-lg font-bold text-xs transition-colors cursor-pointer"
-                    >
-                      <span>✕ Hủy giữ chỗ</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {myRentedRoom && renewalEligibility.canRenew && (
-              <button
-                onClick={() => {
-                  setShowRenewalModal(true);
-                  setRenewalSuccess(false);
-                }}
-                className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl transition-all btn-press shadow-md shadow-purple-600/20 flex items-center gap-1.5 cursor-pointer"
-              >
-                <FileText className="w-3.5 h-3.5" />
-                <span>Gia Hạn Hợp Đồng</span>
-              </button>
-            )}
-            {myRentedRoom && renewalEligibility.pendingRequest && (
-              <div
-                className="px-3.5 py-2 bg-purple-50 text-purple-700 font-bold text-xs rounded-xl flex items-center gap-1.5 border border-purple-200 shadow-2xs"
-                title={renewalEligibility.reason}
-              >
-                <Clock className="w-3.5 h-3.5 text-purple-600" />
-                <span>Đang Chờ Duyệt Gia Hạn</span>
-              </div>
-            )}
-            <Link
-              to="/maintenance"
-              className="px-3.5 py-2 bg-white hover:bg-purple-50 text-purple-700 border border-purple-300 font-bold text-xs rounded-xl transition-all btn-press shadow-2xs flex items-center gap-1.5"
-            >
-              <Wrench className="w-3.5 h-3.5 text-purple-600" />
-              <span>Báo Sự Cố Thiết Bị</span>
-            </Link>
           </div>
         </div>
       )}
@@ -2109,6 +2029,8 @@ export default function RoomsPage() {
                 <p className="text-xs text-slate-500 mb-6 max-w-xs mx-auto">
                   {requestModal.type === 'TRANSFER' ? (
                     <>Bạn đã được chuyển sang <strong className="text-purple-700">Phòng {requestModal.room.number}</strong>. Hợp đồng điện tử và tiền cọc đã được tự động cập nhật sang phòng mới.</>
+                  ) : requestModal.type === 'RENT' ? (
+                    <>Đơn đăng ký thuê <strong className="text-purple-700">Phòng {requestModal.room.number}</strong> đã được gửi lên hệ thống. Đang chờ Quản lý/Staff cơ sở phê duyệt hồ sơ để mở cổng nộp cọc và ký hợp đồng giữ chỗ.</>
                   ) : (
                     <>Ban Quản Lý đã tiếp nhận nguyện vọng của bạn đối với <strong className="text-purple-700">Phòng {requestModal.room.number}</strong>.</>
                   )}
@@ -2122,6 +2044,8 @@ export default function RoomsPage() {
                         ? '🔄 Đổi / Chuyển phòng'
                         : requestModal.type === 'ROOMMATE'
                         ? '🤝 Xin vào ở ghép'
+                        : requestModal.type === 'RENT'
+                        ? '🔑 Đăng ký thuê phòng mới'
                         : '➕ Thuê thêm phòng'}
                     </span>
                   </div>
@@ -2172,6 +2096,8 @@ export default function RoomsPage() {
                           ? 'Đăng Ký Chuyển Sang Phòng Này'
                           : requestModal.type === 'ROOMMATE'
                           ? 'Đăng Ký Xin Vào Ở Ghép'
+                          : requestModal.type === 'RENT'
+                          ? 'Đăng Ký Thuê Phòng Này'
                           : 'Đăng Ký Thuê Thêm Phòng Này'}
                       </h3>
                       <p className="text-[11px] text-slate-400">
@@ -2213,13 +2139,13 @@ export default function RoomsPage() {
                   <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs space-y-1.5 text-amber-900">
                     <div className="flex items-center gap-1.5 font-bold">
                       <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-                      <span>Quy Định Tạm Khóa Giữ Chỗ (15 Phút):</span>
+                      <span>Quy Trình Duyệt Hồ Sơ & Nộp Tiền Cọc Trọ:</span>
                     </div>
                     <p className="text-[11px] text-amber-800 leading-relaxed">
-                      Ngay khi bạn nhấn <strong>Xác Nhận Giữ Chỗ</strong>, phòng <strong>{requestModal.room.number}</strong> sẽ được <strong>tạm khóa riêng cho bạn trong 15 phút</strong>. Khách khác sẽ không thể đặt phòng này.
+                      Khi bạn nhấn <strong>Xác Nhận Đăng Ký Thuê</strong>, đơn sẽ được gửi lên Ban Quản Lý cơ sở duyệt hồ sơ.
                     </p>
-                    <p className="text-[11px] text-amber-700 italic">
-                      Nếu trong 15 phút bạn không nộp cọc & ký hợp đồng, hệ thống sẽ tự động mở lại phòng ra sàn cho người khác thuê.
+                    <p className="text-[11px] text-purple-700 font-semibold">
+                      Chỉ sau khi Quản lý/Staff kiểm tra và bấm <strong>[Phê Duyệt & Mở Cổng Nộp Cọc]</strong>, cổng thanh toán tiền cọc SePay QR (giữ chỗ 15 phút) mới được kích hoạt trên Trang Chủ của bạn.
                     </p>
                   </div>
                 )}
@@ -2675,6 +2601,11 @@ export default function RoomsPage() {
                           ❌ Ban Quản Lý từ chối
                         </span>
                       )}
+                      {req.status === 'CANCELLED_BY_TENANT' && (
+                        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-200 flex items-center gap-1">
+                          <span>⚪</span> Khách đã chủ động hủy giữ chỗ
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -2760,18 +2691,47 @@ export default function RoomsPage() {
                           >
                             Từ Chối
                           </button>
-                          <button
-                            onClick={() => approveRoomRequest(req.id)}
-                            className="px-4 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/20 btn-press cursor-pointer flex items-center gap-1.5"
-                          >
-                            <span>
-                              {req.type === 'CHECKOUT'
-                                ? '✅ Thu Hồi Phòng & Tịch Thu Cọc'
-                                : req.type === 'RENEW_CONTRACT'
-                                ? '✅ Phê Duyệt Gia Hạn Hợp Đồng'
-                                : '✅ Phê Duyệt & Mở Cổng Nộp Cọc'}
-                            </span>
-                          </button>
+                          {req.type === 'CHECKOUT' ? (
+                            <button
+                              onClick={() => {
+                                const activeContract = (contracts || []).find(
+                                  (c) => c.roomNumber === req.targetRoom && c.status === 'ACTIVE'
+                                ) || (contracts || []).find((c) => c.roomNumber === req.targetRoom);
+                                const tenantObj = (tenants || []).find((t) =>
+                                  (t.fullName || '').toLowerCase().includes((req.tenant || '').toLowerCase())
+                                );
+                                setActiveSettlementModal({
+                                  id: req.id,
+                                  requestId: req.id,
+                                  roomNumber: req.targetRoom,
+                                  tenantName: req.tenant,
+                                  contractId: activeContract?.id || 1,
+                                  originalDeposit: activeContract?.depositAmount || tenantObj?.deposit || 3500000,
+                                  bankAccount: req.refundAccountNumber || tenantObj?.bankAccount || '0987654321',
+                                  bankName: req.refundBank || tenantObj?.bankName || 'Vietcombank',
+                                  accountHolder: req.refundAccountName || req.tenant || 'NGUYỄN VĂN AN',
+                                  house: req.house,
+                                  houseCode: req.houseCode,
+                                  isContractExpired: Boolean(req.isContractExpired),
+                                  leaveDate: req.date || new Date().toLocaleDateString('vi-VN')
+                                });
+                              }}
+                              className="px-4 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md btn-press cursor-pointer flex items-center gap-1.5"
+                            >
+                              <span>📋 Nghiệm Thu Tài Sản & Quyết Toán Cọc</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => approveRoomRequest(req.id)}
+                              className="px-4 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/20 btn-press cursor-pointer flex items-center gap-1.5"
+                            >
+                              <span>
+                                {req.type === 'RENEW_CONTRACT'
+                                  ? '✅ Phê Duyệt Gia Hạn Hợp Đồng'
+                                  : '✅ Phê Duyệt & Mở Cổng Nộp Cọc'}
+                              </span>
+                            </button>
+                          )}
                         </>
                       )}
                     </div>

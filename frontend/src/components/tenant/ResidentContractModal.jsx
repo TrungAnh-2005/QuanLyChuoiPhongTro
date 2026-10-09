@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import {
+  Upload,
   Sparkles,
 
   Eye,

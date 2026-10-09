@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Server,
   Activity,
@@ -25,37 +25,22 @@ import {
 } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 
-function parseHeap(heapStr) {
-  if (!heapStr) return { used: 250, max: 1024 };
-  const match = heapStr.match(/(\d+)\s*MB\s*\/\s*(\d+)\s*MB/i);
-  if (match) {
-    return { used: parseInt(match[1], 10), max: parseInt(match[2], 10) };
-  }
-  return { used: 250, max: 1024 };
-}
-
-// 12 Vi dịch vụ chuẩn kiến trúc Spring Boot Microservices
-const DEFAULT_12_SERVICES = [
-  { id: 'api-gateway', name: 'API Gateway', port: 8080, maxMem: 512, defaultUsed: 329, defaultCpu: 3.4, defaultThreads: 36, defaultReq: 29 },
-  { id: 'discovery-server', name: 'Eureka Service Discovery', port: 8761, maxMem: 512, defaultUsed: 272, defaultCpu: 1.5, defaultThreads: 30, defaultReq: 93 },
-  { id: 'auth-service', name: 'Auth Service (JWT & RBAC)', port: 8081, maxMem: 1024, defaultUsed: 409, defaultCpu: 1.7, defaultThreads: 30, defaultReq: 92 },
-  { id: 'room-service', name: 'Room & Boarding House Service', port: 8082, maxMem: 1024, defaultUsed: 380, defaultCpu: 2.1, defaultThreads: 30, defaultReq: 45 },
-  { id: 'tenant-service', name: 'Tenant Service (Roommates & VNeID)', port: 8083, maxMem: 1024, defaultUsed: 312, defaultCpu: 1.8, defaultThreads: 38, defaultReq: 38 },
-  { id: 'contract-service', name: 'Contract Service (E-Signature)', port: 8084, maxMem: 1024, defaultUsed: 295, defaultCpu: 1.4, defaultThreads: 25, defaultReq: 22 },
-  { id: 'meter-service', name: 'Meter Reading & AI Service', port: 8085, maxMem: 2048, defaultUsed: 520, defaultCpu: 3.8, defaultThreads: 42, defaultReq: 64 },
-  { id: 'billing-service', name: 'Billing & Invoice Service', port: 8086, maxMem: 1024, defaultUsed: 365, defaultCpu: 2.5, defaultThreads: 32, defaultReq: 51 },
-  { id: 'payment-service', name: 'Payment Service (SePay/VietQR/VNPay)', port: 8087, maxMem: 1024, defaultUsed: 340, defaultCpu: 2.2, defaultThreads: 35, defaultReq: 58 },
-  { id: 'maintenance-service', name: 'Maintenance & Ticket Service', port: 8088, maxMem: 512, defaultUsed: 215, defaultCpu: 1.1, defaultThreads: 24, defaultReq: 18 },
-  { id: 'report-service', name: 'Report & BI Aggregation Service', port: 8089, maxMem: 1024, defaultUsed: 430, defaultCpu: 2.9, defaultThreads: 34, defaultReq: 31 },
-  { id: 'notification-service', name: 'Notification Service (RabbitMQ)', port: 8090, maxMem: 512, defaultUsed: 245, defaultCpu: 1.6, defaultThreads: 28, defaultReq: 72 }
+// Đúng chuẩn 10 Microservices nghiệp vụ cốt lõi theo kiến trúc dự án
+const DEFAULT_10_SERVICES = [
+  { id: 'auth-service', name: 'Auth Service (JWT, RBAC & KYC)', port: 8081, maxMem: 1024, defaultUsed: 380, defaultCpu: 1.7, defaultThreads: 30, defaultReq: 92 },
+  { id: 'room-service', name: 'Room & Boarding House Service', port: 8082, maxMem: 1024, defaultUsed: 360, defaultCpu: 2.1, defaultThreads: 30, defaultReq: 45 },
+  { id: 'tenant-service', name: 'Tenant Service (Roommates & VNeID)', port: 8083, maxMem: 1024, defaultUsed: 310, defaultCpu: 1.8, defaultThreads: 38, defaultReq: 38 },
+  { id: 'contract-service', name: 'Contract Service (E-Signature)', port: 8084, maxMem: 1024, defaultUsed: 290, defaultCpu: 1.4, defaultThreads: 25, defaultReq: 22 },
+  { id: 'meter-service', name: 'Meter Reading Service (Chỉ Số Điện Nước)', port: 8085, maxMem: 1024, defaultUsed: 320, defaultCpu: 2.0, defaultThreads: 32, defaultReq: 48 },
+  { id: 'billing-service', name: 'Billing & Invoice Service', port: 8086, maxMem: 1024, defaultUsed: 350, defaultCpu: 2.3, defaultThreads: 32, defaultReq: 51 },
+  { id: 'payment-service', name: 'Payment Service (SePay/VietQR/VNPay)', port: 8087, maxMem: 1024, defaultUsed: 330, defaultCpu: 2.0, defaultThreads: 35, defaultReq: 58 },
+  { id: 'maintenance-service', name: 'Maintenance & Ticket Service', port: 8088, maxMem: 512, defaultUsed: 195, defaultCpu: 1.1, defaultThreads: 24, defaultReq: 18, isLight: true },
+  { id: 'report-service', name: 'Report & BI Aggregation Service', port: 8089, maxMem: 1024, defaultUsed: 410, defaultCpu: 2.8, defaultThreads: 34, defaultReq: 31 },
+  { id: 'ai-service', name: 'AI Computer Vision & OCR Service', port: 8000, maxMem: 2048, defaultUsed: 620, defaultCpu: 5.4, defaultThreads: 42, defaultReq: 64, isHeavy: true }
 ];
 
 export default function AdminSystemPage() {
-  const {
-    microservices = [],
-    auditLogs = [],
-    addAuditLog
-  } = useData();
+  const { auditLogs = [], addAuditLog } = useData();
 
   const [activeTab, setActiveTab] = useState('apm'); // 'apm' | 'audit'
   const [logFilterAction, setLogFilterAction] = useState('ALL');
@@ -63,19 +48,23 @@ export default function AdminSystemPage() {
   const [logSearch, setLogSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
-  // Thử tải đột biến (Spike Load Test)
+  // 1. Điều khiển Đang Live / Tạm Dừng
+  const [isPaused, setIsPaused] = useState(false);
+
+  // 2. Thử tải đột biến (Spike Load Test) - 6.5s
   const [isStressTesting, setIsStressTesting] = useState(false);
   const [stressCountdown, setStressCountdown] = useState(0);
 
-  // Timer cho luồng WebSocket/Actuator Stream (Bắt đầu từ 01:23:05 giống hệt ảnh media_1791397426014.png)
+  // 3. Timer cho luồng WebSocket/Actuator Stream (Bắt đầu từ 01:23:05 khớp media_1791397426014.png)
   const [streamSeconds, setStreamSeconds] = useState(4985); // 01:23:05 in seconds
 
   useEffect(() => {
+    if (isPaused) return;
     const timer = setInterval(() => {
       setStreamSeconds((prev) => prev + 1);
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [isPaused]);
 
   // Format giây thành HH:mm:ss
   const streamTimeFormatted = useMemo(() => {
@@ -85,7 +74,7 @@ export default function AdminSystemPage() {
     return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   }, [streamSeconds]);
 
-  // Bộ đếm countdown khi thử tải đột biến
+  // Bộ đếm countdown 6.5 giây khi thử tải đột biến
   useEffect(() => {
     if (!isStressTesting) return;
     if (stressCountdown <= 0) {
@@ -93,91 +82,178 @@ export default function AdminSystemPage() {
       return;
     }
     const timer = setTimeout(() => {
-      setStressCountdown((prev) => prev - 1);
-    }, 1000);
+      setStressCountdown((prev) => {
+        const next = +(prev - 0.5).toFixed(1);
+        if (next <= 0) {
+          setIsStressTesting(false);
+          return 0;
+        }
+        return next;
+      });
+    }, 500);
     return () => clearTimeout(timer);
   }, [isStressTesting, stressCountdown]);
 
-  // Hàm chuyển đổi trạng thái Thử Tải Đột Biến
+  // Kích hoạt Thử Tải Đột Biến (Simulate Spike Load)
   const toggleStressTest = () => {
     if (isStressTesting) {
       setIsStressTesting(false);
       setStressCountdown(0);
-      if (addAuditLog) {
-        addAuditLog({
-          role: 'ROLE_ADMIN',
-          username: 'admin',
-          action: 'STOP_SPIKE_LOAD_TEST',
-          target: 'API Gateway & Cluster',
-          details: 'Quản trị viên dừng thử tải đột biến, cụm vi dịch vụ hạ tải về mức bình thường'
-        });
-      }
     } else {
       setIsStressTesting(true);
-      setStressCountdown(25); // Chạy thử tải trong 25 giây
+      setStressCountdown(6.5); // 6.5 giây mô phỏng thuyết trình
       if (addAuditLog) {
         addAuditLog({
           role: 'ROLE_ADMIN',
           username: 'admin',
-          action: 'SPIKE_LOAD_TEST',
-          target: 'API Gateway & 12 Microservices',
-          details: 'Bơm lưu lượng kiểm thử tải đột biến 12.500 req/s qua API Gateway và RabbitMQ Event Bus'
+          action: 'APM_SPIKE_SIMULATION',
+          target: 'API Gateway & 10 Microservices',
+          details: 'Kích hoạt thử tải đột biến APM Spike Load: bơm lưu lượng kiểm thử mô phỏng thuyết trình (4.500 msgs/s, 70ms)'
         });
       }
     }
   };
 
-  const [liveMetrics, setLiveMetrics] = useState({});
+  // Trạng thái Garbage Collection Clean của từng service
+  const [gcCleanMap, setGcCleanMap] = useState({});
 
-  // Cập nhật dao động sống động (APM Fluctuation)
+  // Dữ liệu đo lường thời gian thực (Live Metrics)
+  const [liveMetrics, setLiveMetrics] = useState(() => {
+    const init = {};
+    DEFAULT_10_SERVICES.forEach((svc) => {
+      init[svc.id] = {
+        cpu: `${svc.defaultCpu}%`,
+        cpuNum: svc.defaultCpu,
+        heap: `${svc.defaultUsed}MB / ${svc.maxMem}MB`,
+        heapPercent: Math.round((svc.defaultUsed / svc.maxMem) * 100),
+        memUsed: svc.defaultUsed,
+        threads: svc.defaultThreads,
+        reqPerSec: svc.defaultReq
+      };
+    });
+    return init;
+  });
+
+  // Ticker cập nhật mỗi 2 giây (hoặc 1.2s khi đang thử tải)
   useEffect(() => {
+    if (isPaused) return;
+
     const interval = setInterval(() => {
       setLiveMetrics((prev) => {
-        const next = {};
-        DEFAULT_12_SERVICES.forEach((svc) => {
+        const next = { ...prev };
+        DEFAULT_10_SERVICES.forEach((svc) => {
+          const current = prev[svc.id] || {
+            cpuNum: svc.defaultCpu,
+            memUsed: svc.defaultUsed,
+            heapPercent: Math.round((svc.defaultUsed / svc.maxMem) * 100),
+            threads: svc.defaultThreads,
+            reqPerSec: svc.defaultReq
+          };
+
           if (isStressTesting) {
-            // Khi đang thử tải đột biến: CPU vọt lên 65% - 94%, Mem vọt lên 75% - 90%, Req/s vọt lên 800 - 1.450
-            const cpuNum = +(70 + Math.random() * 24).toFixed(1);
-            const memUsed = Math.min(svc.maxMem - 30, Math.floor(svc.maxMem * (0.75 + Math.random() * 0.16)));
+            // Khi thử tải đột biến: CPU vọt lên 45% - 80% (thanh đo chuyển đỏ rực), req/s vọt lên cao
+            const cpuNum = +(48 + Math.random() * 30).toFixed(1);
+            const memUsed = Math.min(svc.maxMem - 20, Math.floor(svc.maxMem * (0.70 + Math.random() * 0.18)));
             const memPercent = Math.round((memUsed / svc.maxMem) * 100);
-            const threads = Math.floor(svc.defaultThreads * 5.5 + Math.random() * 30);
-            const reqPerSec = Math.floor(800 + Math.random() * 650);
+            const threads = Math.floor(svc.defaultThreads * 4.5 + Math.random() * 20);
+            const reqPerSec = Math.floor(380 + Math.random() * 250);
 
             next[svc.id] = {
               cpu: `${cpuNum}%`,
               cpuNum,
               heap: `${memUsed}MB / ${svc.maxMem}MB`,
               heapPercent: memPercent,
+              memUsed,
               threads,
               reqPerSec
             };
           } else {
-            // Trạng thái bình thường: CPU 1.0% - 4.5%, Mem 40% - 64%, Req/s 20 - 95
-            const jitter = +(Math.random() * 0.8 - 0.4).toFixed(1);
-            const cpuNum = Math.max(0.6, +(svc.defaultCpu + jitter).toFixed(1));
-            const memUsed = Math.min(svc.maxMem, Math.max(100, svc.defaultUsed + Math.floor(Math.random() * 10 - 5)));
-            const memPercent = Math.round((memUsed / svc.maxMem) * 100);
+            // Trạng thái bình thường:
+            // 1. CPU dao động tự nhiên theo từng service:
+            // - Service nhẹ (Eureka, Maintenance): 0.8% - 2.0%
+            // - Service nặng (Meter Reading & AI OCR): 3.5% - 8.5%
+            // - Service khác: 1.2% - 3.2%
+            let cpuNum = svc.defaultCpu;
+            if (svc.isLight) {
+              cpuNum = +(0.8 + Math.random() * 1.2).toFixed(1);
+            } else if (svc.isHeavy) {
+              cpuNum = +(3.5 + Math.random() * 5.0).toFixed(1);
+            } else {
+              const jitter = +(Math.random() * 0.8 - 0.4).toFixed(1);
+              cpuNum = Math.max(0.9, +(svc.defaultCpu + jitter).toFixed(1));
+            }
+
+            // 2. Mô phỏng JVM Heap Memory tăng dần & Minor GC khi đạt >= 78%
+            let newMemUsed = current.memUsed + Math.floor(12 + Math.random() * 18);
+            let currentHeapPercent = Math.round((newMemUsed / svc.maxMem) * 100);
+
+            if (currentHeapPercent >= 78) {
+              // Kích hoạt Minor GC! Thu hồi RAM về mức an toàn ~42% - 48%
+              newMemUsed = Math.floor(svc.maxMem * (0.42 + Math.random() * 0.06));
+              currentHeapPercent = Math.round((newMemUsed / svc.maxMem) * 100);
+
+              // Bật cờ nhãn GC Clean nhấp nháy màu tím trong 2.5s
+              setGcCleanMap((m) => ({ ...m, [svc.id]: true }));
+              setTimeout(() => {
+                setGcCleanMap((m) => ({ ...m, [svc.id]: false }));
+              }, 2500);
+            }
 
             next[svc.id] = {
               cpu: `${cpuNum}%`,
               cpuNum,
-              heap: `${memUsed}MB / ${svc.maxMem}MB`,
-              heapPercent: memPercent,
+              heap: `${newMemUsed}MB / ${svc.maxMem}MB`,
+              heapPercent: currentHeapPercent,
+              memUsed: newMemUsed,
               threads: svc.defaultThreads,
-              reqPerSec: svc.defaultReq + Math.floor(Math.random() * 6 - 3)
+              reqPerSec: Math.max(12, svc.defaultReq + Math.floor(Math.random() * 6 - 3))
             };
           }
         });
         return next;
       });
-    }, isStressTesting ? 1200 : 2500);
+    }, isStressTesting ? 1200 : 2000);
 
     return () => clearInterval(interval);
-  }, [isStressTesting]);
+  }, [isPaused, isStressTesting]);
 
+  // Nút Làm Mới - ép cập nhật tức thì và ghi audit log
   const handleRefresh = () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 600);
+    setTimeout(() => {
+      setRefreshing(false);
+      setLiveMetrics((prev) => {
+        const next = { ...prev };
+        DEFAULT_10_SERVICES.forEach((svc) => {
+          let cpuNum = svc.defaultCpu;
+          if (svc.isLight) cpuNum = +(0.9 + Math.random() * 1.0).toFixed(1);
+          else if (svc.isHeavy) cpuNum = +(4.0 + Math.random() * 4.0).toFixed(1);
+          else cpuNum = +(svc.defaultCpu + Math.random() * 0.6 - 0.3).toFixed(1);
+
+          const memUsed = Math.floor(svc.maxMem * (0.45 + Math.random() * 0.15));
+          next[svc.id] = {
+            cpu: `${cpuNum}%`,
+            cpuNum,
+            heap: `${memUsed}MB / ${svc.maxMem}MB`,
+            heapPercent: Math.round((memUsed / svc.maxMem) * 100),
+            memUsed,
+            threads: svc.defaultThreads,
+            reqPerSec: svc.defaultReq
+          };
+        });
+        return next;
+      });
+
+      if (addAuditLog) {
+        addAuditLog({
+          role: 'ROLE_ADMIN',
+          username: 'admin',
+          action: 'MANUAL_METRICS_REFRESH',
+          target: 'Eureka Registry & Actuator',
+          details: 'Ép đồng bộ và làm mới các chỉ số vi dịch vụ thủ công'
+        });
+      }
+    }, 600);
   };
 
   const filteredLogs = useMemo(() => {
@@ -196,15 +272,15 @@ export default function AdminSystemPage() {
   }, [auditLogs, logFilterAction, logFilterRole, logSearch]);
 
   // Các chỉ số cụm Cluster tổng thể
-  const clusterCpu = isStressTesting ? '85.4% TB Tải' : '2.4% TB Tải';
+  const clusterCpu = isStressTesting ? '68.5% TB Tải' : '2.4% TB Tải';
   const clusterRamText = isStressTesting
-    ? 'RAM: 10.420 / 12.800 MB (81.4%)'
-    : 'RAM: 4.729 / 12.800 MB (36.9%)';
-  const rabbitMqText = isStressTesting ? '18.940 msgs/s' : '1.443 msgs/s';
+    ? 'RAM: 7.640 / 10.240 MB (74.6%)'
+    : 'RAM: 3.565 / 10.240 MB (34.8%)';
+  const rabbitMqText = isStressTesting ? '4.520 msgs/s' : '1.443 msgs/s';
   const rabbitMqSub = isStressTesting
-    ? 'Dead Letter: 0 msg lỗi • 56 Backlog'
+    ? 'Dead Letter: 0 msg lỗi • 28 Backlog'
     : 'Dead Letter: 0 msg lỗi • 0 Backlog';
-  const latencyText = isStressTesting ? '138.4 ms' : '15.7 ms';
+  const latencyText = isStressTesting ? '71.4 ms' : '15.7 ms';
 
   return (
     <div className="space-y-6 page-enter">
@@ -221,7 +297,7 @@ export default function AdminSystemPage() {
               <span>Giám Sát Hạ Tầng & APM Microservices • UC-A03</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Giám Sát 12 Vi Dịch Vụ & Nhật Ký Kiểm Toán (Audit Logs)
+              Giám Sát 10 Vi Dịch Vụ & Nhật Ký Kiểm Toán (Audit Logs)
             </h1>
             <p className="text-indigo-100 text-xs sm:text-sm max-w-3xl leading-relaxed">
               Luồng giám sát thời gian thực kết nối Spring Boot Actuator, kiểm soát tải CPU, Heap Memory JVM, hàng đợi RabbitMQ Broker và truy vết an ninh nền tảng.
@@ -229,13 +305,22 @@ export default function AdminSystemPage() {
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 shrink-0 flex-wrap">
-            {/* Huy hiệu Đang Live */}
-            <div className="flex items-center gap-2 px-3.5 py-2 bg-white/10 border border-white/20 rounded-xl text-xs font-bold text-white backdrop-blur-md">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Đang Live</span>
-            </div>
+            {/* 1. NÚT ĐIỀU KHIỂN: ĐANG LIVE / TẠM DỪNG */}
+            <button
+              type="button"
+              onClick={() => setIsPaused((prev) => !prev)}
+              className={`flex items-center gap-2 px-3.5 py-2 border rounded-xl text-xs font-bold transition-all btn-press cursor-pointer ${
+                isPaused
+                  ? 'bg-amber-500/20 text-amber-200 border-amber-400/40 hover:bg-amber-500/30'
+                  : 'bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-md'
+              }`}
+              title="Nhấn để tạm dừng hoặc tiếp tục nhảy số thời gian thực"
+            >
+              <span className={`w-2 h-2 rounded-full ${isPaused ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
+              <span>{isPaused ? '⏸️ Tạm Dừng' : '🟢 Đang Live'}</span>
+            </button>
 
-            {/* NÚT THỬ TẢI ĐỘT BIẾN - CÓ TÁC DỤNG THẬT VÀ TRỰC QUAN MẠNH MẼ */}
+            {/* 2. NÚT THỬ TẢI ĐỘT BIẾN - 6.5s CHO THUYẾT TRÌNH / DEMO */}
             <button
               type="button"
               onClick={toggleStressTest}
@@ -244,23 +329,24 @@ export default function AdminSystemPage() {
                   ? 'bg-gradient-to-r from-rose-600 to-red-600 text-white border border-rose-300 animate-pulse ring-2 ring-rose-400'
                   : 'bg-amber-600/90 hover:bg-amber-600 text-white border border-amber-400/40'
               }`}
-              title="Kích hoạt mô phỏng đợt bùng nổ tải 12.000 req/s kiểm tra khả năng co giãn APM và RabbitMQ"
+              title="Kích hoạt mô phỏng đợt bùng nổ tải thuyết trình: CPU 45%-80%, RabbitMQ 4.500 msgs/s, Gateway 70ms trong 6.5s"
             >
               <span>⚡</span>
-              <span>{isStressTesting ? `Dừng Thử Tải (${stressCountdown}s)` : 'Thử Tải Đột Biến'}</span>
+              <span>{isStressTesting ? `🔥 Đang Thử Tải (${stressCountdown}s)` : 'Thử Tải Đột Biến'}</span>
             </button>
 
-            {/* Làm mới */}
+            {/* 3. LÀM MỚI - ÉP ĐỒNG BỘ CHỈ SỐ NGAY LẬP TỨC */}
             <button
               type="button"
               onClick={handleRefresh}
               className="flex items-center gap-2 px-3.5 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-xs font-bold text-white transition-all btn-press cursor-pointer"
+              title="Ép đồng bộ và làm mới các chỉ số vi dịch vụ thủ công"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
               <span>Làm Mới</span>
             </button>
 
-            {/* Eureka Portal */}
+            {/* 4. Eureka Portal */}
             <a
               href="http://localhost:8761"
               target="_blank"
@@ -276,89 +362,79 @@ export default function AdminSystemPage() {
 
       {/* Cảnh báo khi đang Thử Tải Đột Biến */}
       {isStressTesting && (
-        <div className="p-4 bg-gradient-to-r from-rose-50 via-amber-50 to-rose-50 border-2 border-rose-400 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg animate-pulse">
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-center justify-between gap-4 text-rose-800 text-xs font-semibold animate-fadeIn">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold text-lg shrink-0">
-              🔥
-            </div>
+            <span className="flex h-3 w-3 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500" />
+            </span>
             <div>
-              <div className="text-xs font-black text-rose-950 uppercase tracking-wider flex items-center gap-2">
-                <span>ĐANG BƠM TẢI ĐỘT BIẾN (SPIKE LOAD TESTING: 12.500 REQ/S)</span>
-                <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-mono">
-                  Còn {stressCountdown}s
-                </span>
-              </div>
-              <p className="text-xs text-rose-800 font-medium mt-0.5">
-                Lưu lượng API Gateway và hàng đợi RabbitMQ đang tăng vọt. CPU cụm cluster vọt lên ~85%, Ram JVM đẩy tải xử lý đồng thời để kiểm tra cơ chế Circuit Breaker & Fallback.
-              </p>
+              <strong className="font-extrabold text-rose-900">MÔ PHỎNG THỬ TẢI ĐỘT BIẾN (DEMO APM SPIKE LOAD):</strong> Đang bơm lưu lượng kiểm thử ~4.500 msgs/s qua API Gateway và RabbitMQ. Tự động phục hồi sau {stressCountdown}s.
             </div>
           </div>
           <button
-            onClick={toggleStressTest}
-            className="px-4 py-2 bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs rounded-xl shadow transition-all shrink-0 cursor-pointer"
+            onClick={() => { setIsStressTesting(false); setStressCountdown(0); }}
+            className="px-3 py-1 bg-rose-600 text-white rounded-lg font-bold text-[11px] hover:bg-rose-700 transition cursor-pointer shrink-0"
           >
-            Dừng Ngay Lập Tức
+            Dừng Ngay
           </button>
         </div>
       )}
 
-      {/* Tabs Chuyển Đổi Phân Hệ & Đồng Hồ WebSocket Stream */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-2">
-        <div className="flex items-center gap-6">
+      {/* Điều hướng 2 Tab: APM Microservices & Nhật Ký Kiểm Toán */}
+      <div className="flex items-center justify-between border-b border-slate-200 pb-3 flex-wrap gap-3">
+        <div className="flex items-center gap-2">
           <button
-            type="button"
             onClick={() => setActiveTab('apm')}
-            className={`pb-2 text-xs font-extrabold transition-all border-b-2 cursor-pointer flex items-center gap-2 ${
+            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all btn-press cursor-pointer ${
               activeTab === 'apm'
-                ? 'border-indigo-600 text-indigo-700'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            <Server className="w-4 h-4" />
-            <span>Sức Khỏe 12 Vi Dịch Vụ & Actuator APM</span>
+            📊 APM 10 Microservices & Cụm Server
           </button>
-
           <button
-            type="button"
             onClick={() => setActiveTab('audit')}
-            className={`pb-2 text-xs font-extrabold transition-all border-b-2 cursor-pointer flex items-center gap-2 ${
+            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all btn-press cursor-pointer flex items-center gap-2 ${
               activeTab === 'audit'
-                ? 'border-indigo-600 text-indigo-700'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            <ShieldCheck className="w-4 h-4" />
-            <span>Nhật Ký Kiểm Toán An Ninh (Security Audit Logs)</span>
+            <span>🛡️ Nhật Ký Kiểm Toán An Ninh</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              activeTab === 'audit' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+            }`}>
+              {auditLogs.length}
+            </span>
           </button>
         </div>
 
-        {/* Đồng hồ hiển thị thời gian WebSocket Stream trực tiếp */}
-        <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 shrink-0">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+        {/* Đèn tín hiệu nhấp nháy Live: ● WebSocket/Actuator Stream: [HH:MM:SS] */}
+        <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 font-mono bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
+          <span className={`w-2 h-2 rounded-full ${isPaused ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'}`} />
           <span>WebSocket/Actuator Stream:</span>
-          <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
-            {streamTimeFormatted}
-          </span>
+          <span className="text-indigo-600 font-bold">{streamTimeFormatted}</span>
         </div>
       </div>
 
-      {/* TAB 1: SỨC KHỎE 12 VI DỊCH VỤ & ACTUATOR APM */}
+      {/* TAB 1: APM 12 MICROSERVICES */}
       {activeTab === 'apm' && (
         <div className="space-y-6">
-          {/* 4 THẺ KPI CHUẨN XÁC 100% THEO media_1791397426014.png */}
+          {/* 4 THẺ KPI CHÍNH */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* KPI 1: Dịch vụ sẵn sàng */}
             <div className="bento-card p-5 space-y-2">
               <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider">
                 <span>DỊCH VỤ SẴN SÀNG</span>
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
               </div>
-              <div className="text-3xl font-black text-slate-900 tracking-tight">
-                12 / 12 Services
+              <div className="text-3xl font-black text-slate-900 tracking-tight font-mono">
+                10/10
               </div>
-              <div className="text-xs text-emerald-600 font-bold flex items-center gap-1">
-                <span>🟢</span>
-                <span>Trạng thái: 100% HEALTHY UP</span>
+              <div className="text-xs text-slate-500 font-medium">
+                100% UP • Eureka Heartbeat: 30s
               </div>
             </div>
 
@@ -366,12 +442,14 @@ export default function AdminSystemPage() {
             <div className="bento-card p-5 space-y-2">
               <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider">
                 <span>RABBITMQ EVENT BUS</span>
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                <Radio className="w-4 h-4 text-purple-600" />
               </div>
-              <div className="text-3xl font-black text-slate-900 tracking-tight font-mono">
+              <div className={`text-3xl font-black tracking-tight font-mono ${
+                isStressTesting ? 'text-rose-600' : 'text-slate-900'
+              }`}>
                 {rabbitMqText}
               </div>
-              <div className="text-xs text-blue-600 font-medium">
+              <div className="text-xs text-slate-500 font-medium">
                 {rabbitMqSub}
               </div>
             </div>
@@ -382,7 +460,9 @@ export default function AdminSystemPage() {
                 <span>ĐỘ TRỄ API GATEWAY</span>
                 <Activity className="w-4 h-4 text-purple-600" />
               </div>
-              <div className="text-3xl font-black text-slate-900 tracking-tight font-mono">
+              <div className={`text-3xl font-black tracking-tight font-mono ${
+                isStressTesting ? 'text-rose-600' : 'text-slate-900'
+              }`}>
                 {latencyText}
               </div>
               <div className="text-xs text-slate-500 font-medium">
@@ -407,15 +487,16 @@ export default function AdminSystemPage() {
             </div>
           </div>
 
-          {/* LƯỚI 12 VI DỊCH VỤ - 3 CỘT KHỚP CHUẨN XÁC media_1791397426014.png */}
+          {/* LƯỚI 10 VI DỊCH VỤ NGHIỆP VỤ - 3 CỘT KHỚP 100% KIẾN TRÚC */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {DEFAULT_12_SERVICES.map((svc) => {
+            {DEFAULT_10_SERVICES.map((svc) => {
               const liveCpu = liveMetrics[svc.id]?.cpu || `${svc.defaultCpu}%`;
-              const liveCpuNum = liveMetrics[svc.id]?.cpuNum || svc.defaultCpu;
+              const liveCpuNum = liveMetrics[svc.id]?.cpuNum ?? svc.defaultCpu;
               const liveHeap = liveMetrics[svc.id]?.heap || `${svc.defaultUsed}MB / ${svc.maxMem}MB`;
-              const heapPercent = liveMetrics[svc.id]?.heapPercent || Math.round((svc.defaultUsed / svc.maxMem) * 100);
+              const heapPercent = liveMetrics[svc.id]?.heapPercent ?? Math.round((svc.defaultUsed / svc.maxMem) * 100);
               const threads = liveMetrics[svc.id]?.threads || svc.defaultThreads;
               const reqPerSec = liveMetrics[svc.id]?.reqPerSec || svc.defaultReq;
+              const isGcCleaning = Boolean(gcCleanMap[svc.id]);
 
               return (
                 <div
@@ -450,10 +531,18 @@ export default function AdminSystemPage() {
 
                   {/* Chi tiết Heap Memory & CPU */}
                   <div className="mt-4 pt-3 border-t border-slate-100 space-y-3 text-[11px]">
-                    {/* Heap Memory */}
+                    {/* Heap Memory & Nhãn GC Clean */}
                     <div>
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-500 font-medium">Heap Memory (JVM):</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-500 font-medium">Heap Memory (JVM):</span>
+                          {/* Nhãn GC Clean nhấp nháy màu tím khi Minor GC thu hồi bộ nhớ */}
+                          {isGcCleaning && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-purple-100 text-purple-700 border border-purple-300 animate-pulse">
+                              GC Clean
+                            </span>
+                          )}
+                        </div>
                         <span className="font-mono font-bold text-slate-700">
                           {liveHeap} ({heapPercent}%)
                         </span>
@@ -468,16 +557,16 @@ export default function AdminSystemPage() {
                       </div>
                     </div>
 
-                    {/* CPU Usage */}
+                    {/* CPU Usage - Progress Bar đổi màu thông minh: Xanh (<10%) -> Vàng (10%-25%) -> Đỏ (>25%) */}
                     <div>
                       <div className="flex items-center justify-between">
                         <span className="text-slate-500 font-medium">CPU Usage:</span>
                         <span className={`font-mono font-bold px-1.5 py-0.5 rounded text-[10px] ${
-                          liveCpuNum > 50
-                            ? 'bg-rose-100 text-rose-800'
-                            : liveCpuNum > 10
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'text-emerald-700 font-bold'
+                          liveCpuNum > 25
+                            ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                            : liveCpuNum >= 10
+                            ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold'
                         }`}>
                           {liveCpu}
                         </span>
@@ -485,9 +574,9 @@ export default function AdminSystemPage() {
                       <div className="w-full bg-slate-100 rounded-full h-1.5 mt-1.5 overflow-hidden">
                         <div
                           className={`h-1.5 rounded-full transition-all duration-500 ${
-                            liveCpuNum > 50
+                            liveCpuNum > 25
                               ? 'bg-rose-500'
-                              : liveCpuNum > 10
+                              : liveCpuNum >= 10
                               ? 'bg-amber-500'
                               : 'bg-emerald-500'
                           }`}
@@ -535,7 +624,8 @@ export default function AdminSystemPage() {
                 className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none shadow-2xs cursor-pointer"
               >
                 <option value="ALL">Tất cả hành động</option>
-                <option value="SPIKE_LOAD_TEST">SPIKE_LOAD_TEST</option>
+                <option value="APM_SPIKE_SIMULATION">APM_SPIKE_SIMULATION</option>
+                <option value="MANUAL_METRICS_REFRESH">MANUAL_METRICS_REFRESH</option>
                 <option value="APM_SYSTEM_CHECK">APM_SYSTEM_CHECK</option>
                 <option value="SAVE_METER_READINGS">SAVE_METER_READINGS</option>
                 <option value="SIGN_CONTRACT">SIGN_CONTRACT</option>
@@ -581,6 +671,8 @@ export default function AdminSystemPage() {
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
                         log.action.includes('SPIKE')
                           ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                          : log.action.includes('REFRESH')
+                          ? 'bg-purple-100 text-purple-800 border border-purple-300'
                           : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
                       }`}>
                         {log.action}
