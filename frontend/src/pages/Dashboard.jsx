@@ -716,6 +716,14 @@ export default function Dashboard() {
     return invoices.find((inv) => inv.room === myRoomNumber && (!inv.houseCode || inv.houseCode === currentRoomObj?.houseCode)) || null;
   }, [invoices, myRoomNumber, currentRoomObj, isContractPending]);
 
+  const scopedRooms = useMemo(() => {
+    if (role === 'STAFF') {
+      const houseCode = user?.houseCode || 'CS-01';
+      return rooms.filter((r) => r.houseCode === houseCode);
+    }
+    return rooms;
+  }, [rooms, role, user]);
+
   // =========================================================================
   // 1A. GIAO DIỆN BẮT BUỘC: NỘP TIỀN CỌC & KÝ HỢP ĐỒNG ĐIỆN TỬ (ONBOARDING GATE)
   // NGHIỆP VỤ: Chưa thanh toán cọc & chưa ký HĐ thì CHƯA CÓ thanh toán tiền phòng & CHƯA CÓ giao diện cư dân!
@@ -2485,14 +2493,6 @@ export default function Dashboard() {
   // =========================================================================
   // 3. GIAO DIỆN DÀNH CHO ADMIN & STAFF MANAGEMENT DASHBOARD (BENTO GRID FLAGSHIP)
   // =========================================================================
-  const scopedRooms = useMemo(() => {
-    if (role === 'STAFF') {
-      const houseCode = user?.houseCode || 'CS-01';
-      return rooms.filter((r) => r.houseCode === houseCode);
-    }
-    return rooms;
-  }, [rooms, role, user]);
-
   const occupiedCount = scopedRooms.filter((r) => r.status === 'OCCUPIED').length;
   const availableCount = scopedRooms.filter((r) => r.status === 'AVAILABLE').length;
   const maintenanceCount = scopedRooms.filter((r) => r.status === 'MAINTENANCE').length;

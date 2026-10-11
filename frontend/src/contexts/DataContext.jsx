@@ -24,7 +24,8 @@ const DEFAULT_TICKETS = [
   { id: 1, room: 'P.102', issue: 'Hỏng vòi sen nhà tắm bị rò rỉ nước', tenant: 'Trần Thị Bình', date: '20/09/2026', priority: 'HIGH', status: 'IN_PROGRESS' },
   { id: 2, room: 'P.202', issue: 'Điều hòa không lạnh, có tiếng kêu to', tenant: 'Vũ Hoàng Dũng', date: '21/09/2026', priority: 'HIGH', status: 'PENDING' },
   { id: 3, room: 'P.301', issue: 'Bóng đèn tuýp ban công bị cháy', tenant: 'Đỗ Thị Mai', date: '18/09/2026', priority: 'LOW', status: 'RESOLVED' },
-  { id: 4, room: 'P.101', issue: 'Cửa sổ ban công bị kẹt khóa', tenant: 'Nguyễn Văn Khách Thuê', date: '15/09/2026', priority: 'MEDIUM', status: 'RESOLVED' },
+  { id: 4, room: 'P.101', issue: 'Cửa sổ ban công bị kẹt khóa', tenant: 'Nguyễn Văn An', date: '15/09/2026', priority: 'MEDIUM', status: 'RESOLVED' },
+  { id: 5, room: 'P.103', issue: 'Áp lực nước vòi sen yếu vào giờ cao điểm', tenant: 'Phạm Minh Cường', date: '22/09/2026', priority: 'LOW', status: 'IN_PROGRESS' },
 ];
 
 const ZERO_SANDBOX_TENANTS = [
@@ -3280,6 +3281,7 @@ export const DataProvider = ({ children }) => {
             ...l,
             packageCode,
             subscriptionPackage: pkgName,
+            status: 'ACTIVE',
             maxHousesLimit: maxHouses
           };
         }

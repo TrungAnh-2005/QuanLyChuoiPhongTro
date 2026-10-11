@@ -787,8 +787,11 @@ export default function RoomsPage() {
 
   // Xác định gói cước hiện tại của chủ trọ
   const currentLandlord = landlords.find(l => l.username === user?.username || l.fullName === user?.fullName) || landlords[0];
-  const landlordPackage = currentLandlord?.packageCode || 'BASIC';
-  const maxRoomsAllowed = landlordPackage === 'ENTERPRISE' ? 99999 : landlordPackage === 'PRO' ? 100 : 30;
+  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+  const landlordPackage = (isZeroSandbox && (!currentLandlord || currentLandlord.packageCode === 'NONE'))
+    ? 'NONE'
+    : (currentLandlord?.packageCode || 'BASIC');
+  const maxRoomsAllowed = landlordPackage === 'ENTERPRISE' ? 99999 : landlordPackage === 'PRO' ? 100 : (landlordPackage === 'NONE' || landlordPackage === 'TRIAL' ? 10 : 30);
 
   const handleCreateRoom = (e) => {
     e.preventDefault();
@@ -890,11 +893,24 @@ export default function RoomsPage() {
             </button>
 
             <button
-              onClick={() => setShowModal(true)}
+              onClick={() => {
+                if (rooms.length >= maxRoomsAllowed) {
+                  setQuotaExceededModal(true);
+                } else {
+                  setShowModal(true);
+                }
+              }}
               className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-purple-600/25 transition-all hover:scale-105 btn-press cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Thêm Phòng Mới</span>
+              {maxRoomsAllowed < 99999 && (
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                  rooms.length >= maxRoomsAllowed ? 'bg-amber-400 text-slate-950 animate-pulse' : 'bg-white/20 text-white'
+                }`}>
+                  {rooms.length}/{maxRoomsAllowed}
+                </span>
+              )}
             </button>
           </div>
         ) : (

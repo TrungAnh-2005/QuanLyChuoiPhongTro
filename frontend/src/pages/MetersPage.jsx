@@ -32,6 +32,8 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import Modal from '../components/common/Modal';
+import UpgradePromptModal from '../components/common/UpgradePromptModal';
+import BuySaasPackageModal from '../components/staff/BuySaasPackageModal';
 import MeterAiScannerModal from './admin/meters/MeterAiScannerModal';
 import MeterDisputeModal from '../components/tenant/MeterDisputeModal';
 
@@ -56,10 +58,28 @@ export default function MetersPage() {
     tenants = [],
     meterDisputes = [],
     submitMeterDispute,
-    contracts = []
+    contracts = [],
+    landlords = [],
+    createSaasInvoice,
+    updateLandlordPackage
   } = useData();
 
+  // Xác định gói bản quyền của Chủ trọ hiện tại
+  const currentLandlord = useMemo(() => {
+    return (landlords || []).find(
+      (l) => l.username === user?.username || l.fullName === user?.fullName
+    ) || (landlords && landlords.length > 0 ? landlords[0] : null);
+  }, [user, landlords]);
+
+  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+  const landlordPackage = (isZeroSandbox && (!currentLandlord || currentLandlord.packageCode === 'NONE'))
+    ? 'NONE'
+    : (currentLandlord?.packageCode || 'BASIC');
+  const isEnterprise = landlordPackage === 'ENTERPRISE';
+
   const [showAiScanner, setShowAiScanner] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showBuyPackageModal, setShowBuyPackageModal] = useState(false);
   const [showPriceModal, setShowPriceModal] = useState(false);
   const [showDisputeModal, setShowDisputeModal] = useState(false);
   const [selectedDisputeRoom, setSelectedDisputeRoom] = useState(null);
@@ -916,14 +936,31 @@ export default function MetersPage() {
           {/* Hàng dưới: Nút Quét AI màu vàng cam ấn tượng */}
           <button
             type="button"
-            onClick={() => setShowAiScanner(true)}
-            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white text-xs font-black rounded-xl shadow-md shadow-amber-500/25 transition-all btn-press cursor-pointer"
+            onClick={() => {
+              if (!isEnterprise) {
+                setShowUpgradeModal(true);
+              } else {
+                setShowAiScanner(true);
+              }
+            }}
+            className={`w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-white text-xs font-black rounded-xl shadow-md transition-all btn-press cursor-pointer ${
+              isEnterprise
+                ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 shadow-amber-500/25'
+                : 'bg-gradient-to-r from-slate-700 via-slate-800 to-slate-900 hover:from-slate-800 hover:to-black shadow-slate-900/30 border border-amber-400/50'
+            }`}
           >
-            <Sparkles className="w-4 h-4 text-amber-200" />
+            <Sparkles className="w-4 h-4 text-amber-300" />
             <span>⚡ Quét Công Tơ Bằng AI (OCR)</span>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-white/25 text-white">
-              {unrecordedCount} phòng chờ
-            </span>
+            {!isEnterprise ? (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-gradient-to-r from-amber-400 to-orange-400 text-slate-950 flex items-center gap-1 shadow-xs">
+                <span>👑</span>
+                <span>GÓI ENTERPRISE</span>
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-white/25 text-white">
+                {unrecordedCount} phòng chờ
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -1386,6 +1423,55 @@ export default function MetersPage() {
         rooms={roomsForAi}
         currentMetersData={currentMetersData}
         utilityPrices={utilityPrices}
+      />
+
+      {/* Modal Cảnh Báo Bản Quyền & Nâng Cấp Gói */}
+      <UpgradePromptModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        featureName="AI Vision OCR Quét Đồng Hồ Điện Nước"
+        featureDescription="Hệ thống AI Gemini 2.5 Vision tự động trích xuất chỉ số công tơ điện nước qua camera và ảnh chụp đối soát. Tính năng tự động hóa này chỉ có trên Gói Doanh Nghiệp (ENTERPRISE)."
+        currentPackageCode={landlordPackage}
+        requiredPackageCode="ENTERPRISE"
+        onUpgradeClick={() => {
+          setShowUpgradeModal(false);
+          setShowBuyPackageModal(true);
+        }}
+      />
+
+      {/* Modal Mua Gói Bản Quyền SaaS */}
+      <BuySaasPackageModal
+        isOpen={showBuyPackageModal}
+        onClose={() => setShowBuyPackageModal(false)}
+        currentLandlord={currentLandlord}
+        initialPackageCode="ENTERPRISE"
+        onConfirmPurchase={(planData) => {
+          setShowBuyPackageModal(false);
+          if (updateLandlordPackage) {
+            updateLandlordPackage(currentLandlord?.id || 1, planData.packageCode);
+          }
+          if (createSaasInvoice) {
+            createSaasInvoice({
+              id: `SAAS-${Date.now()}`,
+              code: `HD-SAAS-2026-${Date.now().toString().slice(-4)}`,
+              landlordId: currentLandlord?.id || 1,
+              landlordName: currentLandlord?.fullName || 'Chủ trọ',
+              landlordPhone: currentLandlord?.phone || '0912.888.666',
+              packageName: planData.packageName,
+              packageCode: planData.packageCode,
+              billingCycle: planData.billingCycle,
+              period: `12 Tháng`,
+              amount: planData.amount,
+              dueDate: new Date().toLocaleDateString('vi-VN'),
+              status: 'PAID'
+            });
+          }
+          setSaveToast({
+            type: 'SUCCESS',
+            message: `🎉 Nâng cấp lên ${planData.packageName} thành công! Đã kích hoạt toàn bộ tính năng AI Vision OCR.`
+          });
+          setTimeout(() => setSaveToast(null), 4000);
+        }}
       />
     </div>
   );

@@ -309,19 +309,33 @@ export default function InvoicesPage({ forcedTab }) {
                   <span>Bản Quyền Nền Tảng Quản Lý Chuỗi Trọ • B2B SaaS Subscription</span>
                 </div>
                 <h2 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-3">
-                  <span>{isZeroSandbox ? 'Chưa Đăng Ký Gói Cước SaaS' : 'Gói Chuyên Nghiệp (PRO)'}</span>
+                  <span>
+                    {landlordPackageCode === 'ENTERPRISE'
+                      ? 'Gói Doanh Nghiệp (ENTERPRISE)'
+                      : landlordPackageCode === 'PRO'
+                      ? 'Gói Chuyên Nghiệp (PRO)'
+                      : landlordPackageCode === 'BASIC'
+                      ? 'Gói Cơ Bản (BASIC)'
+                      : 'Gói Dùng Thử 0đ (TRIAL)'}
+                  </span>
                   <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                    isZeroSandbox
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                      : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    currentLandlord?.status === 'ACTIVE' && landlordPackageCode !== 'NONE'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                   }`}>
-                    {isZeroSandbox ? 'Dùng Thử / Chưa Kích Hoạt (TRIAL)' : 'Đang hoạt động (ACTIVE)'}
+                    {currentLandlord?.status === 'ACTIVE' && landlordPackageCode !== 'NONE'
+                      ? 'Đang hoạt động (ACTIVE)'
+                      : 'Dùng Thử / Chưa Kích Hoạt (TRIAL)'}
                   </span>
                 </h2>
                 <p className="text-purple-200 text-xs sm:text-sm max-w-2xl leading-relaxed">
-                  {isZeroSandbox
-                    ? 'Tài khoản chưa đăng ký gói dịch vụ. Hãy chọn một gói dịch vụ từ Admin để mở rộng hạn mức quản lý cơ sở và phòng trọ.'
-                    : 'Quyền lợi tài khoản: Quản lý không giới hạn cơ sở, Quota 100 phòng trọ, AI Vision OCR nhận diện đồng hồ điện nước, Cổng VietQR tự động gạch nợ 24/7 và ký Hợp đồng điện tử.'}
+                  {landlordPackageCode === 'ENTERPRISE'
+                    ? 'Quyền lợi tài khoản: Quản lý không giới hạn cơ sở, Quota Không giới hạn phòng, AI Vision OCR nhận diện đồng hồ điện nước, Quét định danh KYC CCCD 12 số, Cổng VietQR tự động gạch nợ 24/7 và ký Hợp đồng điện tử.'
+                    : landlordPackageCode === 'PRO'
+                    ? 'Quyền lợi tài khoản: Quản lý không giới hạn cơ sở, Quota 100 phòng trọ, Cổng VietQR tự động gạch nợ 24/7, Xuất hóa đơn VAT điện tử và ký Hợp đồng điện tử E-Sign.'
+                    : landlordPackageCode === 'BASIC'
+                    ? 'Quyền lợi tài khoản: Quản lý tối đa 2 cơ sở, Quota 30 phòng trọ, tính tiền phòng & chốt điện nước tự động, tạo mã QR VietQR.'
+                    : 'Tài khoản đang ở chế độ dùng thử 0đ (Tối đa 1 cơ sở, 10 phòng). Hãy mua gói bản quyền để mở khóa các tính năng tự động và mở rộng quy mô chuỗi.'}
                 </p>
                 <div className="flex flex-wrap gap-4 text-xs text-purple-200/90 pt-1 font-mono">
                   <div>Hạn bản quyền: <strong className="text-white">31/12/2026</strong></div>

@@ -86,12 +86,21 @@ export default function BuySaasPackageModal({
   isOpen,
   onClose,
   currentLandlord,
-  onConfirmPurchase
+  onConfirmPurchase,
+  initialPackageCode
 }) {
   const [selectedCode, setSelectedCode] = useState(
-    currentLandlord?.packageCode === 'ENTERPRISE' ? 'ENTERPRISE' : 'PRO'
+    initialPackageCode || (currentLandlord?.packageCode === 'ENTERPRISE' ? 'ENTERPRISE' : 'PRO')
   );
   const [selectedMonths, setSelectedMonths] = useState(12);
+
+  React.useEffect(() => {
+    if (initialPackageCode) {
+      setSelectedCode(initialPackageCode);
+    } else if (currentLandlord?.packageCode === 'ENTERPRISE') {
+      setSelectedCode('ENTERPRISE');
+    }
+  }, [initialPackageCode, currentLandlord, isOpen]);
 
   const selectedPkg = PACKAGES.find((p) => p.code === selectedCode) || PACKAGES[1];
   const selectedCycle = CYCLES.find((c) => c.months === selectedMonths) || CYCLES[2];

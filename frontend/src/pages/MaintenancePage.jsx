@@ -61,6 +61,8 @@ export default function MaintenancePage() {
         : (currentTenant?.room ? [currentTenant.room] : (userRoom ? [userRoom] : [])))
     : [];
 
+  const activeRentedRooms = (myRentedRooms || []).filter((r) => r && String(r).trim() && String(r).trim() !== 'null' && String(r).trim() !== 'undefined');
+
   const [showModal, setShowModal] = useState(false);
   const [assignModal, setAssignModal] = useState(null); // ticket being assigned/updated by staff
   const [selectedPhoto, setSelectedPhoto] = useState(null);
@@ -130,7 +132,7 @@ export default function MaintenancePage() {
     ? tickets.filter(
         (t) =>
           myRentedRooms.includes(t.room) ||
-          t.room.toLowerCase().includes('khu vực chung') ||
+          (typeof t.room === 'string' && t.room.toLowerCase().includes('khu vực chung')) ||
           (t.tenant && t.tenant.toLowerCase().includes((user?.fullName || '').toLowerCase()))
       )
     : tickets;
@@ -141,7 +143,7 @@ export default function MaintenancePage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
             {isTenant
-              ? `Yêu Cầu Báo Hỏng Thiết Bị (${myRentedRooms.length > 0 ? myRentedRooms.map((r) => `P.${r.replace('P.', '')}`).join(', ') : 'Cư Dân'})`
+              ? `Yêu Cầu Báo Hỏng Thiết Bị (${activeRentedRooms.length > 0 ? activeRentedRooms.map((r) => `P.${String(r).replace('P.', '')}`).join(', ') : 'Chưa Thuê Phòng'})`
               : 'Yêu Cầu Sửa Chữa & Điều Phối Kỹ Thuật'}
           </h1>
           <p className="text-slate-500 text-sm mt-1 font-medium">
@@ -183,8 +185,32 @@ export default function MaintenancePage() {
       {/* Tickets List */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {displayedTickets.length === 0 ? (
-          <div className="col-span-2 bg-white border border-slate-200/80 rounded-2xl p-8 text-center text-slate-500 text-sm">
-            Hiện không có yêu cầu sửa chữa nào.
+          <div className="col-span-2 bg-white border border-slate-200/80 rounded-3xl p-10 text-center shadow-xs space-y-3">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center border border-purple-200/60 shadow-xs">
+              <Wrench className="w-7 h-7" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-slate-800">
+                Chưa có yêu cầu báo hỏng hay sự cố nào
+              </h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                {isTenant
+                  ? 'Trang thiết bị phòng đang hoạt động bình thường. Nếu phát sinh sự cố điện, nước hoặc nội thất, bạn có thể tạo phiếu mới ngay bên dưới.'
+                  : 'Hiện không có phiếu báo hỏng nào cần xử lý hoặc điều phối thợ.'}
+              </p>
+            </div>
+            {isTenant && (
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-purple-600/20 transition-all btn-press cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Tạo Báo Hỏng Thiết Bị Mới</span>
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           displayedTickets.map((ticket, idx) => {

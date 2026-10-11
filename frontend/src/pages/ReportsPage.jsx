@@ -58,10 +58,9 @@ const FACILITIES = [
   { code: 'CS-03', name: 'Nhà Trọ Đống Đa - Cơ Sở 3' }
 ];
 
-const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
-
 export default function ReportsPage() {
   const { user } = useAuth();
+  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
   const { rooms = [], invoices = [], landlords = [], saasInvoices = [] } = useData();
   const role = user?.role || 'ADMIN';
   const isStaff = role === 'STAFF';
@@ -262,28 +261,46 @@ export default function ReportsPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
             <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Doanh Thu Thuê Phần Mềm (MRR)</div>
-            <div className="text-2xl font-black text-purple-700 mt-2">54.200.000 đ</div>
-            <div className="text-xs text-emerald-600 font-bold mt-1 flex items-center gap-1">
+            <div className="text-2xl font-black text-purple-700 mt-2">
+              {isZeroSandbox
+                ? (totalSaasRevenue > 0 ? `${totalSaasRevenue.toLocaleString('vi-VN')} đ` : '0 đ')
+                : (totalSaasRevenue > 0 ? `${totalSaasRevenue.toLocaleString('vi-VN')} đ` : '54.200.000 đ')}
+            </div>
+            <div className={`text-xs font-bold mt-1 flex items-center gap-1 ${isZeroSandbox && totalSaasRevenue === 0 ? 'text-slate-400' : 'text-emerald-600'}`}>
               <ArrowUpRight className="w-3.5 h-3.5" />
-              <span>+18.5% so với tháng trước</span>
+              <span>
+                {isZeroSandbox
+                  ? (totalSaasRevenue > 0 ? '+100% bắt đầu phát sinh' : '0% (Chưa phát sinh doanh thu)')
+                  : '+18.5% so với tháng trước'}
+              </span>
             </div>
           </div>
 
           <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
             <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Chủ Trọ Đang Hoạt Động</div>
             <div className="text-2xl font-black text-slate-900 mt-2">
-              {landlords.length || 42} Chủ Trọ
+              {isZeroSandbox
+                ? `${landlords.filter((l) => l.status === 'ACTIVE' && l.packageCode && l.packageCode !== 'NONE').length} Chủ Trọ`
+                : `${landlords.length || 42} Chủ Trọ`}
             </div>
             <div className="text-xs text-slate-500 font-medium mt-1">
-              Quản lý tổng cộng 380 phòng trọ
+              {isZeroSandbox
+                ? `Quản lý tổng cộng ${rooms.length} phòng trọ`
+                : 'Quản lý tổng cộng 380 phòng trọ'}
             </div>
           </div>
 
           <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
             <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tổng Giao Dịch GMV Toàn Sàn</div>
-            <div className="text-2xl font-black text-blue-700 mt-2">750.000.000 đ</div>
+            <div className="text-2xl font-black text-blue-700 mt-2">
+              {isZeroSandbox
+                ? (totalGmv > 0 ? `${totalGmv.toLocaleString('vi-VN')} đ` : '0 đ')
+                : (totalGmv > 0 ? `${totalGmv.toLocaleString('vi-VN')} đ` : '750.000.000 đ')}
+            </div>
             <div className="text-xs text-blue-600 font-medium mt-1">
-              Qua VietQR, VNPay, MoMo
+              {isZeroSandbox
+                ? (totalGmv > 0 ? 'Giao dịch mới phát sinh' : 'Chưa phát sinh giao dịch')
+                : 'Qua VietQR, VNPay, MoMo'}
             </div>
           </div>
 

@@ -23,6 +23,8 @@ import {
 import { Link } from 'react-router-dom';
 import api from '../services/api';
 import Modal from '../components/common/Modal';
+import UpgradePromptModal from '../components/common/UpgradePromptModal';
+import BuySaasPackageModal from '../components/staff/BuySaasPackageModal';
 import HouseServiceConfigModal from '../components/staff/HouseServiceConfigModal';
 
 const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
@@ -77,12 +79,39 @@ const initialHouses = [
 
 export default function BoardingHousesPage() {
   const { user } = useAuth();
-  const { rooms = [], tenants = [], invoices = [] } = useData();
+  const {
+    rooms = [],
+    tenants = [],
+    invoices = [],
+    landlords = [],
+    createSaasInvoice,
+    updateLandlordPackage
+  } = useData();
   const role = user?.role || 'ADMIN';
   const isTenant = role === 'TENANT';
   const isStaff = role === 'STAFF';
   const staffHouseCode = isStaff ? (user?.houseCode || 'CS-01') : null;
   const [houseScopeTab, setHouseScopeTab] = useState('ALL'); // 'ALL' | 'ASSIGNED'
+
+  // Xác định gói cước và hạn mức cơ sở của Chủ trọ hiện tại
+  const currentLandlord = useMemo(() => {
+    return (landlords || []).find(
+      (l) => l.username === user?.username || l.fullName === user?.fullName
+    ) || (landlords && landlords.length > 0 ? landlords[0] : null);
+  }, [user, landlords]);
+
+  const landlordPackage = (isZeroSandbox && (!currentLandlord || currentLandlord.packageCode === 'NONE'))
+    ? 'NONE'
+    : (currentLandlord?.packageCode || 'BASIC');
+
+  const maxHousesAllowed = landlordPackage === 'ENTERPRISE' || landlordPackage === 'PRO'
+    ? 999
+    : landlordPackage === 'BASIC'
+    ? 2
+    : 1;
+
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showBuyPackageModal, setShowBuyPackageModal] = useState(false);
 
   const [rawHouses, setHouses] = useState(() => {
     try {
@@ -316,11 +345,26 @@ export default function BoardingHousesPage() {
           </button>
 
           <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-sm font-bold rounded-xl shadow-md shadow-purple-600/25 transition-all btn-press"
+            onClick={() => {
+              if (rawHouses.length >= maxHousesAllowed) {
+                setShowUpgradeModal(true);
+              } else {
+                setShowModal(true);
+              }
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-sm font-bold rounded-xl shadow-md shadow-purple-600/25 transition-all btn-press cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Thêm Cơ Sở Nhà Trọ</span>
+            {maxHousesAllowed < 999 && (
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                rawHouses.length >= maxHousesAllowed
+                  ? 'bg-amber-400 text-slate-950 animate-pulse'
+                  : 'bg-white/20 text-white'
+              }`}>
+                {rawHouses.length}/{maxHousesAllowed}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -704,6 +748,51 @@ export default function BoardingHousesPage() {
         isOpen={serviceConfigModalOpen}
         onClose={() => setServiceConfigModalOpen(false)}
         defaultHouseId={selectedHouseForConfig}
+      />
+
+      {/* Modal Cảnh Báo Bản Quyền & Nâng Cấp Gói */}
+      <UpgradePromptModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        featureName="Mở Rộng Thêm Cơ Sở / Tòa Nhà Mới"
+        featureDescription={`Gói hiện tại (${landlordPackage}) chỉ cho phép tối đa ${maxHousesAllowed} cơ sở nhà trọ (Hiện bạn đã có ${houses.length} cơ sở). Để quản lý chuỗi không giới hạn tòa nhà trọ, vui lòng nâng cấp lên Gói Chuyên Nghiệp (PRO) hoặc Gói Doanh Nghiệp (ENTERPRISE).`}
+        currentPackageCode={landlordPackage}
+        requiredPackageCode="PRO"
+        onUpgradeClick={(reqCode) => {
+          setShowUpgradeModal(false);
+          setShowBuyPackageModal(true);
+        }}
+      />
+
+      {/* Modal Mua Gói Bản Quyền SaaS */}
+      <BuySaasPackageModal
+        isOpen={showBuyPackageModal}
+        onClose={() => setShowBuyPackageModal(false)}
+        currentLandlord={currentLandlord}
+        initialPackageCode="PRO"
+        onConfirmPurchase={(planData) => {
+          setShowBuyPackageModal(false);
+          if (updateLandlordPackage) {
+            updateLandlordPackage(currentLandlord?.id || 1, planData.packageCode);
+          }
+          if (createSaasInvoice) {
+            createSaasInvoice({
+              id: `SAAS-${Date.now()}`,
+              code: `HD-SAAS-2026-${Date.now().toString().slice(-4)}`,
+              landlordId: currentLandlord?.id || 1,
+              landlordName: currentLandlord?.fullName || 'Chủ trọ',
+              landlordPhone: currentLandlord?.phone || '0912.888.666',
+              packageName: planData.packageName,
+              packageCode: planData.packageCode,
+              billingCycle: planData.billingCycle,
+              period: `12 Tháng`,
+              amount: planData.amount,
+              dueDate: new Date().toLocaleDateString('vi-VN'),
+              status: 'PAID'
+            });
+          }
+          alert(`🎉 Nâng cấp lên ${planData.packageName} thành công! Hạn mức mở rộng cơ sở đã được kích hoạt.`);
+        }}
       />
     </div>
   );
