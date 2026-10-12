@@ -293,7 +293,7 @@ export default function BuySaasPackageModal({
               className="btn-press btn-shimmer flex-1 sm:flex-initial px-6 py-3 bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-slate-950 font-black text-xs sm:text-sm rounded-xl shadow-lg shadow-amber-500/25 transition cursor-pointer flex items-center justify-center gap-2"
             >
               <CreditCard className="w-4 h-4 text-slate-950" />
-              <span>Nộp Tiền & Kích Hoạt Ngay</span>
+              <span>Nộp Tiền Qua VietQR / VNPay / MoMo</span>
             </button>
           </div>
         </div>

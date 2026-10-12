@@ -35,7 +35,8 @@ import {
   Lock,
   Clock,
   AlertTriangle,
-  ArrowRight
+  ArrowRight,
+  Trash2
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
@@ -44,6 +45,8 @@ import ResidentContractModal from '../components/tenant/ResidentContractModal';
 import RoommateRequestModal from '../components/tenant/RoommateRequestModal';
 import TenantMoveOutNoticeModal from '../components/settlement/TenantMoveOutNoticeModal';
 import MoveOutSettlementModal from '../components/settlement/MoveOutSettlementModal';
+import TrialExpiryBanner from '../components/common/TrialExpiryBanner';
+import { getTrialStatus } from '../utils/packagePermissions';
 
 import { ALL_ROOMS, HOUSES_LIST, getRoomImage } from '../data/roomsData';
 export { ALL_ROOMS, HOUSES_LIST };
@@ -62,6 +65,7 @@ export default function RoomsPage() {
     rooms,
     updateRoomStatus,
     updateRoomPrice,
+    updateRoom,
     addRoom,
     deleteRoom,
     submitRoomRequest,
@@ -192,6 +196,127 @@ export default function RoomsPage() {
     setShowPriceEditModal(false);
     setPriceToast({ type: 'SUCCESS', message: res.message });
     setTimeout(() => setPriceToast(null), 4000);
+  };
+
+  // Chỉnh sửa & Xóa phòng trọ (Staff / Admin)
+  const [editingRoomModal, setEditingRoomModal] = useState(null);
+  const [editRoomForm, setEditRoomForm] = useState({
+    number: '',
+    houseCode: 'CS-01',
+    floor: 'Tầng 1',
+    price: 3500000,
+    deposit: 3500000,
+    area: 25,
+    maxOccupants: 2,
+    status: 'AVAILABLE',
+    amenities: []
+  });
+
+  // Kiểm tra quyền quản lý phòng: Admin quản lý tất cả, Staff chỉ quản lý phòng thuộc cơ sở của mình
+  const canManageRoom = (room) => {
+    if (!room) return false;
+    if (role === 'ADMIN') return true;
+    if (isTenant) return false;
+    const roomHouseCode = room.houseCode || 'CS-01';
+
+    try {
+      const savedHouses = localStorage.getItem('rental_boarding_houses');
+      if (savedHouses) {
+        const parsed = JSON.parse(savedHouses);
+        const targetHouse = parsed.find((h) => h.code === roomHouseCode);
+        if (targetHouse) {
+          if (targetHouse.createdBy && targetHouse.createdBy === user?.username) return true;
+          if (targetHouse.managerUsername && targetHouse.managerUsername === user?.username) return true;
+        }
+      }
+    } catch {}
+
+    if (user?.username === 'staff' && roomHouseCode === 'CS-01') return true;
+    if (user?.username === 'staff2' && roomHouseCode === 'CS-02') return true;
+    if (staffHouseCode && roomHouseCode === staffHouseCode) return true;
+
+    return false;
+  };
+
+  const handleOpenEditRoom = (room) => {
+    if (!canManageRoom(room)) {
+      alert(`⚠️ Bạn không có quyền chỉnh sửa phòng này!\nPhòng này thuộc cơ sở do Quản lý khác phụ trách.`);
+      return;
+    }
+    setEditingRoomModal(room);
+    setEditRoomForm({
+      number: room.number,
+      houseCode: room.houseCode || 'CS-01',
+      floor: room.floor || 'Tầng 1',
+      price: room.price || 3500000,
+      deposit: room.deposit || room.price || 3500000,
+      area: room.area || 25,
+      maxOccupants: room.maxOccupants || 2,
+      status: room.status || 'AVAILABLE',
+      amenities: Array.isArray(room.amenities) ? [...room.amenities] : ['WiFi', 'Điều hòa', 'Nóng lạnh']
+    });
+  };
+
+  const handleSaveEditRoom = (e) => {
+    e.preventDefault();
+    if (!editingRoomModal) return;
+    if (!canManageRoom(editingRoomModal)) {
+      alert(`⚠️ Bạn không có quyền chỉnh sửa phòng này!`);
+      return;
+    }
+    if (!editRoomForm.number) {
+      alert('Vui lòng nhập số phòng!');
+      return;
+    }
+    updateRoom(editingRoomModal.id, {
+      number: editRoomForm.number,
+      houseCode: editRoomForm.houseCode,
+      floor: editRoomForm.floor,
+      price: Number(editRoomForm.price) || 3500000,
+      deposit: Number(editRoomForm.deposit) || 3500000,
+      area: Number(editRoomForm.area) || 25,
+      maxOccupants: Number(editRoomForm.maxOccupants) || 2,
+      status: editRoomForm.status,
+      amenities: editRoomForm.amenities
+    });
+
+    if (selectedRoomDetails && selectedRoomDetails.id === editingRoomModal.id) {
+      setSelectedRoomDetails({
+        ...selectedRoomDetails,
+        ...editRoomForm,
+        price: Number(editRoomForm.price),
+        area: Number(editRoomForm.area),
+        maxOccupants: Number(editRoomForm.maxOccupants)
+      });
+    }
+
+    setEditingRoomModal(null);
+    setPriceToast({ type: 'SUCCESS', message: `Đã cập nhật thông tin phòng ${editRoomForm.number} thành công!` });
+    setTimeout(() => setPriceToast(null), 3500);
+  };
+
+  const handleDeleteRoomSafe = (room) => {
+    if (!room) return;
+    if (!canManageRoom(room)) {
+      alert(`⚠️ Bạn không có quyền xóa phòng này!\nPhòng này thuộc cơ sở do Quản lý khác phụ trách.`);
+      return;
+    }
+    const activeMembers = (roomMembers || []).filter(
+      (m) => m.roomNumber === room.number && m.status !== 'MOVED_OUT' && (!room.houseCode || m.houseCode === room.houseCode)
+    );
+    if (room.status === 'OCCUPIED' || (room.occupants && room.occupants > 0) || activeMembers.length > 0) {
+      alert(`⚠️ Không thể xóa phòng ${room.number}!\n\nPhòng này hiện đang có ${room.occupants || activeMembers.length} người đang thuê và có hợp đồng hoạt động. Vui lòng thanh lý hợp đồng và trả phòng trước khi xóa.`);
+      return;
+    }
+
+    if (window.confirm(`Xác nhận xóa vĩnh viễn phòng ${room.number} khỏi cơ sở ${room.houseCode || 'hiện tại'}?\n\nPhòng sẽ bị xóa khỏi sơ đồ phòng và hệ thống chốt số điện nước.`)) {
+      deleteRoom(room.id);
+      if (selectedRoomDetails && selectedRoomDetails.id === room.id) {
+        setSelectedRoomDetails(null);
+      }
+      setPriceToast({ type: 'SUCCESS', message: `Đã xóa phòng ${room.number} thành công!` });
+      setTimeout(() => setPriceToast(null), 3500);
+    }
   };
 
   // Lấy hồ sơ khách thuê hiện tại từ danh bạ tenants
@@ -787,7 +912,6 @@ export default function RoomsPage() {
 
   // Xác định gói cước hiện tại của chủ trọ
   const currentLandlord = landlords.find(l => l.username === user?.username || l.fullName === user?.fullName) || landlords[0];
-  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
   const landlordPackage = (isZeroSandbox && (!currentLandlord || currentLandlord.packageCode === 'NONE'))
     ? 'NONE'
     : (currentLandlord?.packageCode || 'BASIC');
@@ -827,6 +951,16 @@ export default function RoomsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Banner Hạn Dùng Thử 14 Ngày */}
+      {!isTenant && (
+        <TrialExpiryBanner
+          currentLandlord={currentLandlord}
+          onUpgradeClick={() => {
+            window.location.href = '/invoices/saas';
+          }}
+        />
+      )}
+
       {/* Header & Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -894,6 +1028,11 @@ export default function RoomsPage() {
 
             <button
               onClick={() => {
+                const trial = getTrialStatus(currentLandlord);
+                if (trial.isTrialExpired) {
+                  setQuotaExceededModal(true);
+                  return;
+                }
                 if (rooms.length >= maxRoomsAllowed) {
                   setQuotaExceededModal(true);
                 } else {
@@ -1335,29 +1474,28 @@ export default function RoomsPage() {
                           </button>
                         )}
 
-                        {room.status === 'AVAILABLE' || room.occupants === 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setRoomToEditPrice(room);
-                              setNewRoomPriceInput(String(room.price));
-                              setPriceEditError('');
-                              setShowPriceEditModal(true);
-                            }}
-                            className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold rounded-lg transition-colors inline-flex items-center gap-1 cursor-pointer"
-                            title="Sửa giá niêm yết phòng còn trống"
-                          >
-                            <Edit3 className="w-3 h-3 text-indigo-600" />
-                            <span>Sửa giá</span>
-                          </button>
-                        ) : (
-                          <span
-                            className="px-2 py-1 bg-slate-100 text-slate-400 border border-slate-200 text-[10px] font-semibold rounded-lg inline-flex items-center gap-1 cursor-not-allowed opacity-80"
-                            title="Phòng đang có khách thuê, không được sửa giá theo quy định"
-                          >
-                            <Lock className="w-3 h-3 text-slate-400" />
-                            <span>Đang thuê</span>
-                          </span>
+                        {canManageRoom(room) && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditRoom(room)}
+                              className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-[11px] font-bold rounded-lg transition-colors inline-flex items-center gap-1 cursor-pointer"
+                              title="Chỉnh sửa thông tin phòng trọ"
+                            >
+                              <Edit3 className="w-3 h-3 text-amber-600" />
+                              <span>Sửa</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteRoomSafe(room)}
+                              className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold rounded-lg transition-colors inline-flex items-center gap-1 cursor-pointer"
+                              title="Xóa phòng trọ (chỉ xóa phòng trống)"
+                            >
+                              <Trash2 className="w-3 h-3 text-rose-600" />
+                              <span>Xóa</span>
+                            </button>
+                          </>
                         )}
 
                         <button
@@ -1402,18 +1540,18 @@ export default function RoomsPage() {
               onChange={(e) => setNewRoom({ ...newRoom, houseCode: e.target.value })}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-semibold focus:outline-none focus:bg-white focus:border-purple-500"
             >
-              {dynamicHousesList.filter((h) => h.code !== 'ALL').length > 0 ? (
-                dynamicHousesList.filter((h) => h.code !== 'ALL').map((h) => (
-                  <option key={h.code} value={h.code}>
-                    {h.name} ({h.code})
-                  </option>
-                ))
+              {dynamicHousesList.filter((h) => h.code !== 'ALL' && (role === 'ADMIN' || canManageRoom({ houseCode: h.code }))).length > 0 ? (
+                dynamicHousesList
+                  .filter((h) => h.code !== 'ALL' && (role === 'ADMIN' || canManageRoom({ houseCode: h.code })))
+                  .map((h) => (
+                    <option key={h.code} value={h.code}>
+                      {h.name} ({h.code})
+                    </option>
+                  ))
               ) : (
-                <>
-                  <option value="CS-01">Nhà Trọ Cầu Giấy - Cơ Sở 1 (CS-01)</option>
-                  <option value="CS-02">Nhà Trọ Bách Khoa - Cơ Sở 2 (CS-02)</option>
-                  <option value="CS-03">Nhà Trọ Đống Đa - Cơ Sở 3 (CS-03)</option>
-                </>
+                <option value={staffHouseCode || 'CS-01'}>
+                  Cơ sở của bạn ({staffHouseCode || 'CS-01'})
+                </option>
               )}
             </select>
           </div>
@@ -2066,7 +2204,7 @@ export default function RoomsPage() {
                   </button>
                 </div>
               ) : (
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2.5">
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-slate-500 font-medium">Đổi trạng thái:</span>
                     <select
@@ -2084,12 +2222,38 @@ export default function RoomsPage() {
                     </select>
                   </div>
 
-                  <button
-                    onClick={() => setSelectedRoomDetails(null)}
-                    className="px-5 py-2 text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white rounded-xl shadow-md transition-all btn-press cursor-pointer"
-                  >
-                    Đóng
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {canManageRoom(selectedRoomDetails) && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditRoom(selectedRoomDetails)}
+                          className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-xs font-bold rounded-xl transition inline-flex items-center gap-1.5 cursor-pointer"
+                          title="Chỉnh sửa toàn diện phòng trọ"
+                        >
+                          <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Sửa Phòng</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRoomSafe(selectedRoomDetails)}
+                          className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition inline-flex items-center gap-1.5 cursor-pointer"
+                          title="Xóa phòng trọ (nếu trống)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                          <span>Xóa Phòng</span>
+                        </button>
+                      </>
+                    )}
+
+                    <button
+                      onClick={() => setSelectedRoomDetails(null)}
+                      className="px-5 py-2 text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white rounded-xl shadow-md transition-all btn-press cursor-pointer"
+                    >
+                      Đóng
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -3548,6 +3712,213 @@ export default function RoomsPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal Chỉnh Sửa Toàn Diện Phòng Trọ (Staff / Admin) */}
+      <Modal isOpen={!!editingRoomModal} onClose={() => setEditingRoomModal(null)} maxWidth="max-w-lg">
+        {editingRoomModal && (
+          <div>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
+                  <Edit3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">
+                    Chỉnh Sửa Thông Tin Phòng {editingRoomModal.number}
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Cập nhật số phòng, giá thuê, diện tích và tiện nghi
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingRoomModal(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-xl cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditRoom} className="space-y-4 pt-4 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Số phòng / Mã phòng *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editRoomForm.number}
+                    onChange={(e) => setEditRoomForm({ ...editRoomForm, number: e.target.value })}
+                    placeholder="Ví dụ: P.101"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs focus:outline-none focus:bg-white focus:border-purple-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Thuộc cơ sở *</label>
+                  <select
+                    value={editRoomForm.houseCode}
+                    onChange={(e) => setEditRoomForm({ ...editRoomForm, houseCode: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs focus:outline-none focus:bg-white focus:border-purple-500 cursor-pointer"
+                  >
+                    {dynamicHousesList.filter((h) => h.code !== 'ALL').map((h) => (
+                      <option key={h.code} value={h.code}>
+                        [{h.code}] {h.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Tầng *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editRoomForm.floor}
+                    onChange={(e) => setEditRoomForm({ ...editRoomForm, floor: e.target.value })}
+                    placeholder="Ví dụ: Tầng 1"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs focus:outline-none focus:bg-white focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Diện tích (m²) *</label>
+                  <input
+                    type="number"
+                    required
+                    min="10"
+                    max="150"
+                    value={editRoomForm.area}
+                    onChange={(e) => setEditRoomForm({ ...editRoomForm, area: Number(e.target.value) })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs focus:outline-none focus:bg-white focus:border-purple-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Sức chứa tối đa *</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    max="10"
+                    value={editRoomForm.maxOccupants}
+                    onChange={(e) => setEditRoomForm({ ...editRoomForm, maxOccupants: Number(e.target.value) })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs focus:outline-none focus:bg-white focus:border-purple-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Giá thuê niêm yết (đ/tháng) *</label>
+                  <input
+                    type="number"
+                    required
+                    step="100000"
+                    min="500000"
+                    value={editRoomForm.price}
+                    onChange={(e) => setEditRoomForm({ ...editRoomForm, price: Number(e.target.value) })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-purple-700 text-xs focus:outline-none focus:bg-white focus:border-purple-500 font-mono"
+                  />
+                  <span className="text-[10px] text-slate-400 mt-0.5 block font-mono">
+                    {Number(editRoomForm.price || 0).toLocaleString('vi-VN')} đ
+                  </span>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Tiền cọc giữ phòng (đ) *</label>
+                  <input
+                    type="number"
+                    required
+                    step="100000"
+                    min="0"
+                    value={editRoomForm.deposit}
+                    onChange={(e) => setEditRoomForm({ ...editRoomForm, deposit: Number(e.target.value) })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-indigo-700 text-xs focus:outline-none focus:bg-white focus:border-purple-500 font-mono"
+                  />
+                  <span className="text-[10px] text-slate-400 mt-0.5 block font-mono">
+                    {Number(editRoomForm.deposit || 0).toLocaleString('vi-VN')} đ
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Trạng thái phòng</label>
+                <select
+                  value={editRoomForm.status}
+                  onChange={(e) => setEditRoomForm({ ...editRoomForm, status: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs focus:outline-none focus:bg-white focus:border-purple-500 cursor-pointer"
+                >
+                  <option value="AVAILABLE">🟢 Còn trống (Sẵn sàng đón khách)</option>
+                  <option value="OCCUPIED">🔵 Đang có khách thuê</option>
+                  <option value="MAINTENANCE">🟠 Đang sửa chữa / Bảo trì</option>
+                  <option value="CLEANING">🧹 Chờ dọn dẹp vệ sinh</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1.5">Tiện nghi trong phòng</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {['WiFi', 'Điều hòa', 'Nóng lạnh', 'Tủ lạnh', 'Máy giặt', 'Ban công', 'Giường nệm', 'Tủ quần áo', 'Bếp nấu'].map((amenity) => {
+                    const isChecked = (editRoomForm.amenities || []).includes(amenity);
+                    return (
+                      <label
+                        key={amenity}
+                        className={`flex items-center gap-2 p-2 rounded-xl border text-xs font-medium cursor-pointer transition ${
+                          isChecked ? 'bg-purple-50 border-purple-200 text-purple-700 font-bold' : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setEditRoomForm({ ...editRoomForm, amenities: [...(editRoomForm.amenities || []), amenity] });
+                            } else {
+                              setEditRoomForm({ ...editRoomForm, amenities: (editRoomForm.amenities || []).filter((a) => a !== amenity) });
+                            }
+                          }}
+                          className="rounded text-purple-600 focus:ring-purple-500"
+                        />
+                        <span>{amenity}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = editingRoomModal;
+                    setEditingRoomModal(null);
+                    handleDeleteRoomSafe(target);
+                  }}
+                  className="px-3.5 py-2 text-rose-600 hover:bg-rose-50 text-xs font-bold rounded-xl border border-rose-200 transition inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Xóa phòng này</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingRoomModal(null)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold rounded-xl shadow-md shadow-purple-600/25 cursor-pointer btn-press"
+                  >
+                    Lưu Thay Đổi
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        )}
       </Modal>
 
       {/* Modal Thêm Thành Viên Ở Ghép Cho Staff */}

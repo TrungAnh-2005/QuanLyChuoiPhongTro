@@ -27,6 +27,8 @@ import { useData } from '../contexts/DataContext';
 import PaymentModal from '../components/payment/PaymentModal';
 import Modal from '../components/common/Modal';
 import BuySaasPackageModal from '../components/staff/BuySaasPackageModal';
+import TrialExpiryBanner from '../components/common/TrialExpiryBanner';
+import { getTrialStatus } from '../utils/packagePermissions';
 
 const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
 
@@ -55,21 +57,43 @@ export default function InvoicesPage({ forcedTab }) {
         l.username === user.username ||
         (l.phone && user.phone && l.phone.replace(/\D/g, '') === user.phone.replace(/\D/g, '')) ||
         (l.email && user.email && l.email.toLowerCase() === user.email.toLowerCase())
-    ) || (landlords && landlords.length > 0 ? landlords[0] : null);
+    ) || (user?.username === 'staff2' ? (landlords || []).find(l => l.id === 2 || l.username === 'staff2') : (landlords && landlords.length > 0 ? landlords[0] : null));
   }, [user, landlords]);
 
-  const landlordPackageCode = currentLandlord?.packageCode || (isZeroSandbox ? 'NONE' : 'PRO');
+  const landlordPackageCode = currentLandlord?.packageCode || (isZeroSandbox ? 'NONE' : (user?.username === 'staff2' ? 'BASIC' : 'PRO'));
   const isTrialOrNone = landlordPackageCode === 'NONE' || currentLandlord?.status === 'TRIAL';
+
+  // Lọc hóa đơn SaaS theo quyền: Admin xem tất cả, Staff chỉ xem hóa đơn của chính mình
+  const displayedSaasInvoices = useMemo(() => {
+    if (role === 'ADMIN') return saasInvoices;
+    if (!user) return [];
+    return (saasInvoices || []).filter((inv) => {
+      if (inv.landlordUsername && user?.username) {
+        return inv.landlordUsername === user.username;
+      }
+      if (inv.landlordId && currentLandlord?.id) {
+        return inv.landlordId === currentLandlord.id;
+      }
+      if (inv.landlordPhone && user?.phone) {
+        return inv.landlordPhone.replace(/\D/g, '') === user.phone.replace(/\D/g, '');
+      }
+      if (user?.username === 'staff' && (inv.code === 'HD-SAAS-2026-01' || inv.landlordId === 1)) return true;
+      if (user?.username === 'staff2' && (inv.code === 'HD-SAAS-2026-02' || inv.landlordId === 2)) return true;
+      return false;
+    });
+  }, [saasInvoices, currentLandlord, user, role]);
 
   // Xử lý xác nhận mua gói từ BuySaasPackageModal
   const handleConfirmPurchase = (planData) => {
     setShowBuyPackageModal(false);
+    const targetLandlordId = currentLandlord?.id || (user?.username === 'staff2' ? 2 : 1);
     const newInv = {
       id: `SAAS-${Date.now()}`,
       code: `HD-SAAS-2026-${String(saasInvoices.length + 1).padStart(2, '0')}`,
-      landlordId: currentLandlord?.id || 1,
-      landlordName: currentLandlord?.fullName || user?.fullName || 'Lê Thị Thu Ngân (Chủ trọ CS1)',
-      landlordPhone: currentLandlord?.phone || user?.phone || '0912.888.666',
+      landlordId: targetLandlordId,
+      landlordUsername: user?.username || (targetLandlordId === 2 ? 'staff2' : 'staff'),
+      landlordName: currentLandlord?.fullName || user?.fullName || 'Quản lý cơ sở',
+      landlordPhone: currentLandlord?.phone || user?.phone || '0900.000.000',
       packageName: planData.packageName,
       packageCode: planData.packageCode,
       billingCycle: planData.billingCycle,
@@ -83,18 +107,14 @@ export default function InvoicesPage({ forcedTab }) {
       createSaasInvoice(newInv);
     }
 
-    if (updateLandlordPackage) {
-      updateLandlordPackage(currentLandlord?.id || 1, planData.packageCode);
-    }
-
-    // Mở modal thanh toán ngay để nộp cước
-    setPayingSaasInvoice(newInv);
-
-    setBatchSentToast({
-      success: true,
-      message: `Đã tạo hóa đơn mua ${planData.packageName}! Vui lòng nộp cước qua VietQR / VNPay / MoMo để hoàn tất.`
+    // Mở modal thanh toán ngay để nộp cước qua SePay / VNPay / MoMo
+    setPayingInvoice({
+      ...newInv,
+      total: newInv.amount,
+      room: newInv.packageName || newInv.packageCode,
+      tenant: 'CTCP SaaS Trọ Việt (Web Admin)',
+      isSaas: true
     });
-    setTimeout(() => setBatchSentToast(null), 5000);
   };
 
   // Lấy hồ sơ khách thuê hiện tại từ danh bạ tenants
@@ -138,7 +158,7 @@ export default function InvoicesPage({ forcedTab }) {
 
   const [selectedFacility, setSelectedFacility] = useState(() => {
     if (role === 'STAFF') {
-      return user?.houseCode || 'CS-01';
+      return user?.houseCode || (user?.username === 'staff2' ? 'CS-02' : 'CS-01');
     }
     return 'ALL';
   });
@@ -151,6 +171,18 @@ export default function InvoicesPage({ forcedTab }) {
           (myRentedRooms.includes(inv.room) ||
             (inv.tenant && inv.tenant.toLowerCase().includes((user?.fullName || '').toLowerCase())))
       );
+    }
+    if (role === 'STAFF') {
+      const staffTargetCode = selectedFacility || user?.houseCode || (user?.username === 'staff2' ? 'CS-02' : 'CS-01');
+      return invoices.filter((inv) => {
+        if (inv.houseCode) return inv.houseCode === staffTargetCode;
+        if (inv.house) {
+          if (staffTargetCode === 'CS-01') return inv.house.includes('Cơ Sở 1') || inv.house.includes('Cầu Giấy') || inv.house.includes('CS-01');
+          if (staffTargetCode === 'CS-02') return inv.house.includes('Cơ Sở 2') || inv.house.includes('Bách Khoa') || inv.house.includes('CS-02');
+          if (staffTargetCode === 'CS-03') return inv.house.includes('Cơ Sở 3') || inv.house.includes('Đống Đa') || inv.house.includes('CS-03');
+        }
+        return false;
+      });
     }
     if (selectedFacility === 'ALL') {
       return invoices;
@@ -185,10 +217,13 @@ export default function InvoicesPage({ forcedTab }) {
     const methodLabel = payMethod === 'VNPAY' ? 'Cổng VNPay' : (payMethod === 'MOMO' ? 'Ví MoMo' : (payMethod === 'SEPAY' ? 'SePay VietQR' : 'SePay VietQR'));
     if (inv?.isSaas || inv?.packageCode || String(inv?.id).startsWith('SAAS')) {
       paySaasInvoice(inv.id, methodLabel);
+      if (updateLandlordPackage) {
+        updateLandlordPackage(inv.landlordId || currentLandlord?.id || (user?.username === 'staff2' ? 2 : 1), inv.packageCode || 'PRO');
+      }
       setPayingInvoice(null);
       setBatchSentToast({
         success: true,
-        message: `Nộp cước SaaS ${inv.code} (${Number(inv.total || inv.amount).toLocaleString('vi-VN')} đ) cho Admin qua ${methodLabel} thành công!`
+        message: `Nộp cước SaaS ${inv.code} (${Number(inv.total || inv.amount).toLocaleString('vi-VN')} đ) cho Admin qua ${methodLabel} thành công! Bản quyền đã được kích hoạt.`
       });
       setTimeout(() => setBatchSentToast(null), 5000);
     } else {
@@ -210,6 +245,17 @@ export default function InvoicesPage({ forcedTab }) {
   const [batchSentToast, setBatchSentToast] = useState(null);
 
   const handleBatchPublish = () => {
+    const trial = getTrialStatus(currentLandlord);
+    if (trial.isTrialExpired) {
+      setBatchSentToast({
+        success: false,
+        message: '⚠️ Hạn dùng thử 14 ngày đã kết thúc! Vui lòng kích hoạt gói bản quyền SaaS để phát hành hóa đơn phòng.'
+      });
+      setTimeout(() => setBatchSentToast(null), 5000);
+      setShowBuyPackageModal(true);
+      return;
+    }
+
     setBatchSending(true);
     setTimeout(() => {
       setBatchSending(false);
@@ -238,6 +284,14 @@ export default function InvoicesPage({ forcedTab }) {
 
   return (
     <div className="space-y-6">
+      {/* Banner Hạn Dùng Thử 14 Ngày */}
+      {!isTenant && (
+        <TrialExpiryBanner
+          currentLandlord={currentLandlord}
+          onUpgradeClick={() => setShowBuyPackageModal(true)}
+        />
+      )}
+
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -410,7 +464,7 @@ export default function InvoicesPage({ forcedTab }) {
                 </p>
               </div>
               <span className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full font-bold text-xs border border-purple-200">
-                Tổng cộng: {saasInvoices.length} kỳ hóa đơn
+                Tổng cộng: {displayedSaasInvoices.length} kỳ hóa đơn
               </span>
             </div>
 
@@ -428,7 +482,7 @@ export default function InvoicesPage({ forcedTab }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                  {saasInvoices.length === 0 ? (
+                  {displayedSaasInvoices.length === 0 ? (
                     <tr>
                       <td colSpan="7" className="py-12 text-center text-slate-400">
                         <div className="space-y-2">
@@ -439,7 +493,7 @@ export default function InvoicesPage({ forcedTab }) {
                       </td>
                     </tr>
                   ) : (
-                    saasInvoices.map((inv) => (
+                    displayedSaasInvoices.map((inv) => (
                     <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-4 px-5">
                         <div className="font-mono font-bold text-purple-700 text-sm">{inv.code}</div>

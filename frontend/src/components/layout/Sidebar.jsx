@@ -21,6 +21,7 @@ import { useAuth } from '../../contexts/AuthContext';
 const adminNavItems = [
   { name: 'Tổng Quan Nền Tảng', path: '/', icon: LayoutDashboard },
   { name: 'Quản Trị Chủ Trọ & Gói', path: '/admin/landlords', icon: Users },
+  { name: 'Quản Trị & Duyệt Cơ Sở', path: '/houses', icon: Building2 },
   { name: 'Hóa Đơn Cước Gói SaaS', path: '/admin/saas-invoices', icon: Receipt },
   { name: 'Cấu Hình Tích Hợp', path: '/admin/integrations', icon: Layers },
   { name: 'Giám Sát Hệ Thống & Logs', path: '/admin/system', icon: Cpu },

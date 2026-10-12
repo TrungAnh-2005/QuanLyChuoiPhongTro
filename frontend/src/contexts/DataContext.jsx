@@ -333,7 +333,8 @@ const DEFAULT_SAAS_INVOICES = [
     id: 'SAAS-2026-001',
     code: 'HD-SAAS-2026-01',
     landlordId: 1,
-    landlordName: 'Nguyễn Văn An',
+    landlordUsername: 'staff',
+    landlordName: 'Lê Thị Thu Ngân (Staff 1 - CS1)',
     landlordPhone: '0912.888.666',
     packageName: 'Gói Chuyên Nghiệp (PRO - Không Giới Hạn Cơ Sở)',
     packageCode: 'PRO',
@@ -353,20 +354,21 @@ const DEFAULT_SAAS_INVOICES = [
   {
     id: 'SAAS-2026-002',
     code: 'HD-SAAS-2026-02',
-    landlordId: 1,
-    landlordName: 'Nguyễn Văn An',
-    landlordPhone: '0912.888.666',
-    packageName: 'Gia Hạn Gói PRO + Gói Bổ Sung AI Vision OCR (1.000 lượt quét công tơ)',
-    packageCode: 'PRO',
-    billingCycle: 'Kỳ Tháng 10/2026',
-    period: '01/10/2026 - 31/10/2026',
+    landlordId: 2,
+    landlordUsername: 'staff2',
+    landlordName: 'Đàm Văn Táo (Staff 2 - CS2)',
+    landlordPhone: '0988.777.999',
+    packageName: 'Gói Cơ Bản (BASIC - Quản lý 10 phòng)',
+    packageCode: 'BASIC',
+    billingCycle: '12 Tháng (Năm 2026)',
+    period: '15/02/2026 - 15/02/2027',
     amount: 2000,
-    issuedDate: '01/10/2026',
-    dueDate: '10/10/2026',
+    issuedDate: '15/02/2026',
+    dueDate: '25/02/2026',
     paidAt: null,
     paymentMethod: 'Cổng VietQR Nền Tảng',
     status: 'UNPAID',
-    landlordTaxCode: '8392019283',
+    landlordTaxCode: '8392019284',
     providerName: 'HỆ THỐNG NỀN TẢNG SAAS QUẢN LÝ CHUỖI TRỌ (CTCP SAAS TRỌ VIỆT)',
     providerTaxCode: '0108998877',
     providerBank: '9999888899 - MBBank (Ngân hàng Quân Đội)'
@@ -384,23 +386,23 @@ const DEFAULT_LANDLORDS = [
     status: 'ACTIVE',
     subscriptionPackage: 'Gói Chuyên Nghiệp (Không giới hạn)',
     packageCode: 'PRO',
-    housesCount: 2,
-    roomsCount: 18,
+    housesCount: 1,
+    roomsCount: 10,
     maxHousesLimit: 999,
     createdAt: '01/01/2026'
   },
   {
     id: 2,
-    username: 'landlord_bk',
-    fullName: 'Nguyễn Thị Hằng (Chủ trọ CS2 Bách Khoa)',
-    email: 'hang.nt@rental.vn',
+    username: 'staff2',
+    fullName: 'Đàm Văn Táo (Chủ trọ CS2 Bách Khoa)',
+    email: 'staff2@rental.vn',
     phone: '0988.777.999',
     role: 'STAFF',
     status: 'ACTIVE',
     subscriptionPackage: 'Gói Cơ Bản (Tối đa 2 cơ sở)',
     packageCode: 'BASIC',
     housesCount: 1,
-    roomsCount: 10,
+    roomsCount: 8,
     maxHousesLimit: 2,
     createdAt: '15/02/2026'
   },
@@ -2837,6 +2839,51 @@ export const DataProvider = ({ children }) => {
     });
   };
 
+  // 7C. Update room specs (Staff or Admin)
+  const updateRoom = (roomId, roomData) => {
+    setRooms((prev) => {
+      const next = prev.map((r) => {
+        if (r.id === roomId || r.number === roomId) {
+          return {
+            ...r,
+            ...roomData,
+            price: roomData.price !== undefined ? Number(roomData.price) : r.price,
+            area: roomData.area !== undefined ? Number(roomData.area) : r.area,
+            maxOccupants: roomData.maxOccupants !== undefined ? Number(roomData.maxOccupants) : r.maxOccupants
+          };
+        }
+        return r;
+      });
+      try { localStorage.setItem('rental_rooms', JSON.stringify(next)); } catch {}
+      return next;
+    });
+
+    if (roomData.number) {
+      setMetersHistory((prev) => {
+        const nextObj = {};
+        Object.keys(prev).forEach((k) => {
+          nextObj[k] = (prev[k] || []).map((m) => {
+            if (m.id === roomId || m.room === roomId) {
+              return { ...m, room: roomData.number };
+            }
+            return m;
+          });
+        });
+        return nextObj;
+      });
+    }
+
+    addAuditLog({
+      role: 'ROLE_STAFF',
+      username: auth?.user?.username || 'staff',
+      action: 'UPDATE_ROOM_DETAILS',
+      target: roomData.number || String(roomId),
+      details: `Chủ trọ cập nhật thông tin phòng ${roomData.number || roomId}`
+    });
+
+    return { success: true };
+  };
+
   // 7. Add new room (Staff or Admin)
   const addRoom = (roomData) => {
     const newRoomEntry = {
@@ -3003,6 +3050,7 @@ export const DataProvider = ({ children }) => {
       id: `SAAS-${Date.now()}`,
       code: `HD-SAAS-2026-${String(saasInvoices.length + 1).padStart(2, '0')}`,
       landlordId: invoiceData.landlordId || 1,
+      landlordUsername: invoiceData.landlordUsername || (invoiceData.landlordId === 2 ? 'staff2' : 'staff'),
       landlordName: invoiceData.landlordName || 'Lê Thị Thu Ngân',
       landlordPhone: invoiceData.landlordPhone || '0912.888.666',
       packageName: invoiceData.packageName || 'Gói Chuyên Nghiệp (PRO - Không Giới Hạn Cơ Sở)',
@@ -3183,10 +3231,13 @@ export const DataProvider = ({ children }) => {
           ? 'Gói Doanh Nghiệp (Không giới hạn + AI OCR)'
           : data.packageCode === 'PRO'
           ? 'Gói Chuyên Nghiệp (Không giới hạn)'
+          : data.packageCode === 'TRIAL' || data.packageCode === 'NONE'
+          ? 'Dùng Thử 14 Ngày (1 CS, 10 Phòng)'
           : 'Gói Cơ Bản (Tối đa 2 cơ sở)',
       housesCount: 1,
-        roomsCount: 0,
-        maxHousesLimit: data.packageCode === 'BASIC' ? 2 : 999,
+      roomsCount: 0,
+      maxHousesLimit: data.packageCode === 'TRIAL' || data.packageCode === 'NONE' ? 1 : (data.packageCode === 'BASIC' ? 2 : 999),
+      trialDaysLeft: data.packageCode === 'TRIAL' || data.packageCode === 'NONE' ? 14 : null,
       createdAt: new Date().toLocaleDateString('vi-VN')
     };
 
@@ -3268,8 +3319,10 @@ export const DataProvider = ({ children }) => {
               ? 'Gói Doanh Nghiệp (Không giới hạn + AI OCR)'
               : packageCode === 'PRO'
               ? 'Gói Chuyên Nghiệp (Không giới hạn)'
+              : packageCode === 'TRIAL' || packageCode === 'NONE'
+              ? 'Dùng Thử 14 Ngày (1 CS, 10 Phòng)'
               : 'Gói Cơ Bản (Tối đa 2 cơ sở)';
-          const maxHouses = packageCode === 'BASIC' ? 2 : 999;
+          const maxHouses = packageCode === 'TRIAL' || packageCode === 'NONE' ? 1 : (packageCode === 'BASIC' ? 2 : 999);
           addAuditLog({
             role: 'ROLE_ADMIN',
             username: 'admin',
@@ -3282,7 +3335,8 @@ export const DataProvider = ({ children }) => {
             packageCode,
             subscriptionPackage: pkgName,
             status: 'ACTIVE',
-            maxHousesLimit: maxHouses
+            maxHousesLimit: maxHouses,
+            trialDaysLeft: packageCode === 'TRIAL' || packageCode === 'NONE' ? 14 : null
           };
         }
         return l;
@@ -4585,6 +4639,7 @@ export const DataProvider = ({ children }) => {
         rooms,
         updateRoomStatus,
         updateRoomPrice,
+        updateRoom,
         addRoom,
         deleteRoom,
         roomRequests,

@@ -34,8 +34,11 @@ import { useData } from '../contexts/DataContext';
 import Modal from '../components/common/Modal';
 import UpgradePromptModal from '../components/common/UpgradePromptModal';
 import BuySaasPackageModal from '../components/staff/BuySaasPackageModal';
+import PaymentModal from '../components/payment/PaymentModal';
 import MeterAiScannerModal from './admin/meters/MeterAiScannerModal';
 import MeterDisputeModal from '../components/tenant/MeterDisputeModal';
+import TrialExpiryBanner from '../components/common/TrialExpiryBanner';
+import { getTrialStatus } from '../utils/packagePermissions';
 
 export default function MetersPage() {
   const { user, tenantRooms } = useAuth();
@@ -61,8 +64,11 @@ export default function MetersPage() {
     contracts = [],
     landlords = [],
     createSaasInvoice,
+    paySaasInvoice,
     updateLandlordPackage
   } = useData();
+
+  const [payingSaasInvoice, setPayingSaasInvoice] = useState(null);
 
   // Xác định gói bản quyền của Chủ trọ hiện tại
   const currentLandlord = useMemo(() => {
@@ -100,6 +106,17 @@ export default function MetersPage() {
   };
 
   const handleSave = (id) => {
+    const trial = getTrialStatus(currentLandlord);
+    if (trial.isTrialExpired) {
+      setSaveToast({
+        type: 'ERROR',
+        message: '⚠️ Hạn dùng thử 14 ngày đã kết thúc! Vui lòng kích hoạt gói bản quyền SaaS để tiếp tục chốt điện nước.'
+      });
+      setTimeout(() => setSaveToast(null), 4000);
+      setShowUpgradeModal(true);
+      return;
+    }
+
     saveMeterReading(id);
     setSaveToast({
       type: 'SUCCESS',
@@ -858,6 +875,17 @@ export default function MetersPage() {
 
   return (
     <div className="space-y-6">
+      {/* Banner Hạn Dùng Thử 14 Ngày */}
+      {!isTenant && (
+        <TrialExpiryBanner
+          currentLandlord={currentLandlord}
+          onUpgradeClick={() => {
+            setShowUpgradeModal(false);
+            setShowBuyPackageModal(true);
+          }}
+        />
+      )}
+
       {/* Header Bar */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
@@ -1447,31 +1475,52 @@ export default function MetersPage() {
         initialPackageCode="ENTERPRISE"
         onConfirmPurchase={(planData) => {
           setShowBuyPackageModal(false);
-          if (updateLandlordPackage) {
-            updateLandlordPackage(currentLandlord?.id || 1, planData.packageCode);
-          }
+          const targetLandlordId = currentLandlord?.id || (user?.username === 'staff2' ? 2 : 1);
+          const newInv = {
+            id: `SAAS-${Date.now()}`,
+            code: `HD-SAAS-2026-${Date.now().toString().slice(-4)}`,
+            landlordId: targetLandlordId,
+            landlordUsername: user?.username || (targetLandlordId === 2 ? 'staff2' : 'staff'),
+            landlordName: currentLandlord?.fullName || user?.fullName || 'Quản lý cơ sở',
+            landlordPhone: currentLandlord?.phone || user?.phone || '0900.000.000',
+            packageName: planData.packageName,
+            packageCode: planData.packageCode,
+            billingCycle: planData.billingCycle,
+            period: `${planData.months} Tháng`,
+            amount: planData.amount,
+            total: planData.amount,
+            dueDate: new Date(Date.now() + 7 * 86400000).toLocaleDateString('vi-VN'),
+            status: 'UNPAID',
+            isSaas: true
+          };
           if (createSaasInvoice) {
-            createSaasInvoice({
-              id: `SAAS-${Date.now()}`,
-              code: `HD-SAAS-2026-${Date.now().toString().slice(-4)}`,
-              landlordId: currentLandlord?.id || 1,
-              landlordName: currentLandlord?.fullName || 'Chủ trọ',
-              landlordPhone: currentLandlord?.phone || '0912.888.666',
-              packageName: planData.packageName,
-              packageCode: planData.packageCode,
-              billingCycle: planData.billingCycle,
-              period: `12 Tháng`,
-              amount: planData.amount,
-              dueDate: new Date().toLocaleDateString('vi-VN'),
-              status: 'PAID'
-            });
+            createSaasInvoice(newInv);
           }
+          setPayingSaasInvoice(newInv);
+        }}
+      />
+
+      {/* Modal Cổng Thanh Toán SePay VietQR / VNPay / MoMo Cho Gói SaaS */}
+      <PaymentModal
+        isOpen={!!payingSaasInvoice}
+        onClose={() => setPayingSaasInvoice(null)}
+        onSuccess={(inv, payMethod) => {
+          const methodLabel = payMethod === 'VNPAY' ? 'Cổng VNPay' : (payMethod === 'MOMO' ? 'Ví MoMo' : 'VietQR / SePay');
+          if (paySaasInvoice) {
+            paySaasInvoice(inv.id, methodLabel);
+          }
+          const targetLandlordId = currentLandlord?.id || (user?.username === 'staff2' ? 2 : 1);
+          if (updateLandlordPackage) {
+            updateLandlordPackage(targetLandlordId, inv.packageCode || 'ENTERPRISE');
+          }
+          setPayingSaasInvoice(null);
           setSaveToast({
             type: 'SUCCESS',
-            message: `🎉 Nâng cấp lên ${planData.packageName} thành công! Đã kích hoạt toàn bộ tính năng AI Vision OCR.`
+            message: `🎉 Nộp cước SaaS qua ${methodLabel} thành công! Đã kích hoạt toàn bộ tính năng AI Vision OCR.`
           });
           setTimeout(() => setSaveToast(null), 4000);
         }}
+        invoice={payingSaasInvoice || undefined}
       />
     </div>
   );

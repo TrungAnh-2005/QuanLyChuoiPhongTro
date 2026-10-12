@@ -402,6 +402,7 @@ export default function AdminSaasInvoicesPage() {
             const targetLandlord = landlords.find(l => l.id === Number(newSaasInvoice.landlordId)) || landlords[0];
             createSaasInvoice({
               landlordId: targetLandlord.id,
+              landlordUsername: targetLandlord.username || (targetLandlord.id === 2 ? 'staff2' : 'staff'),
               landlordName: targetLandlord.fullName,
               landlordPhone: targetLandlord.phone,
               packageName: newSaasInvoice.packageName,

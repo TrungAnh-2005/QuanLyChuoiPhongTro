@@ -23,6 +23,7 @@ import {
   ArrowLeftRight
 } from 'lucide-react';
 import { ocrIdCard, classifyCccdImage, validateCccdMatch } from '../../../services/aiService';
+import { checkKycTrialAbuse, registerKycTrial } from '../../../utils/packagePermissions';
 
 const SAMPLE_LANDLORDS = [
   {
@@ -83,7 +84,7 @@ const SAMPLE_LANDLORDS = [
   }
 ];
 
-export default function CreateLandlordAiModal({ isOpen, onClose, onSaveLandlord }) {
+export default function CreateLandlordAiModal({ isOpen, onClose, onSaveLandlord, existingLandlords = [] }) {
   useEffect(() => {
     if (!isOpen) return;
     const prev = document.body.style.overflow;
@@ -260,6 +261,18 @@ export default function CreateLandlordAiModal({ isOpen, onClose, onSaveLandlord 
     if (formData.identityCard.length !== 12) {
       setSubmitError('Số Căn Cước Công Dân bắt buộc phải có đúng 12 chữ số.');
       return;
+    }
+
+    if (formData.packageCode === 'TRIAL' || formData.packageCode === 'NONE') {
+      const abuseCheck = checkKycTrialAbuse({
+        identityCard: formData.identityCard,
+        existingLandlords
+      });
+      if (abuseCheck.isAbuse) {
+        setSubmitError(`🛡️ CHỐNG GIAN LẬN: ${abuseCheck.reason}`);
+        return;
+      }
+      registerKycTrial({ identityCard: formData.identityCard });
     }
 
     const payload = {
@@ -659,11 +672,12 @@ export default function CreateLandlordAiModal({ isOpen, onClose, onSaveLandlord 
 
               <div className="sm:col-span-3">
                 <label className="block font-bold text-slate-700 mb-1">Gói Cước Bản Quyền Ban Đầu</label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   {[
+                    { code: 'TRIAL', name: 'Gói Dùng Thử (TRIAL)', desc: '14 Ngày (1 CS, 10 Phòng) - 1 CCCD/1 Lần', price: '0 ₫ / 14 Ngày' },
                     { code: 'BASIC', name: 'Gói Cơ Bản (BASIC)', desc: 'Tối đa 2 cơ sở, 30 phòng', price: '199.000 ₫/th' },
                     { code: 'PRO', name: 'Gói Chuyên Nghiệp (PRO)', desc: 'Không giới hạn cơ sở, Quota 100 phòng', price: '499.000 ₫/th' },
-                    { code: 'ENTERPRISE', name: 'Gói Doanh Nghiệp (ENTERPRISE)', desc: 'Toàn bộ tính năng + AI OCR nhận diện đồng hồ', price: '999.000 ₫/th' }
+                    { code: 'ENTERPRISE', name: 'Gói Doanh Nghiệp (ENTERPRISE)', desc: 'Toàn bộ tính năng + AI OCR đồng hồ', price: '999.000 ₫/th' }
                   ].map((pkg) => (
                     <div
                       key={pkg.code}

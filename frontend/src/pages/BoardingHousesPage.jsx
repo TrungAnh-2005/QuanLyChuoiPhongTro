@@ -18,14 +18,20 @@ import {
   TrendingUp,
   Sparkles,
   Receipt,
-  Settings
+  Settings,
+  Edit3,
+  Trash2,
+  X
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
 import Modal from '../components/common/Modal';
 import UpgradePromptModal from '../components/common/UpgradePromptModal';
 import BuySaasPackageModal from '../components/staff/BuySaasPackageModal';
+import PaymentModal from '../components/payment/PaymentModal';
 import HouseServiceConfigModal from '../components/staff/HouseServiceConfigModal';
+import TrialExpiryBanner from '../components/common/TrialExpiryBanner';
+import { getTrialStatus } from '../utils/packagePermissions';
 
 const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
 
@@ -35,7 +41,9 @@ const initialHouses = [
     code: 'CS-01',
     name: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
     address: 'Số 45, Ngõ 165 Cầu Giấy, Phường Dịch Vọng, Cầu Giấy, Hà Nội',
-    manager: 'Trần Văn Mạnh',
+    manager: 'Lê Thị Thu Ngân (Staff CS1)',
+    managerUsername: 'staff',
+    createdBy: 'staff',
     managerPhone: '0912.888.666',
     floors: 5,
     totalRooms: 12,
@@ -50,7 +58,9 @@ const initialHouses = [
     code: 'CS-02',
     name: 'Nhà Trọ Bách Khoa - Cơ Sở 2',
     address: 'Số 18, Ngõ Tự Do, Phường Đồng Tâm, Hai Bà Trưng, Hà Nội',
-    manager: 'Nguyễn Thị Hằng',
+    manager: 'Đàm Văn Táo (Staff CS2)',
+    managerUsername: 'staff2',
+    createdBy: 'staff2',
     managerPhone: '0988.777.999',
     floors: 4,
     totalRooms: 8,
@@ -66,6 +76,8 @@ const initialHouses = [
     name: 'Nhà Trọ Đống Đa - Cơ Sở 3',
     address: 'Số 92, Phố Chùa Láng, Phường Láng Thượng, Đống Đa, Hà Nội',
     manager: 'Phạm Quốc Hùng',
+    managerUsername: 'admin',
+    createdBy: 'admin',
     managerPhone: '0936.555.222',
     floors: 6,
     totalRooms: 16,
@@ -85,13 +97,31 @@ export default function BoardingHousesPage() {
     invoices = [],
     landlords = [],
     createSaasInvoice,
-    updateLandlordPackage
+    paySaasInvoice,
+    updateLandlordPackage,
+    deleteRoom
   } = useData();
   const role = user?.role || 'ADMIN';
   const isTenant = role === 'TENANT';
   const isStaff = role === 'STAFF';
   const staffHouseCode = isStaff ? (user?.houseCode || 'CS-01') : null;
-  const [houseScopeTab, setHouseScopeTab] = useState('ALL'); // 'ALL' | 'ASSIGNED'
+  const [houseScopeTab, setHouseScopeTab] = useState(isStaff ? 'ASSIGNED' : 'ALL'); // 'ALL' | 'ASSIGNED'
+
+  // Kiểm tra quyền quản lý cơ sở: Admin quản lý tất cả, Staff chỉ quản lý cơ sở của mình (do mình tạo hoặc được phân công)
+  const canManageHouse = (house) => {
+    if (!house) return false;
+    if (role === 'ADMIN') return true;
+    if (!isStaff) return false;
+    const myUsername = user?.username;
+    if (!myUsername) return false;
+    return (
+      house.createdBy === myUsername ||
+      house.managerUsername === myUsername ||
+      (myUsername === 'staff' && (house.code === 'CS-01' || !house.createdBy)) ||
+      (myUsername === 'staff2' && house.code === 'CS-02') ||
+      house.code === staffHouseCode
+    );
+  };
 
   // Xác định gói cước và hạn mức cơ sở của Chủ trọ hiện tại
   const currentLandlord = useMemo(() => {
@@ -110,13 +140,27 @@ export default function BoardingHousesPage() {
     ? 2
     : 1;
 
+  const maxRoomsAllowed = landlordPackage === 'ENTERPRISE'
+    ? 99999
+    : landlordPackage === 'PRO'
+    ? 100
+    : (landlordPackage === 'NONE' || landlordPackage === 'TRIAL' ? 10 : 30);
+
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showBuyPackageModal, setShowBuyPackageModal] = useState(false);
 
   const [rawHouses, setHouses] = useState(() => {
     try {
       const saved = localStorage.getItem('rental_boarding_houses');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Chuẩn hóa giới hạn phòng theo gói
+        return parsed.map(h => ({
+          ...h,
+          totalRooms: Math.min(Number(h.totalRooms) || 10, maxRoomsAllowed),
+          availableRooms: Math.min(Number(h.availableRooms ?? h.totalRooms) || 10, maxRoomsAllowed)
+        }));
+      }
       if (isZeroSandbox) return [];
       return initialHouses;
     } catch {
@@ -132,14 +176,17 @@ export default function BoardingHousesPage() {
         (r) => r.houseCode === house.code || (house.code === 'CS-01' && !r.houseCode)
       );
 
-      // Nếu có phòng trong DataContext thì tính toán chính xác
-      const totalRooms = houseRooms.length > 0 ? houseRooms.length : house.totalRooms;
+      // Nếu có phòng trong DataContext thì tính toán chính xác, nếu chưa có thì giới hạn theo hạn mức gói
+      const rawFallbackRooms = Number(house.totalRooms) || 10;
+      const totalRooms = houseRooms.length > 0
+        ? houseRooms.length
+        : Math.min(rawFallbackRooms, maxRoomsAllowed);
       const occupiedRooms = houseRooms.length > 0
         ? houseRooms.filter((r) => r.status === 'OCCUPIED').length
         : house.occupiedRooms;
       const availableRooms = houseRooms.length > 0
         ? houseRooms.filter((r) => r.status === 'AVAILABLE').length
-        : house.availableRooms;
+        : Math.min(Number(house.availableRooms ?? rawFallbackRooms) || 0, maxRoomsAllowed);
       const holdingRooms = houseRooms.length > 0
         ? houseRooms.filter((r) => r.status === 'HOLDING').length
         : 0;
@@ -154,10 +201,11 @@ export default function BoardingHousesPage() {
             .reduce((sum, r) => sum + (r.price || 3500000), 0)
         : house.monthlyRevenue;
 
-      // Danh sách khách thuê thuộc cơ sở này
-      const houseTenants = (tenants || []).filter(
-        (t) => t.houseCode === house.code || (house.code === 'CS-01' && !t.houseCode)
-      );
+      // Danh sách khách thuê thực tế đang ở tại cơ sở này
+      const houseTenants = (tenants || []).filter((t) => {
+        if (t.status !== 'ACTIVE') return false;
+        return houseRooms.some((r) => (r.number === t.room || (Array.isArray(t.rooms) && t.rooms.includes(r.number))) && r.status === 'OCCUPIED');
+      });
 
       return {
         ...house,
@@ -168,10 +216,10 @@ export default function BoardingHousesPage() {
         maintenanceRooms,
         monthlyRevenue,
         tenantCount: houseTenants.length,
-        isAssignedToStaff: isStaff && house.code === staffHouseCode
+        isAssignedToStaff: canManageHouse(house)
       };
     });
-  }, [rawHouses, rooms, tenants, isStaff, staffHouseCode]);
+  }, [rawHouses, rooms, tenants, isStaff, staffHouseCode, user]);
 
   // Bộ lọc theo quyền hạn và tìm kiếm
   const houses = useMemo(() => {
@@ -180,14 +228,15 @@ export default function BoardingHousesPage() {
     if (isTenant) {
       list = list.filter((h) => h.code === 'CS-01');
     } else if (isStaff && houseScopeTab === 'ASSIGNED') {
-      list = list.filter((h) => h.code === staffHouseCode);
+      list = list.filter((h) => canManageHouse(h));
     }
 
     return list;
-  }, [enrichedHouses, isTenant, isStaff, houseScopeTab, staffHouseCode]);
+  }, [enrichedHouses, isTenant, isStaff, houseScopeTab, staffHouseCode, user]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [payingSaasInvoice, setPayingSaasInvoice] = useState(null);
   const [serviceConfigModalOpen, setServiceConfigModalOpen] = useState(false);
   const [selectedHouseForConfig, setSelectedHouseForConfig] = useState('CS-01');
   const [loading, setLoading] = useState(false);
@@ -266,11 +315,88 @@ export default function BoardingHousesPage() {
     try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
   };
 
-  const handleDeleteHouse = (code) => {
-    if (window.confirm(`Xác nhận xóa cơ sở ${code}? Dữ liệu phòng thuộc cơ sở này sẽ cần được cập nhật lại.`)) {
+  const [editingHouse, setEditingHouse] = useState(null);
+  const [editHouseForm, setEditHouseForm] = useState({
+    name: '',
+    address: '',
+    manager: '',
+    managerPhone: '',
+    floors: 4,
+    features: []
+  });
+
+  const handleSaveEditHouse = (e) => {
+    e.preventDefault();
+    if (!editingHouse || !editHouseForm.name || !editHouseForm.address) return;
+    const nextList = rawHouses.map((h) => {
+      if (h.code === editingHouse.code) {
+        return {
+          ...h,
+          name: editHouseForm.name,
+          address: editHouseForm.address,
+          manager: editHouseForm.manager,
+          managerPhone: editHouseForm.managerPhone,
+          floors: Number(editHouseForm.floors) || h.floors,
+          features: editHouseForm.features
+        };
+      }
+      return h;
+    });
+    setHouses(nextList);
+    try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
+    setEditingHouse(null);
+  };
+
+  const handleOpenEditHouse = (house) => {
+    if (!canManageHouse(house)) {
+      alert(`⚠️ Bạn không có quyền chỉnh sửa cơ sở này!\nCơ sở này do "${house.manager || 'Quản lý khác'}" phụ trách.`);
+      return;
+    }
+    setEditingHouse(house);
+    setEditHouseForm({
+      name: house.name,
+      address: house.address,
+      manager: house.manager,
+      managerPhone: house.managerPhone,
+      floors: house.floors || 4,
+      features: Array.isArray(house.features) ? [...house.features] : ['Khóa cổng vân tay', 'Camera an ninh 24/7', 'Nhà để xe']
+    });
+  };
+
+  const handleDeleteHouse = (houseOrCode) => {
+    const code = typeof houseOrCode === 'string' ? houseOrCode : houseOrCode.code;
+    const targetHouse = enrichedHouses.find((h) => h.code === code) || (typeof houseOrCode === 'object' ? houseOrCode : null);
+    
+    if (targetHouse && !canManageHouse(targetHouse)) {
+      alert(`⚠️ Bạn không có quyền xóa cơ sở này!\nCơ sở này do "${targetHouse.manager || 'Quản lý khác'}" phụ trách.`);
+      return;
+    }
+
+    const actualOccupied = targetHouse ? (Number(targetHouse.occupiedRooms) || 0) : 0;
+
+    if (actualOccupied > 0) {
+      alert(`⚠️ Không thể xóa cơ sở ${targetHouse?.name || code}!\n\nCơ sở này hiện đang có ${actualOccupied} phòng đang có khách thuê. Vui lòng thanh lý hợp đồng và trả phòng trước khi xóa cơ sở.`);
+      return;
+    }
+
+    if (window.confirm(`Xác nhận xóa vĩnh viễn cơ sở "${targetHouse?.name || code}" (${code})?\n\nDữ liệu cơ sở này và toàn bộ danh mục phòng trực thuộc sẽ được dọn sạch khỏi hệ thống.`)) {
       const nextList = rawHouses.filter((h) => h.code !== code);
       setHouses(nextList);
       try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
+
+      // Xóa đồng bộ các phòng thuộc cơ sở này
+      const houseRoomsToDelete = (rooms || []).filter((r) => r.houseCode === code || (code === 'CS-01' && !r.houseCode));
+      if (typeof deleteRoom === 'function') {
+        houseRoomsToDelete.forEach((r) => deleteRoom(r.id));
+      }
+      try {
+        const savedRooms = localStorage.getItem('rental_rooms');
+        if (savedRooms) {
+          const parsed = JSON.parse(savedRooms);
+          const filtered = parsed.filter((r) => r.houseCode !== code && !(code === 'CS-01' && !r.houseCode));
+          localStorage.setItem('rental_rooms', JSON.stringify(filtered));
+        }
+      } catch {}
     }
   };
 
@@ -280,14 +406,19 @@ export default function BoardingHousesPage() {
     
     const newCode = `CS-0${houses.length + 1}`;
     const initialStatus = isStaff ? 'PENDING_APPROVAL' : 'ACTIVE';
+    const targetRooms = Math.min(Number(newHouse.totalRooms) || 10, maxRoomsAllowed);
+    const creatorUser = user?.username || (isStaff ? 'staff' : 'admin');
+    const assignedManager = newHouse.manager || user?.fullName || 'Quản lý cơ sở';
+    const assignedPhone = newHouse.managerPhone || user?.phone || '0900.000.000';
+
     const payload = {
       code: newCode,
       name: newHouse.name,
       address: newHouse.address,
-      managerName: newHouse.manager,
-      managerPhone: newHouse.managerPhone,
+      managerName: assignedManager,
+      managerPhone: assignedPhone,
       totalFloors: Number(newHouse.floors),
-      totalRooms: Number(newHouse.totalRooms),
+      totalRooms: targetRooms,
       status: initialStatus,
       facilities: [
         { facilityName: 'Khóa cổng vân tay' },
@@ -306,8 +437,14 @@ export default function BoardingHousesPage() {
       id: Date.now(),
       code: newCode,
       ...newHouse,
+      manager: assignedManager,
+      managerPhone: assignedPhone,
+      createdBy: creatorUser,
+      managerUsername: creatorUser,
+      creatorRole: role,
+      totalRooms: targetRooms,
       occupiedRooms: 0,
-      availableRooms: Number(newHouse.totalRooms),
+      availableRooms: targetRooms,
       maintenanceRooms: 0,
       monthlyRevenue: 0,
       status: initialStatus,
@@ -317,7 +454,7 @@ export default function BoardingHousesPage() {
     setHouses(nextList);
     try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
     setShowModal(false);
-    setNewHouse({ name: '', address: '', manager: '', managerPhone: '', floors: 4, totalRooms: 10 });
+    setNewHouse({ name: '', address: '', manager: '', managerPhone: '', floors: 4, totalRooms: Math.min(10, maxRoomsAllowed) });
   };
 
   return (
@@ -346,6 +483,11 @@ export default function BoardingHousesPage() {
 
           <button
             onClick={() => {
+              const trial = getTrialStatus(currentLandlord);
+              if (trial.isTrialExpired) {
+                setShowBuyPackageModal(true);
+                return;
+              }
               if (rawHouses.length >= maxHousesAllowed) {
                 setShowUpgradeModal(true);
               } else {
@@ -368,6 +510,12 @@ export default function BoardingHousesPage() {
           </button>
         </div>
       </div>
+
+      {/* Banner Cảnh Báo Dùng Thử 14 Ngày */}
+      <TrialExpiryBanner
+        currentLandlord={currentLandlord}
+        onUpgradeClick={() => setShowBuyPackageModal(true)}
+      />
 
       {/* Top Aggregation Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -416,17 +564,6 @@ export default function BoardingHousesPage() {
           <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl shrink-0">
             <button
               type="button"
-              onClick={() => setHouseScopeTab('ALL')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                houseScopeTab === 'ALL'
-                  ? 'bg-white text-purple-700 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              🏢 Tất Cả Cơ Sở ({enrichedHouses.length})
-            </button>
-            <button
-              type="button"
               onClick={() => setHouseScopeTab('ASSIGNED')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
                 houseScopeTab === 'ASSIGNED'
@@ -434,7 +571,18 @@ export default function BoardingHousesPage() {
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <span>⭐ Cơ Sở Bạn Phụ Trách ({staffHouseCode})</span>
+              <span>⭐ Cơ Sở Bạn Quản Lý ({enrichedHouses.filter(canManageHouse).length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setHouseScopeTab('ALL')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                houseScopeTab === 'ALL'
+                  ? 'bg-white text-purple-700 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              🏢 Toàn Chuỗi ({enrichedHouses.length})
             </button>
           </div>
         )}
@@ -496,11 +644,15 @@ export default function BoardingHousesPage() {
                         Hoạt Động
                       </span>
                     )}
-                    {house.isAssignedToStaff && (
+                    {house.isAssignedToStaff ? (
                       <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-400 text-slate-950 shadow-md border border-white/40">
                         ⭐ Cơ sở của bạn
                       </span>
-                    )}
+                    ) : isStaff ? (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-slate-800/80 text-amber-200 shadow-md border border-white/20 backdrop-blur-md">
+                        🔒 Chi nhánh khác (QL: {house.manager})
+                      </span>
+                    ) : null}
                   </div>
 
                   <div className="absolute top-3 right-3 z-10">
@@ -624,18 +776,52 @@ export default function BoardingHousesPage() {
                     <span>Duyệt Cơ Sở Ngay</span>
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedHouseForConfig(house.code);
-                    setServiceConfigModalOpen(true);
-                  }}
-                  className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-700 bg-slate-100 hover:bg-purple-50 hover:text-purple-700 px-3 py-1.5 rounded-xl transition border border-slate-200"
-                  title="UC-S01B: Cài đặt Biểu giá dịch vụ chi nhánh"
-                >
-                  <Receipt className="w-3.5 h-3.5" />
-                  <span>Biểu giá (UC-S01B)</span>
-                </button>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {canManageHouse(house) ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedHouseForConfig(house.code);
+                          setServiceConfigModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-700 bg-slate-100 hover:bg-purple-50 hover:text-purple-700 px-2.5 py-1.5 rounded-xl transition border border-slate-200 cursor-pointer"
+                        title="UC-S01B: Cài đặt Biểu giá dịch vụ chi nhánh"
+                      >
+                        <Receipt className="w-3.5 h-3.5" />
+                        <span>Biểu giá</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditHouse(house)}
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1.5 rounded-xl transition border border-indigo-200 cursor-pointer"
+                        title="Chỉnh sửa thông tin cơ sở nhà trọ"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Sửa</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteHouse(house)}
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 px-2.5 py-1.5 rounded-xl transition border border-rose-200 cursor-pointer"
+                        title="Xóa vĩnh viễn cơ sở nhà trọ này"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Xóa</span>
+                      </button>
+                    </>
+                  ) : (
+                    <span
+                      className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200"
+                      title={`Cơ sở này do ${house.manager || 'Quản lý khác'} phụ trách`}
+                    >
+                      <Lock className="w-3 h-3 text-slate-400" />
+                      <span>Chỉ xem ({house.manager || 'Nhân sự khác'})</span>
+                    </span>
+                  )}
+                </div>
 
                 <Link
                   to={`/rooms?house=${house.code}`}
@@ -715,11 +901,21 @@ export default function BoardingHousesPage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Tổng số phòng dự kiến</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold text-slate-700">Tổng số phòng dự kiến</label>
+                <span className="text-[10px] font-bold text-purple-700">
+                  Tối đa {maxRoomsAllowed} phòng ({landlordPackage})
+                </span>
+              </div>
               <input
                 type="number"
+                min={1}
+                max={maxRoomsAllowed}
                 value={newHouse.totalRooms}
-                onChange={(e) => setNewHouse({ ...newHouse, totalRooms: Number(e.target.value) })}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setNewHouse({ ...newHouse, totalRooms: val > maxRoomsAllowed ? maxRoomsAllowed : val });
+                }}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-purple-500"
               />
             </div>
@@ -741,6 +937,132 @@ export default function BoardingHousesPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal Chỉnh Sửa Cơ Sở Nhà Trọ */}
+      <Modal isOpen={!!editingHouse} onClose={() => setEditingHouse(null)} maxWidth="max-w-lg">
+        {editingHouse && (
+          <div>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
+                  <Edit3 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">
+                    Chỉnh Sửa Cơ Sở ({editingHouse.code})
+                  </h2>
+                  <p className="text-xs text-slate-500">Cập nhật thông tin chi nhánh cơ sở tòa nhà</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingHouse(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditHouse} className="space-y-3.5 pt-4 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Tên cơ sở nhà trọ *</label>
+                <input
+                  type="text"
+                  required
+                  value={editHouseForm.name}
+                  onChange={(e) => setEditHouseForm({ ...editHouseForm, name: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Địa chỉ chi tiết *</label>
+                <input
+                  type="text"
+                  required
+                  value={editHouseForm.address}
+                  onChange={(e) => setEditHouseForm({ ...editHouseForm, address: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-purple-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Người quản lý cơ sở *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editHouseForm.manager}
+                    onChange={(e) => setEditHouseForm({ ...editHouseForm, manager: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">SĐT liên hệ quản lý *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editHouseForm.managerPhone}
+                    onChange={(e) => setEditHouseForm({ ...editHouseForm, managerPhone: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-purple-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Số tầng tòa nhà</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={editHouseForm.floors}
+                    onChange={(e) => setEditHouseForm({ ...editHouseForm, floors: Number(e.target.value) })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Quy mô hiện tại</label>
+                  <div className="px-3 py-2 bg-slate-100 rounded-xl text-slate-600 font-bold">
+                    {editingHouse.totalRooms} Phòng
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Tiện ích cơ sở (cách nhau bởi dấu phẩy)</label>
+                <input
+                  type="text"
+                  value={editHouseForm.features.join(', ')}
+                  onChange={(e) =>
+                    setEditHouseForm({
+                      ...editHouseForm,
+                      features: e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
+                    })
+                  }
+                  placeholder="Thang máy, Khóa cổng vân tay, Camera 24/7..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-purple-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingHouse(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 text-xs font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl shadow-md transition-all cursor-pointer"
+                >
+                  Lưu Thay Đổi
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
       </Modal>
 
       {/* UC-S01B: Cài đặt Biểu giá dịch vụ chi nhánh */}
@@ -772,27 +1094,48 @@ export default function BoardingHousesPage() {
         initialPackageCode="PRO"
         onConfirmPurchase={(planData) => {
           setShowBuyPackageModal(false);
-          if (updateLandlordPackage) {
-            updateLandlordPackage(currentLandlord?.id || 1, planData.packageCode);
-          }
+          const targetLandlordId = currentLandlord?.id || (user?.username === 'staff2' ? 2 : 1);
+          const newInv = {
+            id: `SAAS-${Date.now()}`,
+            code: `HD-SAAS-2026-${Date.now().toString().slice(-4)}`,
+            landlordId: targetLandlordId,
+            landlordUsername: user?.username || (targetLandlordId === 2 ? 'staff2' : 'staff'),
+            landlordName: currentLandlord?.fullName || user?.fullName || 'Quản lý cơ sở',
+            landlordPhone: currentLandlord?.phone || user?.phone || '0900.000.000',
+            packageName: planData.packageName,
+            packageCode: planData.packageCode,
+            billingCycle: planData.billingCycle,
+            period: `${planData.months} Tháng`,
+            amount: planData.amount,
+            total: planData.amount,
+            dueDate: new Date(Date.now() + 7 * 86400000).toLocaleDateString('vi-VN'),
+            status: 'UNPAID',
+            isSaas: true
+          };
           if (createSaasInvoice) {
-            createSaasInvoice({
-              id: `SAAS-${Date.now()}`,
-              code: `HD-SAAS-2026-${Date.now().toString().slice(-4)}`,
-              landlordId: currentLandlord?.id || 1,
-              landlordName: currentLandlord?.fullName || 'Chủ trọ',
-              landlordPhone: currentLandlord?.phone || '0912.888.666',
-              packageName: planData.packageName,
-              packageCode: planData.packageCode,
-              billingCycle: planData.billingCycle,
-              period: `12 Tháng`,
-              amount: planData.amount,
-              dueDate: new Date().toLocaleDateString('vi-VN'),
-              status: 'PAID'
-            });
+            createSaasInvoice(newInv);
           }
-          alert(`🎉 Nâng cấp lên ${planData.packageName} thành công! Hạn mức mở rộng cơ sở đã được kích hoạt.`);
+          setPayingSaasInvoice(newInv);
         }}
+      />
+
+      {/* Modal Cổng Thanh Toán SePay VietQR / VNPay / MoMo Cho Gói SaaS */}
+      <PaymentModal
+        isOpen={!!payingSaasInvoice}
+        onClose={() => setPayingSaasInvoice(null)}
+        onSuccess={(inv, payMethod) => {
+          const methodLabel = payMethod === 'VNPAY' ? 'Cổng VNPay' : (payMethod === 'MOMO' ? 'Ví MoMo' : 'VietQR / SePay');
+          if (paySaasInvoice) {
+            paySaasInvoice(inv.id, methodLabel);
+          }
+          const targetLandlordId = currentLandlord?.id || (user?.username === 'staff2' ? 2 : 1);
+          if (updateLandlordPackage) {
+            updateLandlordPackage(targetLandlordId, inv.packageCode || 'PRO');
+          }
+          setPayingSaasInvoice(null);
+          alert(`🎉 Nộp tiền cước SaaS qua ${methodLabel} thành công!\nGói ${inv.packageName || inv.packageCode} đã được kích hoạt, bạn có thể tạo cơ sở không giới hạn.`);
+        }}
+        invoice={payingSaasInvoice || undefined}
       />
     </div>
   );

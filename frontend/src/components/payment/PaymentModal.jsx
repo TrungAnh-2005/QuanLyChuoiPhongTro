@@ -73,6 +73,44 @@ export default function PaymentModal({
   const [sepayStatusMsg, setSepayStatusMsg] = useState(null);
   const [detectedTx, setDetectedTx] = useState(null);
   const [copiedField, setCopiedField] = useState(null);
+  const [copyToast, setCopyToast] = useState(null);
+
+  const fallbackCopy = (str) => {
+    try {
+      const el = document.createElement('textarea');
+      el.value = str;
+      el.setAttribute('readonly', '');
+      el.style.position = 'absolute';
+      el.style.left = '-9999px';
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      return true;
+    } catch (e) {
+      console.warn('Fallback copy failed', e);
+      return false;
+    }
+  };
+
+  const copyToClipboard = (text, fieldName, successMsg = 'Đã sao chép vào bộ nhớ tạm!') => {
+    if (!text && text !== 0) return;
+    const str = String(text).trim();
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(str).catch(() => {
+        fallbackCopy(str);
+      });
+    } else {
+      fallbackCopy(str);
+    }
+    setCopiedField(fieldName);
+    setCopyToast(successMsg);
+    setTimeout(() => {
+      setCopiedField(null);
+      setCopyToast(null);
+    }, 2500);
+  };
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [apiError, setApiError] = useState(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
@@ -421,16 +459,30 @@ export default function PaymentModal({
                       <div className="flex items-center justify-between">
                         <span className="text-slate-500">Số thẻ test:</span>
                         <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                          <span className="font-mono font-black text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200 select-all tracking-wider text-xs sm:text-sm">
                             {VNPAY_TEST_CARD.cardNumber}
                           </span>
                           <button
                             type="button"
-                            onClick={() => copyToClipboard(VNPAY_TEST_CARD.cardNumber, 'vnpCard')}
-                            className="p-1 text-slate-400 hover:text-blue-600 rounded transition-colors cursor-pointer"
+                            onClick={() => copyToClipboard(VNPAY_TEST_CARD.cardNumber, 'vnpCard', 'Đã sao chép số thẻ test VNPay!')}
+                            className={`px-2 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1 text-xs font-semibold ${
+                              copiedField === 'vnpCard'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-300'
+                                : 'text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200'
+                            }`}
                             title="Sao chép số thẻ"
                           >
-                            {copiedField === 'vnpCard' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                            {copiedField === 'vnpCard' ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
+                                <span className="text-[11px] text-emerald-700 font-bold">Đã sao chép!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span className="text-[11px]">Copy</span>
+                              </>
+                            )}
                           </button>
                         </div>
                       </div>
@@ -440,16 +492,30 @@ export default function PaymentModal({
                         <span className="font-bold text-slate-800">{VNPAY_TEST_CARD.cardHolder}</span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
+                      <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-100">
                         <div className="flex items-center justify-between">
                           <span className="text-slate-500">Ngày phát hành:</span>
                           <span className="font-mono font-bold text-slate-800">{VNPAY_TEST_CARD.issueDate}</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-slate-500">Mã OTP test:</span>
-                          <span className="font-mono font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-                            {VNPAY_TEST_CARD.otp}
-                          </span>
+                          <div className="flex items-center gap-1">
+                            <span className="font-mono font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                              {VNPAY_TEST_CARD.otp}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(VNPAY_TEST_CARD.otp, 'vnpOtp', 'Đã sao chép mã OTP test!')}
+                              className={`p-1 rounded transition-all cursor-pointer ${
+                                copiedField === 'vnpOtp'
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : 'text-slate-400 hover:text-emerald-700 hover:bg-emerald-50'
+                              }`}
+                              title="Sao chép mã OTP"
+                            >
+                              {copiedField === 'vnpOtp' ? <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -535,7 +601,30 @@ export default function PaymentModal({
                       <div className="grid grid-cols-2 gap-2 text-[11px]">
                         <div>
                           <span className="text-slate-500 block text-[10px]">Số thẻ ATM test:</span>
-                          <span className="font-mono font-bold text-slate-800">9704 0000 0000 0018</span>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <span className="font-mono font-bold text-slate-900 bg-white px-1.5 py-0.5 rounded border border-pink-200 select-all">
+                              9704 0000 0000 0018
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard('9704000000000018', 'momoCard', 'Đã sao chép số thẻ ATM MoMo!')}
+                              className={`p-1 rounded transition-all cursor-pointer flex items-center gap-0.5 ${
+                                copiedField === 'momoCard'
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : 'text-slate-400 hover:text-pink-600 hover:bg-pink-50'
+                              }`}
+                              title="Sao chép số thẻ ATM MoMo"
+                            >
+                              {copiedField === 'momoCard' ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
+                                  <span className="text-[10px] text-emerald-700 font-bold">Đã chép</span>
+                                </>
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
                         </div>
                         <div>
                           <span className="text-slate-500 block text-[10px]">Tên chủ thẻ:</span>
@@ -547,7 +636,23 @@ export default function PaymentModal({
                         </div>
                         <div>
                           <span className="text-slate-500 block text-[10px]">Mã OTP:</span>
-                          <span className="font-mono font-bold text-emerald-700">000000 (bất kỳ)</span>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <span className="font-mono font-bold text-emerald-700 bg-white px-1.5 py-0.5 rounded border border-emerald-200">
+                              000000
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard('000000', 'momoOtp', 'Đã sao chép mã OTP MoMo!')}
+                              className={`p-1 rounded transition-all cursor-pointer ${
+                                copiedField === 'momoOtp'
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : 'text-slate-400 hover:text-emerald-700 hover:bg-emerald-50'
+                              }`}
+                              title="Sao chép mã OTP"
+                            >
+                              {copiedField === 'momoOtp' ? <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -671,11 +776,22 @@ export default function PaymentModal({
                         </span>
                         <button
                           type="button"
-                          onClick={() => copyToClipboard(bankInfo.accountNumber, 'acc')}
-                          className="p-1 text-slate-400 hover:text-teal-600 rounded transition-colors cursor-pointer"
+                          onClick={() => copyToClipboard(bankInfo.accountNumber, 'acc', 'Đã sao chép số tài khoản!')}
+                          className={`px-1.5 py-0.5 rounded transition-all cursor-pointer flex items-center gap-1 ${
+                            copiedField === 'acc'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'text-slate-400 hover:text-teal-600 hover:bg-teal-50'
+                          }`}
                           title="Sao chép STK"
                         >
-                          {copiedField === 'acc' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          {copiedField === 'acc' ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
+                              <span className="text-[10px] text-emerald-700 font-bold">Đã chép</span>
+                            </>
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
                         </button>
                       </div>
                     </div>
@@ -688,16 +804,27 @@ export default function PaymentModal({
                     <div className="flex items-center justify-between">
                       <span className="text-slate-500">Nội dung chuyển khoản (Bắt buộc):</span>
                       <div className="flex items-center gap-1.5">
-                        <span className="font-mono font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
+                        <span className="font-mono font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-300 select-all">
                           {bankInfo.content}
                         </span>
                         <button
                           type="button"
-                          onClick={() => copyToClipboard(bankInfo.content, 'content')}
-                          className="p-1 text-slate-400 hover:text-amber-700 rounded transition-colors cursor-pointer"
+                          onClick={() => copyToClipboard(bankInfo.content, 'content', 'Đã sao chép nội dung chuyển khoản!')}
+                          className={`px-1.5 py-0.5 rounded transition-all cursor-pointer flex items-center gap-1 ${
+                            copiedField === 'content'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'text-slate-400 hover:text-amber-700 hover:bg-amber-50'
+                          }`}
                           title="Sao chép nội dung"
                         >
-                          {copiedField === 'content' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          {copiedField === 'content' ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
+                              <span className="text-[10px] text-emerald-700 font-bold">Đã chép</span>
+                            </>
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
                         </button>
                       </div>
                     </div>
@@ -855,6 +982,14 @@ export default function PaymentModal({
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* Floating Toast Notification khi sao chép */}
+      {copyToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/95 text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-2 border border-slate-700 z-50 pointer-events-none animate-bounce">
+          <Check className="w-4 h-4 text-emerald-400 stroke-[3]" />
+          <span>{copyToast}</span>
         </div>
       )}
     </div>,
