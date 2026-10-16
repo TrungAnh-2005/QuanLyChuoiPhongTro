@@ -6,7 +6,7 @@ import { useData } from '../contexts/DataContext';
 export default function VNPayReturnPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { payInvoice, invoices } = useData();
+  const { payInvoice, invoices, paySaasInvoice, updateLandlordPackage } = useData();
 
   const [processed, setProcessed] = useState(false);
 
@@ -55,8 +55,13 @@ export default function VNPayReturnPage() {
         String(pendingInfo?.code).includes('HD-SAAS')
       );
 
-      if (isSaas && paySaasInvoice) {
-        paySaasInvoice(pendingInfo?.id || invoiceId || pendingInfo?.code, `VNPay Sandbox (${bankCode})`);
+      if (isSaas && typeof paySaasInvoice === 'function') {
+        const targetPackage = pendingInfo?.packageCode || 'ENTERPRISE';
+        const targetLandlord = pendingInfo?.landlordId || 1;
+        paySaasInvoice(pendingInfo?.id || invoiceId || pendingInfo?.code, `VNPay Sandbox (${bankCode})`, targetPackage, targetLandlord);
+        if (typeof updateLandlordPackage === 'function') {
+          updateLandlordPackage(targetLandlord, targetPackage);
+        }
       } else {
         keysToPay.forEach((key) => {
           payInvoice(key, `VNPay Sandbox (${bankCode})`);
@@ -68,7 +73,7 @@ export default function VNPayReturnPage() {
         localStorage.removeItem('rental_pending_payment');
       } catch {}
     }
-  }, [isSuccess, processed, invoiceId, pendingInfo, bankCode, orderInfo, payInvoice]);
+  }, [isSuccess, processed, invoiceId, pendingInfo, bankCode, orderInfo, payInvoice, paySaasInvoice, updateLandlordPackage]);
 
   return (
     <div className="max-w-2xl mx-auto py-8 px-4">

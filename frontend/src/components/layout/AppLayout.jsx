@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { Outlet, Navigate, useLocation, Link, NavLink } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Navbar from './Navbar';
@@ -38,14 +38,13 @@ export default function AppLayout() {
   const isStaffRestricted =
     role === 'STAFF' && path.startsWith('/admin');
 
-  // Quy định RBAC chuẩn Multi-tenant SaaS: Admin quản lý nền tảng đối tác,
-  // không trực tiếp vận hành cơ sở, phòng trọ, khách thuê và chỉ số điện nước
+  // Quy định RBAC chuẩn Multi-tenant SaaS: Admin quản lý nền tảng đối tác và toàn bộ cơ sở toàn sàn,
+  // không trực tiếp vận hành vi mô (sơ đồ phòng trọ cá nhân, khách thuê và ghi chỉ số điện nước)
   const isAdminRestricted =
     role === 'ADMIN' &&
     (path.startsWith('/meters') ||
       path.startsWith('/rooms') ||
-      path.startsWith('/tenants') ||
-      path.startsWith('/houses'));
+      path.startsWith('/tenants'));
 
   // Bottom navigation items cho di động (Mobile Bottom Nav)
   const bottomNavItems =

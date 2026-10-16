@@ -33,7 +33,7 @@ import BuySaasPackageModal from '../components/staff/BuySaasPackageModal';
 import PaymentModal from '../components/payment/PaymentModal';
 import CreateTenantModal from './admin/tenants/CreateTenantModal';
 
-const FACILITIES = [
+const DEFAULT_FACILITIES = [
   { code: 'CS-01', name: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', shortName: 'Cơ Sở 1 - Cầu Giấy' },
   { code: 'CS-02', name: 'Nhà Trọ Bách Khoa - Cơ Sở 2', shortName: 'Cơ Sở 2 - Bách Khoa' },
   { code: 'CS-03', name: 'Nhà Trọ Đống Đa - Cơ Sở 3', shortName: 'Cơ Sở 3 - Đống Đa' }
@@ -68,6 +68,28 @@ export default function TenantsPage() {
   }, [user, landlords]);
 
   const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+
+  // Danh mục Cơ sở năng động (Đọc từ localStorage hoặc dữ liệu chuỗi trọ thực tế)
+  const facilities = useMemo(() => {
+    try {
+      const saved = localStorage.getItem('rental_boarding_houses');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((h) => ({
+            code: h.code,
+            name: h.name,
+            shortName: `${h.code} - ${h.name.replace(/^Nhà Trọ\s*/i, '')}`
+          }));
+        }
+      }
+      if (isZeroSandbox) return [];
+      return DEFAULT_FACILITIES;
+    } catch {
+      return isZeroSandbox ? [] : DEFAULT_FACILITIES;
+    }
+  }, [isZeroSandbox]);
+
   const landlordPackage = (isZeroSandbox && (!currentLandlord || currentLandlord.packageCode === 'NONE'))
     ? 'NONE'
     : (currentLandlord?.packageCode || 'BASIC');
@@ -494,7 +516,14 @@ export default function TenantsPage() {
   };
 
   // New tenant state với 3 mức thời hạn: 3, 6, 12 tháng
-  const [manualHouseCode, setManualHouseCode] = useState('CS-01');
+  const [manualHouseCode, setManualHouseCode] = useState(() => facilities[0]?.code || '');
+
+  useEffect(() => {
+    if (facilities.length > 0 && (!manualHouseCode || !facilities.some((f) => f.code === manualHouseCode))) {
+      setManualHouseCode(facilities[0].code);
+    }
+  }, [facilities, manualHouseCode]);
+
   const [newTenant, setNewTenant] = useState({
     fullName: '',
     cccd: '',
@@ -514,7 +543,8 @@ export default function TenantsPage() {
   // Lọc các phòng còn trống của cơ sở đang chọn cho modal thêm thủ công
   const manualVacantRooms = useMemo(() => {
     return (rooms || []).filter((r) => {
-      if ((r.houseCode || 'CS-01') !== manualHouseCode) return false;
+      if (!manualHouseCode) return false;
+      if (r.houseCode !== manualHouseCode && !(manualHouseCode === 'CS-01' && !r.houseCode)) return false;
       if (r.status !== 'AVAILABLE') return false;
       if (r.occupants && r.occupants > 0) return false;
       return true;
@@ -552,7 +582,7 @@ export default function TenantsPage() {
     }));
   };
 
-  const staffHouseCode = user?.role === 'STAFF' ? (user.houseCode || 'CS-01') : null;
+  const staffHouseCode = user?.role === 'STAFF' ? (user.houseCode || (isZeroSandbox ? null : (facilities[0]?.code || 'CS-01'))) : null;
 
   // Lấy tập hợp khách thuộc phạm vi cơ sở (Tenant Scoping & Multi-tenancy Isolation)
   // Tuyệt đối không hiển thị khách tự do chưa thuê bất kỳ phòng nào trong danh bạ quản lý của Staff
@@ -597,13 +627,13 @@ export default function TenantsPage() {
       setPwdResetToast({ type: 'ERROR', title: 'Chưa Chọn Phòng', message: 'Vui lòng chọn cơ sở có phòng trống và chọn phòng cần thuê!' }); setTimeout(() => setPwdResetToast(null), 5000);
       return;
     }
-    const selectedFacilityObj = FACILITIES.find((f) => f.code === manualHouseCode);
+    const selectedFacilityObj = facilities.find((f) => f.code === manualHouseCode);
     const calculatedEnd = calculateContractEnd(newTenant.contractStart, newTenant.contractDuration);
 
     addTenant({
       ...newTenant,
       houseCode: manualHouseCode,
-      house: selectedFacilityObj?.name || 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
+      house: selectedFacilityObj?.name || (facilities[0]?.name || 'Cơ sở nhà trọ'),
       contractEnd: calculatedEnd,
       rooms: [newTenant.room],
       room: newTenant.room
@@ -1495,9 +1525,9 @@ export default function TenantsPage() {
                   onChange={(e) => setManualHouseCode(e.target.value)}
                   className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-purple-500 shadow-2xs cursor-pointer"
                 >
-                  {FACILITIES.map((f) => {
+                  {facilities.map((f) => {
                     const countVacant = (rooms || []).filter(
-                      (r) => (r.houseCode || 'CS-01') === f.code && r.status === 'AVAILABLE' && (!r.occupants || r.occupants === 0)
+                      (r) => (r.houseCode || facilities[0]?.code) === f.code && r.status === 'AVAILABLE' && (!r.occupants || r.occupants === 0)
                     ).length;
                     return (
                       <option key={f.code} value={f.code}>
@@ -2149,10 +2179,8 @@ export default function TenantsPage() {
             status: 'UNPAID',
             isSaas: true
           };
-          if (createSaasInvoice) {
-            createSaasInvoice(newInv);
-          }
-          setPayingSaasInvoice(newInv);
+          const createdInv = createSaasInvoice ? createSaasInvoice(newInv) : newInv;
+          setPayingSaasInvoice(createdInv || newInv);
         }}
       />
 

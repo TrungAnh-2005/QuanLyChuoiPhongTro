@@ -49,88 +49,11 @@ export default function AdminLandlordsPage() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPackage, setFilterPackage] = useState('ALL');
-  const [adminTab, setAdminTab] = useState('ACCOUNTS'); // 'ACCOUNTS' | 'KYC' | 'HOUSES'
+  const [adminTab, setAdminTab] = useState('ACCOUNTS'); // 'ACCOUNTS' | 'KYC'
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAiModal, setShowAiModal] = useState(false);
   const [resetPwdLandlord, setResetPwdLandlord] = useState(null);
   const [customPwdInput, setCustomPwdInput] = useState('');
-
-  const [housesList, setHousesList] = useState(() => {
-    try {
-      const saved = localStorage.getItem('rental_boarding_houses');
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return [
-      {
-        id: 1,
-        code: 'CS-01',
-        name: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
-        address: 'Số 25, Ngõ 123, Đường Cầu Giấy, Phường Dịch Vọng, Cầu Giấy, Hà Nội',
-        manager: 'Lê Thị Thu Ngân (Staff CS1)',
-        managerUsername: 'staff',
-        createdBy: 'staff',
-        managerPhone: '0912.888.666',
-        floors: 5,
-        totalRooms: 10,
-        status: 'ACTIVE'
-      },
-      {
-        id: 2,
-        code: 'CS-02',
-        name: 'Nhà Trọ Bách Khoa - Cơ Sở 2',
-        address: 'Số 18, Ngõ Tự Do, Phường Đồng Tâm, Hai Bà Trưng, Hà Nội',
-        manager: 'Đàm Văn Táo (Staff CS2)',
-        managerUsername: 'staff2',
-        createdBy: 'staff2',
-        managerPhone: '0988.777.999',
-        floors: 4,
-        totalRooms: 8,
-        status: 'ACTIVE'
-      },
-      {
-        id: 3,
-        code: 'CS-03',
-        name: 'Nhà Trọ Đống Đa - Cơ Sở 3',
-        address: 'Số 92, Phố Chùa Láng, Phường Láng Thượng, Đống Đa, Hà Nội',
-        manager: 'Phạm Quốc Hùng',
-        managerUsername: 'admin',
-        createdBy: 'admin',
-        managerPhone: '0936.555.222',
-        floors: 6,
-        totalRooms: 16,
-        status: 'ACTIVE'
-      }
-    ];
-  });
-
-  const handleApproveHouse = (code) => {
-    const updated = housesList.map((h) => (h.code === code ? { ...h, status: 'ACTIVE', approvedAt: new Date().toLocaleDateString('vi-VN') } : h));
-    setHousesList(updated);
-    try { localStorage.setItem('rental_boarding_houses', JSON.stringify(updated)); } catch {}
-    showToast(`✅ Quản Trị Viên đã phê duyệt cơ sở ${code}! Cơ sở đã kích hoạt thành công.`);
-  };
-
-  const handleRejectHouse = (code) => {
-    if (window.confirm(`Xác nhận từ chối và hủy cơ sở ${code}?`)) {
-      const updated = housesList.filter((h) => h.code !== code);
-      setHousesList(updated);
-      try { localStorage.setItem('rental_boarding_houses', JSON.stringify(updated)); } catch {}
-      showToast(`Đã từ chối và gỡ bỏ cơ sở ${code}.`);
-    }
-  };
-
-  const handleToggleLockHouse = (code) => {
-    const updated = housesList.map((h) => {
-      if (h.code === code) {
-        const nextStatus = h.status === 'LOCKED' ? 'ACTIVE' : 'LOCKED';
-        return { ...h, status: nextStatus };
-      }
-      return h;
-    });
-    setHousesList(updated);
-    try { localStorage.setItem('rental_boarding_houses', JSON.stringify(updated)); } catch {}
-    showToast(`Đã thay đổi trạng thái cơ sở ${code}!`);
-  };
 
   const handleOpenResetPassword = (landlord) => {
     setResetPwdLandlord(landlord);
@@ -397,23 +320,6 @@ export default function AdminLandlordsPage() {
             </span>
           )}
         </button>
-
-        <button
-          onClick={() => setAdminTab('HOUSES')}
-          className={`btn-press px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-            adminTab === 'HOUSES'
-              ? 'bg-white text-indigo-700 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <Building2 className="w-4 h-4" />
-          <span>Xét Duyệt Cơ Sở Mới ({housesList.length})</span>
-          {housesList.filter((h) => h.status === 'PENDING_APPROVAL').length > 0 && (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white animate-pulse">
-              {housesList.filter((h) => h.status === 'PENDING_APPROVAL').length} chờ duyệt
-            </span>
-          )}
-        </button>
       </div>
 
       {adminTab === 'KYC' ? (
@@ -450,9 +356,9 @@ export default function AdminLandlordsPage() {
                 {landlordProfiles.map((p) => (
                   <tr key={p.id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="py-4 px-5">
-                      <div className="font-bold text-slate-900 text-sm">{p.landlordName}</div>
-                      <div className="text-slate-500 font-mono text-[11px] mt-0.5">{p.landlordPhone}</div>
-                      <div className="text-slate-400 text-[11px]">ID: #{p.landlordId}</div>
+                      <div className="font-bold text-slate-900 text-sm">{p.landlordName || p.fullName || 'Chưa cập nhật'}</div>
+                      <div className="text-slate-500 font-mono text-[11px] mt-0.5">{p.landlordPhone || p.phone || 'Chưa có SĐT'}</div>
+                      <div className="text-slate-400 text-[11px]">ID: #{p.landlordId || p.id}</div>
                     </td>
 
                     <td className="py-4 px-4">
@@ -500,7 +406,7 @@ export default function AdminLandlordsPage() {
                           <button
                             onClick={() => {
                               verifyLandlordKyc(p.id, 'VERIFIED');
-                              showToast(`Đã xác minh KYC thành công cho chủ trọ ${p.landlordName}!`);
+                              showToast(`Đã xác minh KYC thành công cho chủ trọ ${p.landlordName || p.fullName}!`);
                             }}
                             className="btn-press px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
                           >
@@ -514,7 +420,7 @@ export default function AdminLandlordsPage() {
                               const reason = window.prompt('Nhập lý do từ chối hồ sơ KYC:');
                               if (reason !== null) {
                                 verifyLandlordKyc(p.id, 'REJECTED', reason || 'Ảnh CCCD mờ hoặc thông tin không trùng khớp');
-                                showToast(`Đã từ chối hồ sơ KYC của ${p.landlordName}!`, 'WARNING');
+                                showToast(`Đã từ chối hồ sơ KYC của ${p.landlordName || p.fullName}!`, 'WARNING');
                               }
                             }}
                             className="btn-press px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition cursor-pointer"
@@ -523,115 +429,6 @@ export default function AdminLandlordsPage() {
                           </button>
                         )}
                       </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : adminTab === 'HOUSES' ? (
-        /* Boarding Houses Approval Bento Card */
-        <div className="bento-card overflow-hidden">
-          <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
-            <div>
-              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-indigo-600" />
-                <span>Xét Duyệt Cơ Sở Nhà Trọ & Chi Nhánh Toàn Chuỗi</span>
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Kiểm tra thông tin chi nhánh do Staff đề xuất, phê duyệt cấp phép hoạt động hoặc tạm khóa cơ sở.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="px-3 py-1 bg-amber-50 text-amber-700 rounded-full font-bold text-xs border border-amber-200">
-                Chờ duyệt: {housesList.filter((h) => h.status === 'PENDING_APPROVAL').length}
-              </span>
-              <span className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full font-bold text-xs border border-emerald-200">
-                Đang hoạt động: {housesList.filter((h) => h.status === 'ACTIVE' || !h.status).length}
-              </span>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50/80 text-slate-400 uppercase font-bold tracking-wider text-[11px] border-b border-slate-100">
-                <tr>
-                  <th className="py-3.5 px-5">Mã & Tên Cơ Sở</th>
-                  <th className="py-3.5 px-4">Địa Chỉ</th>
-                  <th className="py-3.5 px-4">Người Tạo / Quản Lý</th>
-                  <th className="py-3.5 px-4">Quy Mô</th>
-                  <th className="py-3.5 px-4">Trạng Thái Duyệt</th>
-                  <th className="py-3.5 px-5 text-right">Thao Tác Admin</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                {housesList.map((h) => (
-                  <tr key={h.code} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="py-4 px-5">
-                      <div className="font-bold text-slate-900 text-sm">{h.name}</div>
-                      <div className="text-purple-700 font-mono text-[11px] font-bold mt-0.5">Mã: {h.code}</div>
-                    </td>
-                    <td className="py-4 px-4 max-w-xs text-slate-600">
-                      <div>{h.address}</div>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="font-bold text-slate-800">{h.manager || 'Quản lý cơ sở'}</div>
-                      <div className="text-slate-400 text-[11px]">User: {h.createdBy || h.managerUsername || 'staff'}</div>
-                      <div className="text-slate-400 text-[11px]">SĐT: {h.managerPhone || '0900.000.000'}</div>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="font-semibold text-slate-800">{h.floors || 4} tầng • {h.totalRooms || 10} phòng</div>
-                    </td>
-                    <td className="py-4 px-4">
-                      {h.status === 'PENDING_APPROVAL' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-300 font-bold text-xs animate-pulse">
-                          <Clock className="w-3.5 h-3.5" />
-                          <span>Chờ Admin Phê Duyệt</span>
-                        </span>
-                      ) : h.status === 'LOCKED' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-300 font-bold text-xs">
-                          <Lock className="w-3.5 h-3.5" />
-                          <span>Đang Bị Khóa</span>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-300 font-bold text-xs">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Đã Phê Duyệt (Hoạt Động)</span>
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-4 px-5 text-right space-x-2">
-                      {h.status === 'PENDING_APPROVAL' ? (
-                        <div className="inline-flex items-center gap-1.5">
-                          <button
-                            onClick={() => handleApproveHouse(h.code)}
-                            className="btn-press px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer flex items-center gap-1"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            <span>Phê Duyệt</span>
-                          </button>
-                          <button
-                            onClick={() => handleRejectHouse(h.code)}
-                            className="btn-press px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition cursor-pointer"
-                          >
-                            Từ chối
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="inline-flex items-center gap-1.5">
-                          <button
-                            onClick={() => handleToggleLockHouse(h.code)}
-                            className={`btn-press px-3 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
-                              h.status === 'LOCKED'
-                                ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
-                                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                            }`}
-                          >
-                            {h.status === 'LOCKED' ? 'Mở Khóa' : 'Tạm Khóa'}
-                          </button>
-                        </div>
-                      )}
                     </td>
                   </tr>
                 ))}

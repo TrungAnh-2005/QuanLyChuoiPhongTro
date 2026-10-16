@@ -35,7 +35,13 @@ import {
   Shield,
   ArrowRight,
   Settings,
-  PieChart as PieChartIcon
+  PieChart as PieChartIcon,
+  Server,
+  Cpu,
+  HardDrive,
+  BarChart3,
+  Crown,
+  Award
 } from 'lucide-react';
 import {
   generateSePayQrUrl,
@@ -124,8 +130,25 @@ export default function Dashboard() {
     submitCheckoutRequest,
     transferContractHolder,
     voteRoommateRequest,
-    cancelRoomHold
+    cancelRoomHold,
+    landlords = [],
+    landlordProfiles = [],
+    saasInvoices = [],
+    microservices = [],
+    systemIntegrations = {}
   } = useData();
+
+  const housesList = useMemo(() => {
+    try {
+      const saved = localStorage.getItem('rental_boarding_houses');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [
+      { id: 1, code: 'CS-01', name: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', manager: 'Lê Thị Thu Ngân (Staff 1)', status: 'ACTIVE', totalRooms: 12 },
+      { id: 2, code: 'CS-02', name: 'Nhà Trọ Bách Khoa - Cơ Sở 2', manager: 'Đàm Văn Táo (Staff 2)', status: 'ACTIVE', totalRooms: 8 },
+      { id: 3, code: 'CS-03', name: 'Nhà Trọ Đống Đa - Cơ Sở 3', manager: 'Phạm Quốc Hùng (Chủ trọ CS3)', status: 'ACTIVE', totalRooms: 12 }
+    ];
+  }, []);
 
   const role = user?.role || 'ADMIN';
   const isTenant = role === 'TENANT';
@@ -2491,7 +2514,516 @@ export default function Dashboard() {
   }
 
   // =========================================================================
-  // 3. GIAO DIỆN DÀNH CHO ADMIN & STAFF MANAGEMENT DASHBOARD (BENTO GRID FLAGSHIP)
+  // 3. GIAO DIỆN DÀNH CHO ADMIN: BẢNG ĐIỀU KHIỂN TỔNG QUAN NỀN TẢNG SAAS (SAAS MASTER)
+  // NGHIỆP VỤ (UC-A01, UC-A02, UC-A03): Admin quản lý Chủ trọ, Gói cước SaaS, Cơ sở toàn sàn, Hạ tầng 10 Microservices
+  // ADMIN KHÔNG QUẢN LÝ PHÒNG LẺ, KHÁCH THUÊ, HAY DOANH THU TRỌ CỦA CHỦ TRỌ!
+  // =========================================================================
+  if (role === 'ADMIN') {
+    const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+
+    // 1. Thống kê Chủ trọ (UC-A01)
+    const totalLandlords = isZeroSandbox ? (landlords.length || 0) : (landlords.length || 3);
+    const activeLandlords = (landlords || []).filter((l) => l.status === 'ACTIVE').length;
+    const pendingKycCount = (landlordProfiles || []).filter((p) => p.status === 'PENDING').length;
+
+    // 2. Thống kê Cơ sở chuỗi trọ toàn sàn
+    const totalHouses = isZeroSandbox ? (housesList.length || 0) : (housesList.length || 3);
+    const activeHouses = (housesList || []).filter((h) => h.status === 'ACTIVE' || !h.status).length;
+
+    // 3. Thống kê Doanh thu Cước dịch vụ SaaS
+    const paidSaasInvoices = (saasInvoices || []).filter((inv) => inv.status === 'PAID');
+    const unpaidSaasInvoices = (saasInvoices || []).filter((inv) => inv.status === 'UNPAID');
+    const totalSaasRevenue = paidSaasInvoices.reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0);
+    const saasRevenueFormatted = isZeroSandbox
+      ? (totalSaasRevenue > 0 ? (totalSaasRevenue / 1000000).toFixed(1) + 'M ₫' : '0 ₫')
+      : (totalSaasRevenue > 0 ? (totalSaasRevenue / 1000000).toFixed(1) + 'M ₫' : '4.99M ₫');
+
+    // 4. Dữ liệu biểu đồ cước SaaS
+    const saasRevenueChartData = [
+      { month: 'T1', revenue: 9980000, target: 8000000 },
+      { month: 'T2', revenue: 14970000, target: 12000000 },
+      { month: 'T3', revenue: 19960000, target: 16000000 },
+      { month: 'T4', revenue: 21950000, target: 18000000 },
+      { month: 'T5', revenue: 26940000, target: 22000000 },
+      { month: 'T6', revenue: 29930000, target: 25000000 },
+      { month: 'T7', revenue: 32920000, target: 28000000 },
+      { month: 'T8', revenue: 37910000, target: 32000000 },
+      { month: 'T9', revenue: 42900000, target: 36000000 },
+    ];
+
+    // 5. Cơ cấu phân bổ gói cước bản quyền
+    const packageDistributionData = [
+      { name: 'Chuyên Nghiệp (PRO)', value: 2, color: '#6366f1' },
+      { name: 'Cơ Bản (BASIC)', value: 1, color: '#06b6d4' },
+      { name: 'Doanh Nghiệp (VIP)', value: 1, color: '#8b5cf6' },
+    ];
+
+    return (
+      <div className="space-y-6 page-enter">
+        {/* Header Bento Banner with Ambient Backdrop Glow */}
+        <div className="bento-card p-6 sm:p-7 relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-5 bg-gradient-to-r from-white via-indigo-50/40 to-purple-50/30">
+          <div className="absolute -right-16 -top-16 w-80 h-80 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none animate-float-slow" />
+          <div className="absolute -left-16 -bottom-16 w-64 h-64 bg-purple-500/15 rounded-full blur-3xl pointer-events-none animate-float-reverse" />
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="status-pill status-pill-indigo">
+                <Sparkles className="w-3 h-3 text-indigo-600" />
+                <span>Microservices SaaS v2.5</span>
+              </span>
+              <span className="status-pill status-pill-success">
+                <span className="pulse-dot-green shrink-0" />
+                <span>Hạ Tầng Trực Tuyến 99.9%</span>
+              </span>
+              <span className="status-pill bg-purple-100/70 text-purple-700 border border-purple-200">
+                <ShieldCheck className="w-3 h-3 text-purple-600" />
+                <span>Phân Hệ Quản Trị Hệ Thống Toàn Sàn</span>
+              </span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+              Tổng Quan Nền Tảng Quản Lý Chuỗi Nhà Trọ (SaaS Master)
+            </h1>
+            <p className="text-slate-500 text-xs sm:text-sm">
+              Giám sát toàn diện hệ sinh thái: Đối tác chủ trọ, gói cước bản quyền, chuỗi cơ sở & trạng thái 10 vi dịch vụ theo thời gian thực.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <Link
+              to="/admin/landlords"
+              className="btn-press btn-shimmer flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-xs font-bold rounded-2xl shadow-md shadow-indigo-600/20 transition-all"
+            >
+              <Users className="w-4 h-4" />
+              <span>Quản Trị Chủ Trọ</span>
+            </Link>
+            <Link
+              to="/admin/houses"
+              className="btn-press flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold rounded-2xl shadow-sm transition-all"
+            >
+              <Building2 className="w-4 h-4 text-purple-600" />
+              <span>Duyệt Cơ Sở ({totalHouses})</span>
+            </Link>
+            <Link
+              to="/admin/saas-invoices"
+              className="btn-press flex items-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-2xl shadow-sm transition-all"
+            >
+              <Receipt className="w-4 h-4 text-indigo-400" />
+              <span>Hóa Đơn Cước SaaS</span>
+            </Link>
+            <Link
+              to="/admin/system"
+              className="btn-press flex items-center gap-2 px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold rounded-2xl transition-all"
+            >
+              <Activity className="w-4 h-4 text-emerald-600" />
+              <span>Giám Sát APM</span>
+            </Link>
+          </div>
+        </div>
+
+        {/* 4 Stat Bento Cards Dành Cho Admin Nền Tảng */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          {/* Card 1: Đối Tác Chủ Trọ */}
+          <Link
+            to="/admin/landlords"
+            className="bento-card p-5 space-y-3 stagger-item stagger-1 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group block"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider group-hover:text-indigo-600 transition-colors">
+                Đối Tác Chủ Trọ
+              </span>
+              <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold ring-1 ring-indigo-500/10 group-hover:scale-110 transition-transform">
+                <Users className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span className="text-3xl font-black text-slate-900 tracking-tight">{totalLandlords}</span>
+              <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>{activeLandlords} Hoạt động</span>
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              {pendingKycCount > 0 ? (
+                <span className="text-amber-600 font-semibold">{pendingKycCount} hồ sơ chờ duyệt KYC CCCD</span>
+              ) : (
+                '100% hồ sơ pháp lý đã định danh KYC'
+              )}
+            </p>
+          </Link>
+
+          {/* Card 2: Chuỗi Cơ Sở Toàn Sàn */}
+          <Link
+            to="/admin/houses"
+            className="bento-card p-5 space-y-3 stagger-item stagger-2 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group block"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider group-hover:text-purple-600 transition-colors">
+                Cơ Sở Chuỗi Trọ Toàn Sàn
+              </span>
+              <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold ring-1 ring-purple-500/10 group-hover:scale-110 transition-transform">
+                <Building2 className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span className="text-3xl font-black text-slate-900 tracking-tight">{totalHouses}</span>
+              <span className="text-xs font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-lg border border-purple-200">
+                Toàn hệ thống
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              {activeHouses} chi nhánh đang hoạt động • Phủ khắp Hà Nội
+            </p>
+          </Link>
+
+          {/* Card 3: Doanh Thu Cước SaaS Tháng */}
+          <Link
+            to="/admin/saas-invoices"
+            className="bento-card p-5 space-y-3 stagger-item stagger-3 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group block"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider group-hover:text-emerald-600 transition-colors">
+                Doanh Thu Cước SaaS Tháng 9
+              </span>
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold ring-1 ring-emerald-500/10 group-hover:scale-110 transition-transform">
+                <DollarSign className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span className="text-3xl font-black text-slate-900 font-mono tracking-tight">
+                {saasRevenueFormatted}
+              </span>
+              <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1">
+                <ArrowUpRight className="w-3.5 h-3.5" />
+                <span>+18.4% MoM</span>
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">Cước bản quyền thu từ đối tác Chủ trọ</p>
+          </Link>
+
+          {/* Card 4: Hạ Tầng 10 Vi Dịch Vụ & APM */}
+          <Link
+            to="/admin/system"
+            className="bento-card p-5 space-y-3 stagger-item stagger-4 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group block"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider group-hover:text-cyan-600 transition-colors">
+                Hạ Tầng 10 Vi Dịch Vụ
+              </span>
+              <div className="w-10 h-10 rounded-2xl bg-cyan-50 text-cyan-600 flex items-center justify-center font-bold ring-1 ring-cyan-500/10 group-hover:scale-110 transition-transform">
+                <Cpu className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span className="text-3xl font-black text-slate-900 tracking-tight">10/10</span>
+              <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span>100% Khỏe Mạnh</span>
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">Eureka • RabbitMQ • SePay • OpenAI Vision</p>
+          </Link>
+        </div>
+
+        {/* Bento Analytics Grid: Dòng Tiền Bản Quyền SaaS & Cơ Cấu Gói */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Biểu Đồ Doanh Thu Gói SaaS (Col Span 2) */}
+          <div className="lg:col-span-2 bento-card p-6 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-indigo-600" />
+                  <span>Dòng Tiền Cước Bản Quyền & Tăng Trưởng Gói SaaS</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Doanh thu thuê bao phần mềm thu từ các Chủ trọ qua từng tháng (Đơn vị: VNĐ)
+                </p>
+              </div>
+              <div className="flex items-center gap-3 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-md bg-indigo-600" />
+                  <span className="font-semibold text-slate-600">Thực thu SaaS</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3 h-0.5 bg-slate-300" />
+                  <span className="font-semibold text-slate-400">Chỉ tiêu sàn</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="h-72 w-full pt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={saasRevenueChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="saasRevGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                  <XAxis dataKey="month" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `${v / 1000000}M`} />
+                  <Tooltip content={<CustomChartTooltip />} />
+                  <Area
+                    type="monotone"
+                    dataKey="revenue"
+                    stroke="#6366f1"
+                    strokeWidth={2.5}
+                    fillOpacity={1}
+                    fill="url(#saasRevGradient)"
+                    isAnimationActive={true}
+                    animationDuration={1400}
+                    animationEasing="ease-out"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Cơ Cấu Gói Bản Quyền & Tỷ Trọng (Col Span 1) */}
+          <div className="bento-card p-6 space-y-4 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <PieChartIcon className="w-4 h-4 text-purple-600" />
+                <span>Cơ Cấu Gói Bản Quyền SaaS</span>
+              </h2>
+              <span className="text-xs text-slate-400 font-semibold">{totalLandlords} Chủ trọ</span>
+            </div>
+
+            <div className="h-52 relative flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={packageDistributionData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={84}
+                    paddingAngle={4}
+                    dataKey="value"
+                    isAnimationActive={true}
+                    animationDuration={1200}
+                    animationEasing="ease-out"
+                  >
+                    {packageDistributionData.map((entry, index) => (
+                      <Cell key={`saas-cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(val, name) => [`${val} chủ trọ`, name]}
+                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '1rem', color: '#fff', fontSize: '12px' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-2xl font-black text-slate-900 tracking-tight">{totalLandlords}</span>
+                <span className="text-[11px] text-slate-400 font-medium">Đối tác</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-center pt-2 border-t border-slate-100">
+              {packageDistributionData.map((s) => (
+                <div key={s.name} className="bg-slate-50/80 p-2.5 rounded-xl border border-slate-200/60">
+                  <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-500 font-medium truncate">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                    <span className="truncate">{s.name.split(' ')[0]}</span>
+                  </div>
+                  <div className="font-bold text-slate-900 text-sm mt-0.5">{s.value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Row 3: Danh Sách Chủ Trọ Gần Đây & Giám Sát Cổng Kết Nối */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Cột Trái (Col Span 2): Danh Sách Đối Tác Chủ Trọ & KYC */}
+          <div className="lg:col-span-2 bento-card p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Users className="w-4 h-4 text-indigo-600" />
+                <span>Đối Tác Chủ Trọ Đăng Ký Gần Đây (UC-A01)</span>
+              </h3>
+              <Link
+                to="/admin/landlords"
+                className="text-xs text-indigo-600 hover:text-indigo-700 font-bold flex items-center gap-1"
+              >
+                <span>Xem tất cả ({totalLandlords})</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-100 text-slate-400 font-semibold">
+                    <th className="pb-2.5">Chủ Trọ</th>
+                    <th className="pb-2.5">Gói Bản Quyền</th>
+                    <th className="pb-2.5">Cơ Sở / Quy Mô</th>
+                    <th className="pb-2.5">Trạng Thái KYC</th>
+                    <th className="pb-2.5 text-right">Thao Tác</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {(landlords || []).slice(0, 4).map((l) => (
+                    <tr key={l.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="py-3">
+                        <div className="font-bold text-slate-900">{l.fullName}</div>
+                        <div className="text-[11px] text-slate-400 font-mono">{l.phone || l.email}</div>
+                      </td>
+                      <td className="py-3">
+                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${
+                          l.packageCode === 'ENTERPRISE'
+                            ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                            : l.packageCode === 'PRO'
+                            ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                            : 'bg-cyan-100 text-cyan-700 border border-cyan-200'
+                        }`}>
+                          {l.packageCode || 'PRO'}
+                        </span>
+                      </td>
+                      <td className="py-3 text-slate-600">
+                        {l.housesCount || 1} Cơ sở • {l.roomsCount || 10} phòng
+                      </td>
+                      <td className="py-3">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          <span>Đã xác minh</span>
+                        </span>
+                      </td>
+                      <td className="py-3 text-right">
+                        <Link
+                          to="/admin/landlords"
+                          className="px-2.5 py-1 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg text-[11px] font-bold transition-colors"
+                        >
+                          Chi tiết
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Cột Phải (Col Span 1): Cổng Tích Hợp & Hóa Đơn SaaS Chờ Thu */}
+          <div className="bento-card p-6 space-y-4">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-purple-600" />
+              <span>Cổng Tích Hợp Dùng Chung (UC-A02)</span>
+            </h3>
+
+            <div className="space-y-2.5 text-xs">
+              <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <QrCode className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <div>
+                    <div className="text-slate-800 font-bold">VietQR SePay Gateway</div>
+                    <div className="text-[10px] text-slate-400">Tự động gạch nợ 24/7</div>
+                  </div>
+                </div>
+                <span className="font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg text-[10px] flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Trực tuyến</span>
+                </span>
+              </div>
+
+              <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Zap className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <div>
+                    <div className="text-slate-800 font-bold">OpenAI Vision OCR</div>
+                    <div className="text-[10px] text-slate-400">Nhận diện công tơ điện nước</div>
+                  </div>
+                </div>
+                <span className="font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg text-[10px] flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Trực tuyến</span>
+                </span>
+              </div>
+
+              <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Cpu className="w-4 h-4 text-purple-600 shrink-0" />
+                  <div>
+                    <div className="text-slate-800 font-bold">Eureka Discovery & RabbitMQ</div>
+                    <div className="text-[10px] text-slate-400">10 vi dịch vụ đồng bộ sự kiện</div>
+                  </div>
+                </div>
+                <span className="font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg text-[10px] flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Sẵn sàng</span>
+                </span>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-medium">Hóa đơn cước SaaS chưa thu:</span>
+              <span className="font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
+                {unpaidSaasInvoices.length} hóa đơn
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Row 4: Phím Tắt Nghiệp Vụ Quản Trị Hệ Thống */}
+        <div className="bento-card p-6 space-y-4">
+          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <Activity className="w-4 h-4 text-indigo-600" />
+            <span>Phân Hệ Nghiệp Vụ Quản Trị Sàn SaaS</span>
+          </h3>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Link
+              to="/admin/landlords"
+              className="p-4 bg-slate-50/80 hover:bg-indigo-50/50 border border-slate-200/70 hover:border-indigo-300 rounded-2xl transition-all group"
+            >
+              <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <Users className="w-5 h-5" />
+              </div>
+              <div className="font-bold text-slate-900 text-xs">Quản Trị Chủ Trọ</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">Quản lý đối tác & duyệt KYC (UC-A01)</div>
+            </Link>
+
+            <Link
+              to="/admin/houses"
+              className="p-4 bg-slate-50/80 hover:bg-purple-50/50 border border-slate-200/70 hover:border-purple-300 rounded-2xl transition-all group"
+            >
+              <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <Building2 className="w-5 h-5" />
+              </div>
+              <div className="font-bold text-slate-900 text-xs">Quản Trị & Duyệt Cơ Sở</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">Phê duyệt chuỗi nhà trọ toàn sàn</div>
+            </Link>
+
+            <Link
+              to="/admin/saas-invoices"
+              className="p-4 bg-slate-50/80 hover:bg-amber-50/50 border border-slate-200/70 hover:border-amber-300 rounded-2xl transition-all group"
+            >
+              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <Receipt className="w-5 h-5" />
+              </div>
+              <div className="font-bold text-slate-900 text-xs">Hóa Đơn Cước SaaS</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">Cước bản quyền phần mềm & VAT</div>
+            </Link>
+
+            <Link
+              to="/admin/system"
+              className="p-4 bg-slate-50/80 hover:bg-emerald-50/50 border border-slate-200/70 hover:border-emerald-300 rounded-2xl transition-all group"
+            >
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <Cpu className="w-5 h-5" />
+              </div>
+              <div className="font-bold text-slate-900 text-xs">Giám Sát 10 Vi Dịch Vụ</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">APM realtime, CPU, Heap & Audit (UC-A03)</div>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // 4. GIAO DIỆN DÀNH CHO STAFF / CHỦ TRỌ MANAGEMENT DASHBOARD (BENTO GRID FLAGSHIP)
+  // NGHIỆP VỤ: Quản lý vận hành chi nhánh cơ sở, phòng trọ, khách thuê, điện nước, hóa đơn trọ
   // =========================================================================
   const occupiedCount = scopedRooms.filter((r) => r.status === 'OCCUPIED').length;
   const availableCount = scopedRooms.filter((r) => r.status === 'AVAILABLE').length;
@@ -2520,7 +3052,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="status-pill status-pill-indigo">
               <Sparkles className="w-3 h-3 text-indigo-600" />
-              <span>Microservices SaaS v2.5</span>
+              <span>Cơ Sở Vận Hành Chi Nhánh</span>
             </span>
             <span className="status-pill status-pill-success">
               <span className="pulse-dot-green shrink-0" />
@@ -2528,53 +3060,28 @@ export default function Dashboard() {
             </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-            {role === 'STAFF'
-              ? `Tổng Quan Vận Hành: ${user?.houseName || 'Cơ Sở 1 - Cầu Giấy'}`
-              : 'Tổng Quan Hệ Thống Quản Lý Chuỗi Nhà Trọ'}
+            {`Tổng Quan Vận Hành: ${user?.houseName || 'Cơ Sở 1 - Cầu Giấy'}`}
           </h1>
           <p className="text-slate-500 text-xs sm:text-sm">
-            {role === 'STAFF'
-              ? `Quản lý trực tiếp chi nhánh ${user?.houseCode || 'CS-01'} • Cán bộ phụ trách: ${user?.fullName}`
-              : 'Theo dõi trạng thái các cơ sở, phòng trọ, chỉ số điện nước và dòng tiền theo thời gian thực.'}
+            {`Quản lý trực tiếp chi nhánh ${user?.houseCode || 'CS-01'} • Cán bộ phụ trách: ${user?.fullName || 'Lê Thị Thu Ngân'}`}
           </p>
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          {role === 'ADMIN' ? (
-            <>
-              <Link
-                to="/admin/landlords"
-                className="btn-press btn-shimmer flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-xs font-bold rounded-2xl shadow-md shadow-indigo-600/20 transition-all"
-              >
-                <Users className="w-4 h-4" />
-                <span>Quản Trị Chủ Trọ</span>
-              </Link>
-              <Link
-                to="/admin/saas-invoices"
-                className="btn-press flex items-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-2xl shadow-sm transition-all"
-              >
-                <Receipt className="w-4 h-4 text-indigo-400" />
-                <span>Hóa Đơn Cước SaaS</span>
-              </Link>
-            </>
-          ) : (
-            <>
-              <Link
-                to="/rooms"
-                className="btn-press flex items-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-2xl shadow-sm transition-all"
-              >
-                <PlusCircle className="w-4 h-4 text-indigo-400" />
-                <span>Sơ Đồ Phòng</span>
-              </Link>
-              <Link
-                to="/meters"
-                className="btn-press btn-shimmer flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold rounded-2xl shadow-md shadow-purple-600/20 transition-all"
-              >
-                <Zap className="w-4 h-4" />
-                <span>Chốt Điện Nước (AI)</span>
-              </Link>
-            </>
-          )}
+          <Link
+            to="/rooms"
+            className="btn-press flex items-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-2xl shadow-sm transition-all"
+          >
+            <PlusCircle className="w-4 h-4 text-indigo-400" />
+            <span>Sơ Đồ Phòng</span>
+          </Link>
+          <Link
+            to="/meters"
+            className="btn-press btn-shimmer flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold rounded-2xl shadow-md shadow-purple-600/20 transition-all"
+          >
+            <Zap className="w-4 h-4" />
+            <span>Chốt Điện Nước (AI)</span>
+          </Link>
         </div>
       </div>
 
@@ -2773,106 +3280,58 @@ export default function Dashboard() {
 
       {/* Row 3: Phím Tắt Nghiệp Vụ & Cảnh Báo Vận Hành */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Phím Tắt Nghiệp Vụ Nhanh (Col Span 2) */}
+        {/* Phím Tắt Nghiệp Vụ Nhanh Chi Nhánh */}
         <div className="lg:col-span-2 bento-card p-6 space-y-4">
           <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
             <Layers className="w-4 h-4 text-indigo-600" />
-            <span>Phím Tắt Nghiệp Vụ Quản Trị</span>
+            <span>Phím Tắt Nghiệp Vụ Vận Hành Cơ Sở</span>
           </h3>
 
-          {role === 'ADMIN' ? (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <Link
-                to="/admin/landlords"
-                className="p-4 bg-slate-50/80 hover:bg-indigo-50/50 border border-slate-200/70 hover:border-indigo-300 rounded-2xl transition-all group"
-              >
-                <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                  <Users className="w-5 h-5" />
-                </div>
-                <div className="font-bold text-slate-900 text-xs">Quản Trị Chủ Trọ</div>
-                <div className="text-[11px] text-slate-400 mt-0.5">Quản lý đối tác & duyệt KYC</div>
-              </Link>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Link
+              to="/meters"
+              className="p-4 bg-slate-50/80 hover:bg-indigo-50/50 border border-slate-200/70 hover:border-indigo-300 rounded-2xl transition-all group"
+            >
+              <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <Zap className="w-5 h-5" />
+              </div>
+              <div className="font-bold text-slate-900 text-xs">Chốt Điện Nước</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">Nhận diện OCR camera</div>
+            </Link>
 
-              <Link
-                to="/admin/saas-invoices"
-                className="p-4 bg-slate-50/80 hover:bg-indigo-50/50 border border-slate-200/70 hover:border-indigo-300 rounded-2xl transition-all group"
-              >
-                <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                  <Receipt className="w-5 h-5" />
-                </div>
-                <div className="font-bold text-slate-900 text-xs">Hóa Đơn Cước SaaS</div>
-                <div className="text-[11px] text-slate-400 mt-0.5">Cước bản quyền & VAT</div>
-              </Link>
+            <Link
+              to="/rooms"
+              className="p-4 bg-slate-50/80 hover:bg-indigo-50/50 border border-slate-200/70 hover:border-indigo-300 rounded-2xl transition-all group"
+            >
+              <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <Home className="w-5 h-5" />
+              </div>
+              <div className="font-bold text-slate-900 text-xs">Sơ Đồ Phòng</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">Phân tầng & trạng thái</div>
+            </Link>
 
-              <Link
-                to="/admin/integrations"
-                className="p-4 bg-slate-50/80 hover:bg-indigo-50/50 border border-slate-200/70 hover:border-indigo-300 rounded-2xl transition-all group"
-              >
-                <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                  <Layers className="w-5 h-5" />
-                </div>
-                <div className="font-bold text-slate-900 text-xs">Cấu Hình Tích Hợp</div>
-                <div className="text-[11px] text-slate-400 mt-0.5">SePay, VNPay, Zalo, AI</div>
-              </Link>
+            <Link
+              to="/tenants"
+              className="p-4 bg-slate-50/80 hover:bg-indigo-50/50 border border-slate-200/70 hover:border-indigo-300 rounded-2xl transition-all group"
+            >
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <Users className="w-5 h-5" />
+              </div>
+              <div className="font-bold text-slate-900 text-xs">Quản Lý Cư Dân</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">Định danh & KYC CCCD</div>
+            </Link>
 
-              <Link
-                to="/admin/system"
-                className="p-4 bg-slate-50/80 hover:bg-indigo-50/50 border border-slate-200/70 hover:border-indigo-300 rounded-2xl transition-all group"
-              >
-                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                  <Activity className="w-5 h-5" />
-                </div>
-                <div className="font-bold text-slate-900 text-xs">Giám Sát Hệ Thống</div>
-                <div className="text-[11px] text-slate-400 mt-0.5">Health check & logs</div>
-              </Link>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <Link
-                to="/meters"
-                className="p-4 bg-slate-50/80 hover:bg-indigo-50/50 border border-slate-200/70 hover:border-indigo-300 rounded-2xl transition-all group"
-              >
-                <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                  <Zap className="w-5 h-5" />
-                </div>
-                <div className="font-bold text-slate-900 text-xs">Chốt Điện Nước</div>
-                <div className="text-[11px] text-slate-400 mt-0.5">Nhận diện OCR camera</div>
-              </Link>
-
-              <Link
-                to="/rooms"
-                className="p-4 bg-slate-50/80 hover:bg-indigo-50/50 border border-slate-200/70 hover:border-indigo-300 rounded-2xl transition-all group"
-              >
-                <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                  <Home className="w-5 h-5" />
-                </div>
-                <div className="font-bold text-slate-900 text-xs">Sơ Đồ Phòng</div>
-                <div className="text-[11px] text-slate-400 mt-0.5">Phân tầng & trạng thái</div>
-              </Link>
-
-              <Link
-                to="/tenants"
-                className="p-4 bg-slate-50/80 hover:bg-indigo-50/50 border border-slate-200/70 hover:border-indigo-300 rounded-2xl transition-all group"
-              >
-                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                  <Users className="w-5 h-5" />
-                </div>
-                <div className="font-bold text-slate-900 text-xs">Quản Lý Cư Dân</div>
-                <div className="text-[11px] text-slate-400 mt-0.5">Định danh & KYC CCCD</div>
-              </Link>
-
-              <Link
-                to="/invoices"
-                className="p-4 bg-slate-50/80 hover:bg-indigo-50/50 border border-slate-200/70 hover:border-indigo-300 rounded-2xl transition-all group"
-              >
-                <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                  <Receipt className="w-5 h-5" />
-                </div>
-                <div className="font-bold text-slate-900 text-xs">Hóa Đơn & Thu Phí</div>
-                <div className="text-[11px] text-slate-400 mt-0.5">Webhook SePay & VietQR</div>
-              </Link>
-            </div>
-          )}
+            <Link
+              to="/invoices"
+              className="p-4 bg-slate-50/80 hover:bg-indigo-50/50 border border-slate-200/70 hover:border-indigo-300 rounded-2xl transition-all group"
+            >
+              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <Receipt className="w-5 h-5" />
+              </div>
+              <div className="font-bold text-slate-900 text-xs">Hóa Đơn & Thu Phí</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">Webhook SePay & VietQR</div>
+            </Link>
+          </div>
         </div>
 
         {/* Trạng Thái Vận Hành & Cảnh Báo (Col Span 1) */}

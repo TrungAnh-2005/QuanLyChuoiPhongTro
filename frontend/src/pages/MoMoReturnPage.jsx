@@ -5,7 +5,7 @@ import { useData } from '../contexts/DataContext';
 
 export default function MoMoReturnPage() {
   const [searchParams] = useSearchParams();
-  const { payInvoice, paySaasInvoice } = useData();
+  const { payInvoice, paySaasInvoice, updateLandlordPackage } = useData();
 
   const [processed, setProcessed] = useState(false);
 
@@ -62,7 +62,12 @@ export default function MoMoReturnPage() {
       );
 
       if (isSaas && paySaasInvoice) {
-        paySaasInvoice(pendingInfo?.id || invoiceId || pendingInfo?.code, 'Ví MoMo Sandbox');
+        const targetPackage = pendingInfo?.packageCode || 'ENTERPRISE';
+        const targetLandlord = pendingInfo?.landlordId || 1;
+        paySaasInvoice(pendingInfo?.id || invoiceId || pendingInfo?.code, 'Ví MoMo Sandbox', targetPackage, targetLandlord);
+        if (typeof updateLandlordPackage === 'function') {
+          updateLandlordPackage(targetLandlord, targetPackage);
+        }
       } else {
         keysToPay.forEach((key) => {
           payInvoice(key, 'Ví MoMo Sandbox');
@@ -73,7 +78,7 @@ export default function MoMoReturnPage() {
         localStorage.removeItem('rental_pending_payment');
       } catch {}
     }
-  }, [isSuccess, processed, invoiceId, pendingInfo, message, payInvoice]);
+  }, [isSuccess, processed, invoiceId, pendingInfo, message, payInvoice, paySaasInvoice, updateLandlordPackage]);
 
   return (
     <div className="max-w-2xl mx-auto py-8 px-4">

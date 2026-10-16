@@ -38,7 +38,8 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
     roommateLeaveNotices = [],
     saasReminders = [],
     saasInvoices = [],
-    landlords = []
+    landlords = [],
+    houseDeleteNotices = []
   } = data;
 
   const role = user?.role || 'ADMIN';
@@ -60,7 +61,57 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
     // 👑 PLATFORM ADMIN (CTCP Trọ Việt SaaS): Quản trị hạ tầng, cước SaaS & đối tác
     // =========================================================================
 
-    // 1. Hóa đơn cước SaaS chờ thu từ Chủ trọ
+    // 1. Cơ sở nhà trọ mới đăng ký chờ Admin phê duyệt (ƯU TIÊN HÀNG ĐẦU MỚI NHẤT)
+    try {
+      const savedHouses = localStorage.getItem('rental_boarding_houses');
+      if (savedHouses) {
+        const hList = JSON.parse(savedHouses);
+        if (Array.isArray(hList)) {
+          hList.filter((h) => h.status === 'PENDING_APPROVAL').forEach((h) => {
+            addNotif({
+              id: `admin-pending-house-${h.code}`,
+              type: 'URGENT',
+              title: `🏢 Cơ sở trọ mới chờ duyệt: ${h.name} (${h.code})`,
+              desc: `Quản lý ${h.manager || h.managerName || 'Staff'} đã đăng ký cơ sở mới tại ${h.address}. Vui lòng phê duyệt để đưa vào hoạt động.`,
+              time: 'Vừa xong',
+              defaultRead: false,
+              link: '/admin/houses'
+            });
+          });
+        }
+      }
+    } catch {}
+
+    // 2. Cảnh báo khẩn cấp: Cơ sở trọ vừa bị xóa khỏi hệ thống
+    (houseDeleteNotices || []).forEach((n) => {
+      addNotif({
+        id: `admin-notif-${n.id}`,
+        type: 'URGENT',
+        title: `🚨 Cảnh báo: Cơ sở trọ "${n.houseName}" (${n.houseCode}) đã bị xóa!`,
+        desc: `Người thực hiện: ${n.deletedBy} (${n.deletedByRole}). Đã dọn sạch ${n.roomsCount || 0} phòng trực thuộc.`,
+        time: n.timestamp || 'Vừa xong',
+        defaultRead: false,
+        link: '/admin/system'
+      });
+    });
+
+    // 3. Đơn đăng ký thuê phòng mới từ khách (Dành cho Chủ trọ / Admin toàn sàn)
+    const pendingRentalForAdmin = (roomRequests || []).filter((r) =>
+      r.status === 'PENDING' || r.status === 'WAITING_ROOMMATES' || r.status === 'ROOMMATES_APPROVED'
+    );
+    pendingRentalForAdmin.forEach((req) => {
+      addNotif({
+        id: `admin-req-${req.id}`,
+        type: 'URGENT',
+        title: `🔑 Đơn thuê mới (${req.houseCode || 'Toàn sàn'}): Phòng ${req.targetRoom}`,
+        desc: `Khách ${req.tenant} gửi đơn đăng ký thuê phòng ${req.targetRoom} tại ${req.house || 'Nhà trọ'}. Vui lòng duyệt hồ sơ để mở cổng nộp cọc.`,
+        time: req.date || 'Hôm nay',
+        defaultRead: false,
+        link: '/rooms'
+      });
+    });
+
+    // 4. Hóa đơn cước SaaS chờ thu từ Chủ trọ
     const unpaidSaas = (saasInvoices || []).filter((inv) => inv.status === 'UNPAID');
     unpaidSaas.forEach((inv) => {
       addNotif({
@@ -74,7 +125,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
       });
     });
 
-    // 2. Thu cước SaaS thành công (Đối soát doanh thu nền tảng)
+    // 5. Thu cước SaaS thành công (Đối soát doanh thu nền tảng)
     const paidSaas = (saasInvoices || []).filter((inv) => inv.status === 'PAID');
     paidSaas.slice(0, 2).forEach((inv) => {
       addNotif({
@@ -88,56 +139,17 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
       });
     });
 
-    // 3. Thẩm định hồ sơ đối tác KYC Chủ trọ
+    // 6. Thẩm định hồ sơ đối tác KYC Chủ trọ (Chỉ thông báo khi có hồ sơ PENDING thực tế)
     const pendingKyc = (landlords || []).filter((l) => l.kycStatus === 'PENDING' || l.status === 'PENDING');
-    if (pendingKyc.length > 0) {
-      pendingKyc.forEach((l) => {
-        addNotif({
-          id: `admin-kyc-${l.id}`,
-          type: 'CONTRACT',
-          title: `Thẩm định hồ sơ KYC: Chủ trọ ${l.fullName || l.name}`,
-          desc: `Đối tác mới đăng ký kinh doanh trọ ${l.businessName || ''}. Cần Admin duyệt định danh CCCD và cấp quyền cơ sở.`,
-          time: 'Hôm nay',
-          defaultRead: false,
-          link: '/admin/landlords'
-        });
-      });
-    } else {
+    pendingKyc.forEach((l) => {
       addNotif({
-        id: 'admin-kyc-status',
+        id: `admin-kyc-${l.id}`,
         type: 'CONTRACT',
-        title: 'Hồ sơ KYC Chủ trọ nền tảng',
-        desc: 'Tất cả đối tác Chủ trọ kinh doanh chuỗi đều đã được thẩm định hợp lệ 100%.',
+        title: `Thẩm định hồ sơ KYC: Chủ trọ ${l.fullName || l.name}`,
+        desc: `Đối tác mới đăng ký kinh doanh trọ ${l.businessName || ''}. Cần Admin duyệt định danh CCCD và cấp quyền cơ sở.`,
         time: 'Hôm nay',
-        defaultRead: true,
-        link: '/admin/landlords'
-      });
-    }
-
-    // 4. Giám sát hạ tầng Microservices APM
-    addNotif({
-      id: 'admin-apm-status',
-      type: 'SYSTEM',
-      title: 'Giám sát hạ tầng & Microservices (APM)',
-      desc: '10/10 Microservices, Eureka Registry, RabbitMQ và MySQL Cluster đang vận hành ổn định 99.9%.',
-      time: 'Vừa xong',
-      defaultRead: true,
-      link: '/admin/system'
-    });
-
-    // 5. Đơn đăng ký thuê phòng mới từ khách (Dành cho Chủ trọ / Admin toàn sàn)
-    const pendingRentalForAdmin = (roomRequests || []).filter((r) =>
-      r.status === 'PENDING' || r.status === 'WAITING_ROOMMATES' || r.status === 'ROOMMATES_APPROVED'
-    );
-    pendingRentalForAdmin.forEach((req) => {
-      addNotif({
-        id: `admin-req-${req.id}`,
-        type: 'URGENT',
-        title: `🔑 Đơn thuê mới (${req.houseCode || 'Toàn sàn'}): Phòng ${req.targetRoom}`,
-        desc: `Khách ${req.tenant} gửi đơn đăng ký thuê phòng ${req.targetRoom} tại ${req.house || 'Nhà trọ'}. Vui lòng duyệt hồ sơ để mở cổng nộp cọc.`,
-        time: req.date || 'Hôm nay',
         defaultRead: false,
-        link: '/rooms'
+        link: '/admin/landlords'
       });
     });
   } else if (role === 'STAFF') {
@@ -244,16 +256,28 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
       });
     });
 
-    // 5. Khai báo tạm trú & hồ sơ
-    addNotif({
-      id: `staff-records-check-${staffHouseCode}`,
-      type: 'CONTRACT',
-      title: `Hồ sơ tạm trú cư dân - ${staffHouseCode}`,
-      desc: `Đã hoàn tất đối chiếu CCCD 12 số cho các hợp đồng mới tại ${staffHouseName}.`,
-      time: '3 giờ trước',
-      defaultRead: true,
-      link: '/tenants'
-    });
+    // 5. Thông báo khi Admin phê duyệt cơ sở nhà trọ của Staff
+    try {
+      const savedHouses = localStorage.getItem('rental_boarding_houses');
+      if (savedHouses) {
+        const hList = JSON.parse(savedHouses);
+        if (Array.isArray(hList)) {
+          hList.filter((h) => (h.createdBy === user?.username || h.managerUsername === user?.username || h.code === staffHouseCode) && h.status === 'ACTIVE' && h.approvedAt).forEach((h) => {
+            addNotif({
+              id: `staff-approved-house-${h.code}`,
+              type: 'NOTICE',
+              title: `🎉 Cơ sở ${h.code} (${h.name}) đã được Admin phê duyệt!`,
+              desc: `Quản Trị Viên nền tảng đã thẩm định và kích hoạt cơ sở vào ngày ${h.approvedAt}. Bạn có thể bắt đầu tạo phòng và đón khách thuê ngay.`,
+              time: h.approvedAt || 'Vừa xong',
+              defaultRead: false,
+              link: '/houses'
+            });
+          });
+        }
+      }
+    } catch {}
+
+    // Không tạo thông báo giả tĩnh
   } else {
     // =========================================================================
     // 🏠 TENANT: Thông báo riêng biệt, đúng phòng, đúng hóa đơn, đúng việc từng khách
@@ -536,39 +560,10 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
         link: '/rooms'
       });
 
-      addNotif({
-        id: 'tenant-notice-building',
-        type: 'NOTICE',
-        title: 'Bảo trì thang máy & Vệ sinh chung',
-        desc: 'Ban quản lý tiến hành bảo trì thang máy và tổng vệ sinh hành lang định kỳ vào cuối tuần này.',
-        time: 'Hôm qua',
-        defaultRead: true,
-        link: '/rooms'
-      });
-    } else {
-      // Khách mới chưa có phòng
-      addNotif({
-        id: 'new-tenant-rooms-avail',
-        type: 'NOTICE',
-        title: 'Phòng trống đang mở nhận khách mới',
-        desc: 'Hiện có các phòng trống tiện nghi đầy đủ điều hòa, nóng lạnh, wifi sẵn sàng dọn vào ngay tại Cơ sở 1, 2 và 3.',
-        time: 'Hôm nay',
-        defaultRead: false,
-        link: '/rooms'
-      });
-
-      addNotif({
-        id: 'new-tenant-help',
-        type: 'SYSTEM',
-        title: 'Hướng dẫn hẹn lịch xem phòng',
-        desc: 'Bạn hãy bấm vào phòng còn trống để đăng ký hoặc liên hệ Quản lý cơ sở (0912.888.666) để được hỗ trợ xem phòng.',
-        time: '1 ngày trước',
-        defaultRead: true,
-        link: '/rooms'
-      });
     }
   }
 
+  // Sắp xếp danh sách thông báo chuẩn UI: MỚI NHẤT LÊN ĐẦU TIÊN (Newest First)
   return list;
 }
 
@@ -626,7 +621,8 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
         tenantRooms,
         saasReminders: dataContext.saasReminders || [],
         saasInvoices: dataContext.saasInvoices || [],
-        landlords: dataContext.landlords || []
+        landlords: dataContext.landlords || [],
+        houseDeleteNotices: dataContext.houseDeleteNotices || []
       },
       new Set(readNotifIds)
     );
@@ -827,6 +823,7 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
                 const keys = Object.keys(localStorage).filter((k) => k.startsWith('rental_'));
                 keys.forEach((k) => localStorage.removeItem(k));
                 localStorage.setItem('rental_is_zero_sandbox', 'true');
+                localStorage.setItem('rental_boarding_houses', JSON.stringify([]));
                 sessionStorage.clear();
               } catch {}
               window.location.href = window.location.href.split('#')[0];

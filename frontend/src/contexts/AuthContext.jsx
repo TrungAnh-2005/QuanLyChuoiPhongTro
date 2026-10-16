@@ -15,31 +15,31 @@ const DEMO_USERS = {
   },
   STAFF: {
     username: 'staff',
-    fullName: 'Lê Thị Thu Ngân (Staff CS1 - Cầu Giấy)',
+    fullName: isZeroSandbox ? 'Lê Thị Thu Ngân (Staff 1)' : 'Lê Thị Thu Ngân (Staff CS1 - Cầu Giấy)',
     email: 'staff1@rental.vn',
     phone: '0912.888.666',
-    houseCode: 'CS-01',
-    houseName: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
+    houseCode: isZeroSandbox ? null : 'CS-01',
+    houseName: isZeroSandbox ? null : 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
     role: 'STAFF',
     token: 'demo-staff-token'
   },
   STAFF_1: {
     username: 'staff',
-    fullName: 'Lê Thị Thu Ngân (Staff CS1 - Cầu Giấy)',
+    fullName: isZeroSandbox ? 'Lê Thị Thu Ngân (Staff 1)' : 'Lê Thị Thu Ngân (Staff CS1 - Cầu Giấy)',
     email: 'staff1@rental.vn',
     phone: '0912.888.666',
-    houseCode: 'CS-01',
-    houseName: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
+    houseCode: isZeroSandbox ? null : 'CS-01',
+    houseName: isZeroSandbox ? null : 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
     role: 'STAFF',
     token: 'demo-staff-token'
   },
   STAFF_2: {
     username: 'staff2',
-    fullName: 'Đàm Văn Táo (Staff CS2 - Bách Khoa)',
+    fullName: isZeroSandbox ? 'Đàm Văn Táo (Staff 2)' : 'Đàm Văn Táo (Staff CS2 - Bách Khoa)',
     email: 'staff2@rental.vn',
     phone: '0988.777.999',
-    houseCode: 'CS-02',
-    houseName: 'Nhà Trọ Bách Khoa - Cơ Sở 2',
+    houseCode: isZeroSandbox ? null : 'CS-02',
+    houseName: isZeroSandbox ? null : 'Nhà Trọ Bách Khoa - Cơ Sở 2',
     role: 'STAFF',
     token: 'demo-staff2-token'
   },
@@ -406,14 +406,38 @@ export const AuthProvider = ({ children }) => {
     let userHouseCode = baseUser.houseCode;
     let userHouseName = baseUser.houseName;
 
-    if (baseUser.role === 'TENANT') {
+    if (baseUser.role === 'STAFF') {
+      if (isZeroSandbox) {
+        userHouseCode = null;
+        userHouseName = null;
+      } else {
+        try {
+          const sHouses = localStorage.getItem('rental_boarding_houses');
+          if (sHouses) {
+            const pHouses = JSON.parse(sHouses);
+            if (Array.isArray(pHouses)) {
+              if (pHouses.length === 0) {
+                userHouseCode = null;
+                userHouseName = null;
+              } else {
+                const myHouse = pHouses.find(h => h.createdBy === baseUser.username || h.managerUsername === baseUser.username);
+                if (myHouse) {
+                  userHouseCode = myHouse.code;
+                  userHouseName = myHouse.name;
+                }
+              }
+            }
+          }
+        } catch {}
+      }
+    } else if (baseUser.role === 'TENANT') {
       const latestRooms = getStoredTenantRooms();
       const val = latestRooms[baseUser.username] !== undefined
         ? latestRooms[baseUser.username]
         : (latestRooms[baseUser.fullName] !== undefined ? latestRooms[baseUser.fullName] : currentRooms);
       currentRooms = normalizeRoomList(val);
 
-      if (currentRooms.length === 0) {
+      if (currentRooms.length === 0 || isZeroSandbox) {
         userHouseCode = null;
         userHouseName = null;
       } else {

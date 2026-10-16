@@ -15,6 +15,7 @@ import ReportsPage from './pages/ReportsPage';
 import VNPayReturnPage from './pages/VNPayReturnPage';
 import MoMoReturnPage from './pages/MoMoReturnPage';
 import AdminLandlordsPage from './pages/admin/AdminLandlordsPage';
+import AdminHousesPage from './pages/admin/AdminHousesPage';
 import AdminSaasInvoicesPage from './pages/admin/AdminSaasInvoicesPage';
 import AdminIntegrationsPage from './pages/admin/AdminIntegrationsPage';
 import AdminSystemPage from './pages/admin/AdminSystemPage';
@@ -38,6 +39,7 @@ export default function App() {
               <Route path="maintenance" element={<MaintenancePage />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="admin/landlords" element={<AdminLandlordsPage />} />
+              <Route path="admin/houses" element={<AdminHousesPage />} />
               <Route path="admin/saas-invoices" element={<AdminSaasInvoicesPage />} />
               <Route path="admin/integrations" element={<AdminIntegrationsPage />} />
               <Route path="admin/system" element={<AdminSystemPage />} />

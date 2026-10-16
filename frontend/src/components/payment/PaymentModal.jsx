@@ -207,6 +207,10 @@ export default function PaymentModal({
           room: invoiceRoom,
           total: invoiceTotal,
           type: isSaas ? 'SAAS' : 'ROOM',
+          packageCode: invoice.packageCode || (isSaas ? 'ENTERPRISE' : null),
+          packageName: invoice.packageName,
+          landlordId: invoice.landlordId || 1,
+          landlordUsername: invoice.landlordUsername,
           timestamp: Date.now()
         }));
       } catch {}
@@ -236,6 +240,10 @@ export default function PaymentModal({
           room: invoiceRoom,
           total: invoiceTotal,
           type: isSaas ? 'SAAS' : 'ROOM',
+          packageCode: invoice.packageCode || (isSaas ? 'ENTERPRISE' : null),
+          packageName: invoice.packageName,
+          landlordId: invoice.landlordId || 1,
+          landlordUsername: invoice.landlordUsername,
           timestamp: Date.now()
         }));
       } catch {}

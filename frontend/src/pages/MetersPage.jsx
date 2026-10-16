@@ -223,13 +223,35 @@ export default function MetersPage() {
     return roomInv?.status === 'PAID';
   };
 
+  const dynamicHouses = useMemo(() => {
+    try {
+      const saved = localStorage.getItem('rental_boarding_houses');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      if (isZeroSandbox) return [];
+      return [
+        { code: 'CS-01', name: 'CS-01: Cầu Giấy' },
+        { code: 'CS-02', name: 'CS-02: Bách Khoa' },
+        { code: 'CS-03', name: 'CS-03: Đống Đa' }
+      ];
+    } catch {
+      return isZeroSandbox ? [] : [
+        { code: 'CS-01', name: 'CS-01: Cầu Giấy' },
+        { code: 'CS-02', name: 'CS-02: Bách Khoa' },
+        { code: 'CS-03', name: 'CS-03: Đống Đa' }
+      ];
+    }
+  }, [isZeroSandbox]);
+
   // Danh sách hiển thị theo bộ lọc
   const filteredReadings = useMemo(() => {
     return readings.filter((r) => {
       // Scoping theo Staff: Mỗi Staff chỉ chốt số cho cơ sở mình phụ trách
       if (user?.role === 'STAFF') {
-        const staffHouse = user?.houseCode || 'CS-01';
-        if (r.houseCode !== staffHouse) {
+        const staffHouse = user?.houseCode || (isZeroSandbox ? null : (dynamicHouses[0]?.code || 'CS-01'));
+        if (staffHouse && r.houseCode !== staffHouse) {
           return false;
         }
       }
@@ -1018,15 +1040,18 @@ export default function MetersPage() {
             </span>
             {[
               { code: 'ALL', name: 'Tất Cả Các Cơ Sở', count: readings.length },
-              ...(user?.role === 'STAFF' && user?.houseCode === 'CS-02'
-                ? [{ code: 'CS-02', name: 'CS-02: Bách Khoa', count: readings.filter((r) => r.houseCode === 'CS-02').length }]
-                : user?.role === 'STAFF' && user?.houseCode === 'CS-01'
-                ? [{ code: 'CS-01', name: 'CS-01: Cầu Giấy', count: readings.filter((r) => r.houseCode === 'CS-01').length }]
-                : [
-                    { code: 'CS-01', name: 'CS-01: Cầu Giấy', count: readings.filter((r) => r.houseCode === 'CS-01').length },
-                    { code: 'CS-02', name: 'CS-02: Bách Khoa', count: readings.filter((r) => r.houseCode === 'CS-02').length },
-                    { code: 'CS-03', name: 'CS-03: Đống Đa', count: readings.filter((r) => r.houseCode === 'CS-03').length },
-                  ]),
+              ...(user?.role === 'STAFF' && user?.houseCode
+                ? dynamicHouses.filter(h => h.code === user.houseCode).map(h => ({
+                    code: h.code,
+                    name: h.name.includes(':') ? h.name : `${h.code}: ${h.name.replace(/^Nhà Trọ\s*/i, '')}`,
+                    count: readings.filter((r) => r.houseCode === h.code).length
+                  }))
+                : dynamicHouses.map(h => ({
+                    code: h.code,
+                    name: h.name.includes(':') ? h.name : `${h.code}: ${h.name.replace(/^Nhà Trọ\s*/i, '')}`,
+                    count: readings.filter((r) => r.houseCode === h.code).length
+                  }))
+              )
             ].map((house) => (
               <button
                 key={house.code}
@@ -1493,10 +1518,8 @@ export default function MetersPage() {
             status: 'UNPAID',
             isSaas: true
           };
-          if (createSaasInvoice) {
-            createSaasInvoice(newInv);
-          }
-          setPayingSaasInvoice(newInv);
+          const createdInv = createSaasInvoice ? createSaasInvoice(newInv) : newInv;
+          setPayingSaasInvoice(createdInv || newInv);
         }}
       />
 

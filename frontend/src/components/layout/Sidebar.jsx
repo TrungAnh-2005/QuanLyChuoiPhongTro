@@ -21,7 +21,7 @@ import { useAuth } from '../../contexts/AuthContext';
 const adminNavItems = [
   { name: 'Tổng Quan Nền Tảng', path: '/', icon: LayoutDashboard },
   { name: 'Quản Trị Chủ Trọ & Gói', path: '/admin/landlords', icon: Users },
-  { name: 'Quản Trị & Duyệt Cơ Sở', path: '/houses', icon: Building2 },
+  { name: 'Quản Trị & Duyệt Cơ Sở', path: '/admin/houses', icon: Building2 },
   { name: 'Hóa Đơn Cước Gói SaaS', path: '/admin/saas-invoices', icon: Receipt },
   { name: 'Cấu Hình Tích Hợp', path: '/admin/integrations', icon: Layers },
   { name: 'Giám Sát Hệ Thống & Logs', path: '/admin/system', icon: Cpu },
@@ -58,6 +58,18 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
       : role === 'STAFF'
       ? staffNavItems
       : adminNavItems;
+
+  const pendingHousesCount = React.useMemo(() => {
+    if (role !== 'ADMIN') return 0;
+    try {
+      const s = localStorage.getItem('rental_boarding_houses');
+      if (s) {
+        const arr = JSON.parse(s);
+        return Array.isArray(arr) ? arr.filter((h) => h.status === 'PENDING_APPROVAL').length : 0;
+      }
+    } catch {}
+    return 0;
+  }, [role]);
 
   const sidebarContent = (
     <div className="flex flex-col h-full bg-white text-slate-700">
@@ -115,6 +127,11 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
             >
               <Icon className="w-4 h-4 shrink-0" />
               <span className="truncate">{item.name}</span>
+              {item.path === '/admin/houses' && role === 'ADMIN' && pendingHousesCount > 0 && (
+                <span className="ml-auto px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white animate-pulse">
+                  {pendingHousesCount}
+                </span>
+              )}
             </NavLink>
           );
         })}

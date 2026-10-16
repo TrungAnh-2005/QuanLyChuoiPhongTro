@@ -51,7 +51,7 @@ const saasPlatformData = [
   { month: 'Tháng 9', saasFee: 54.2, activeLandlords: 42, gmv: 750 },
 ];
 
-const FACILITIES = [
+const DEFAULT_FACILITIES = [
   { code: 'ALL', name: 'Toàn Bộ Các Cơ Sở' },
   { code: 'CS-01', name: 'Nhà Trọ Cầu Giấy - Cơ Sở 1' },
   { code: 'CS-02', name: 'Nhà Trọ Bách Khoa - Cơ Sở 2' },
@@ -65,6 +65,25 @@ export default function ReportsPage() {
   const role = user?.role || 'ADMIN';
   const isStaff = role === 'STAFF';
   const isAdmin = role === 'ADMIN';
+
+  const facilities = useMemo(() => {
+    try {
+      const saved = localStorage.getItem('rental_boarding_houses');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return [
+            { code: 'ALL', name: 'Toàn Bộ Các Cơ Sở' },
+            ...parsed.map((h) => ({ code: h.code, name: h.name }))
+          ];
+        }
+      }
+      if (isZeroSandbox) return [{ code: 'ALL', name: 'Toàn Bộ Các Cơ Sở' }];
+      return DEFAULT_FACILITIES;
+    } catch {
+      return isZeroSandbox ? [{ code: 'ALL', name: 'Toàn Bộ Các Cơ Sở' }] : DEFAULT_FACILITIES;
+    }
+  }, [isZeroSandbox]);
 
   const totalSaasRevenue = useMemo(() => {
     return (saasInvoices || [])
@@ -192,7 +211,7 @@ export default function ReportsPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {FACILITIES.map((f) => (
+            {facilities.map((f) => (
               <button
                 key={f.code}
                 onClick={() => setSelectedFacility(f.code)}

@@ -103,16 +103,16 @@ export default function InvoicesPage({ forcedTab }) {
       status: 'UNPAID'
     };
 
-    if (createSaasInvoice) {
-      createSaasInvoice(newInv);
-    }
+    const createdInv = createSaasInvoice ? createSaasInvoice(newInv) : newInv;
 
     // Mở modal thanh toán ngay để nộp cước qua SePay / VNPay / MoMo
     setPayingInvoice({
-      ...newInv,
-      total: newInv.amount,
-      room: newInv.packageName || newInv.packageCode,
+      ...createdInv,
+      total: createdInv.amount,
+      room: createdInv.packageName || createdInv.packageCode,
       tenant: 'CTCP SaaS Trọ Việt (Web Admin)',
+      packageCode: createdInv.packageCode || 'ENTERPRISE',
+      landlordId: targetLandlordId,
       isSaas: true
     });
   };
@@ -156,9 +156,35 @@ export default function InvoicesPage({ forcedTab }) {
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [payingInvoice, setPayingInvoice] = useState(null);
 
+  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+
+  const dynamicHouses = useMemo(() => {
+    try {
+      const saved = localStorage.getItem('rental_boarding_houses');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      if (isZeroSandbox) return [];
+      return [
+        { code: 'CS-01', name: 'Cơ Sở 1 (Cầu Giấy)' },
+        { code: 'CS-02', name: 'Cơ Sở 2 (Bách Khoa)' },
+        { code: 'CS-03', name: 'Cơ Sở 3 (Đống Đa)' }
+      ];
+    } catch {
+      return isZeroSandbox ? [] : [
+        { code: 'CS-01', name: 'Cơ Sở 1 (Cầu Giấy)' },
+        { code: 'CS-02', name: 'Cơ Sở 2 (Bách Khoa)' },
+        { code: 'CS-03', name: 'Cơ Sở 3 (Đống Đa)' }
+      ];
+    }
+  }, [isZeroSandbox]);
+
+  const staffHouseCode = role === 'STAFF' ? (user?.houseCode || (isZeroSandbox ? null : (dynamicHouses[0]?.code || 'CS-01'))) : null;
+
   const [selectedFacility, setSelectedFacility] = useState(() => {
     if (role === 'STAFF') {
-      return user?.houseCode || (user?.username === 'staff2' ? 'CS-02' : 'CS-01');
+      return user?.houseCode || (isZeroSandbox ? 'ALL' : (user?.username === 'staff2' ? 'CS-02' : 'CS-01'));
     }
     return 'ALL';
   });
@@ -173,13 +199,14 @@ export default function InvoicesPage({ forcedTab }) {
       );
     }
     if (role === 'STAFF') {
-      const staffTargetCode = selectedFacility || user?.houseCode || (user?.username === 'staff2' ? 'CS-02' : 'CS-01');
+      const staffTargetCode = selectedFacility !== 'ALL' ? selectedFacility : (staffHouseCode || user?.houseCode);
+      if (!staffTargetCode) return invoices;
       return invoices.filter((inv) => {
         if (inv.houseCode) return inv.houseCode === staffTargetCode;
         if (inv.house) {
-          if (staffTargetCode === 'CS-01') return inv.house.includes('Cơ Sở 1') || inv.house.includes('Cầu Giấy') || inv.house.includes('CS-01');
-          if (staffTargetCode === 'CS-02') return inv.house.includes('Cơ Sở 2') || inv.house.includes('Bách Khoa') || inv.house.includes('CS-02');
-          if (staffTargetCode === 'CS-03') return inv.house.includes('Cơ Sở 3') || inv.house.includes('Đống Đa') || inv.house.includes('CS-03');
+          const matchHouse = dynamicHouses.find(h => h.code === staffTargetCode);
+          if (matchHouse && inv.house.includes(matchHouse.name)) return true;
+          return inv.house.includes(staffTargetCode);
         }
         return false;
       });
@@ -190,13 +217,13 @@ export default function InvoicesPage({ forcedTab }) {
     return invoices.filter((inv) => {
       if (inv.houseCode) return inv.houseCode === selectedFacility;
       if (inv.house) {
-        if (selectedFacility === 'CS-01') return inv.house.includes('Cơ Sở 1') || inv.house.includes('Cầu Giấy') || inv.house.includes('CS-01');
-        if (selectedFacility === 'CS-02') return inv.house.includes('Cơ Sở 2') || inv.house.includes('Bách Khoa') || inv.house.includes('CS-02');
-        if (selectedFacility === 'CS-03') return inv.house.includes('Cơ Sở 3') || inv.house.includes('Đống Đa') || inv.house.includes('CS-03');
+        const matchHouse = dynamicHouses.find(h => h.code === selectedFacility);
+        if (matchHouse && inv.house.includes(matchHouse.name)) return true;
+        return inv.house.includes(selectedFacility);
       }
       return true;
     });
-  }, [isTenant, invoices, myRentedRooms, user, selectedFacility, role]);
+  }, [isTenant, invoices, myRentedRooms, user, selectedFacility, role, staffHouseCode, dynamicHouses]);
 
   const filtered = displayedInvoices.filter((inv) => {
     let matchStatus = true;
@@ -547,25 +574,49 @@ export default function InvoicesPage({ forcedTab }) {
 
                       <td className="py-4 px-5 text-right space-x-1.5">
                         {inv.status === 'UNPAID' ? (
-                          <button
-                            onClick={() => {
-                              setPayingInvoice({
-                                ...inv,
-                                id: inv.id,
-                                code: inv.code,
-                                total: inv.amount,
-                                amount: inv.amount,
-                                room: inv.packageCode || 'Gói Bản Quyền SaaS',
-                                tenant: 'CTCP SaaS Trọ Việt (Web Admin)',
-                                isSaas: true
-                              });
-                            }}
-                            className="px-3 py-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold text-xs rounded-xl shadow-sm transition btn-press inline-flex items-center gap-1.5 cursor-pointer"
-                            title="Nộp tiền cước cho Admin qua VNPay, MoMo hoặc VietQR"
-                          >
-                            <CreditCard className="w-3.5 h-3.5" />
-                            <span>Nộp Tiền SePay / VNPay / MoMo</span>
-                          </button>
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              onClick={() => {
+                                setPayingInvoice({
+                                  ...inv,
+                                  id: inv.id,
+                                  code: inv.code,
+                                  total: inv.amount,
+                                  amount: inv.amount,
+                                  room: inv.packageCode || 'Gói Bản Quyền SaaS',
+                                  tenant: 'CTCP SaaS Trọ Việt (Web Admin)',
+                                  packageCode: inv.packageCode || 'ENTERPRISE',
+                                  landlordId: inv.landlordId || (user?.username === 'staff2' ? 2 : 1),
+                                  isSaas: true
+                                });
+                              }}
+                              className="px-3 py-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold text-xs rounded-xl shadow-sm transition btn-press inline-flex items-center gap-1.5 cursor-pointer"
+                              title="Nộp tiền cước cho Admin qua VNPay, MoMo hoặc VietQR"
+                            >
+                              <CreditCard className="w-3.5 h-3.5" />
+                              <span>Nộp Tiền SePay / VNPay / MoMo</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                paySaasInvoice(inv.id, 'Xác nhận nộp tiền (Admin)', inv.packageCode || 'ENTERPRISE', inv.landlordId || 1);
+                                if (updateLandlordPackage) {
+                                  updateLandlordPackage(inv.landlordId || (user?.username === 'staff2' ? 2 : 1), inv.packageCode || 'ENTERPRISE');
+                                }
+                                setBatchSentToast({
+                                  success: true,
+                                  message: `🎉 Nộp cước SaaS ${inv.code} thành công! Gói bản quyền (${inv.packageName || 'ENTERPRISE'}) đã được kích hoạt ngay.`
+                                });
+                                setTimeout(() => setBatchSentToast(null), 4000);
+                              }}
+                              className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition inline-flex items-center gap-1 cursor-pointer"
+                              title="Kích hoạt ngay nếu bạn đã chuyển khoản / nộp qua VNPay"
+                            >
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              <span>Kích Hoạt Ngay</span>
+                            </button>
+                          </div>
                         ) : (
                           <div className="inline-flex items-center gap-1.5">
                             <button
@@ -610,29 +661,28 @@ export default function InvoicesPage({ forcedTab }) {
             <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-100/80 rounded-2xl border border-slate-200/80 text-xs font-bold">
               {[
                 { code: 'ALL', label: '🏢 Toàn Chuỗi (Tất Cả)' },
-                { code: 'CS-01', label: '🏠 Cơ Sở 1 (Cầu Giấy)' },
-                { code: 'CS-02', label: '🏠 Cơ Sở 2 (Bách Khoa)' },
-                { code: 'CS-03', label: '🏠 Cơ Sở 3 (Đống Đa)' }
+                ...dynamicHouses.map((h) => ({ code: h.code, label: `🏠 ${h.name}` }))
               ].map((fac) => {
                 const isSelected = selectedFacility === fac.code;
+                const isStaffDisabled = role === 'STAFF' && staffHouseCode && fac.code !== staffHouseCode && fac.code !== 'ALL';
                 return (
                   <button
                     key={fac.code}
-                    disabled={role === 'STAFF' && fac.code !== (user?.houseCode || 'CS-01')}
+                    disabled={isStaffDisabled}
                     onClick={() => setSelectedFacility(fac.code)}
                     className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
                       isSelected
                         ? 'bg-purple-600 text-white shadow-md shadow-purple-600/25'
                         : 'text-slate-600 hover:text-purple-700 hover:bg-white/60'
-                    } ${role === 'STAFF' && fac.code !== (user?.houseCode || 'CS-01') ? 'opacity-40 cursor-not-allowed' : ''}`}
+                    } ${isStaffDisabled ? 'opacity-40 cursor-not-allowed' : ''}`}
                   >
                     <span>{fac.label}</span>
                   </button>
                 );
               })}
-              {role === 'STAFF' && (
+              {role === 'STAFF' && staffHouseCode && (
                 <span className="text-[11px] text-purple-700 font-semibold ml-auto px-2">
-                  🔒 Cố định theo cơ sở trực: {user?.houseName || user?.houseCode || 'CS-01'}
+                  🔒 Cố định theo cơ sở trực: {user?.houseName || staffHouseCode}
                 </span>
               )}
             </div>
