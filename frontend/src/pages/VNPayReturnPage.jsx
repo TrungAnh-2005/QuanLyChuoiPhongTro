@@ -33,9 +33,19 @@ export default function VNPayReturnPage() {
     }
   })();
 
+  const hasProcessedRef = React.useRef(false);
+
   useEffect(() => {
-    if (isSuccess && !processed) {
+    if (isSuccess && !hasProcessedRef.current && !processed) {
+      hasProcessedRef.current = true;
       setProcessed(true);
+
+      const txRef = txnRef || invoiceId || 'tx';
+      const lockKey = `rental_vnpay_tx_done_${txRef}`;
+      if (sessionStorage.getItem(lockKey)) {
+        return;
+      }
+      sessionStorage.setItem(lockKey, 'true');
 
       // Gạch nợ hóa đơn thành công với tất cả các khóa nhận diện khả dĩ
       const keysToPay = new Set([
@@ -73,7 +83,7 @@ export default function VNPayReturnPage() {
         localStorage.removeItem('rental_pending_payment');
       } catch {}
     }
-  }, [isSuccess, processed, invoiceId, pendingInfo, bankCode, orderInfo, payInvoice, paySaasInvoice, updateLandlordPackage]);
+  }, [isSuccess, processed, invoiceId, pendingInfo, bankCode, orderInfo, payInvoice, paySaasInvoice, updateLandlordPackage, txnRef]);
 
   return (
     <div className="max-w-2xl mx-auto py-8 px-4">

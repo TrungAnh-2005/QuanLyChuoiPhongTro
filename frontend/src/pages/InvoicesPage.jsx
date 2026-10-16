@@ -99,8 +99,10 @@ export default function InvoicesPage({ forcedTab }) {
       billingCycle: planData.billingCycle,
       period: `${new Date().toLocaleDateString('vi-VN')} - ${new Date(Date.now() + planData.months * 30 * 86400000).toLocaleDateString('vi-VN')}`,
       amount: planData.amount,
+      total: planData.amount,
       dueDate: new Date(Date.now() + 7 * 86400000).toLocaleDateString('vi-VN'),
-      status: 'UNPAID'
+      status: 'UNPAID',
+      isSaas: true
     };
 
     const createdInv = createSaasInvoice ? createSaasInvoice(newInv) : newInv;
@@ -180,7 +182,24 @@ export default function InvoicesPage({ forcedTab }) {
     }
   }, [isZeroSandbox]);
 
-  const staffHouseCode = role === 'STAFF' ? (user?.houseCode || (isZeroSandbox ? null : (dynamicHouses[0]?.code || 'CS-01'))) : null;
+  const staffManageableHouses = useMemo(() => {
+    if (role !== 'STAFF') return dynamicHouses;
+    const u = (user?.username || '').toLowerCase();
+    return dynamicHouses.filter((h) => {
+      const created = (h.createdBy || '').toLowerCase();
+      const manager = (h.managerUsername || '').toLowerCase();
+      if (created && created === u) return true;
+      if (manager && manager === u) return true;
+      if (user?.houseCode && h.code === user.houseCode) return true;
+      if (!isZeroSandbox) {
+        if (u === 'staff' && (h.code === 'CS-01' || !h.createdBy)) return true;
+        if (u === 'staff2' && h.code === 'CS-02') return true;
+      }
+      return false;
+    });
+  }, [dynamicHouses, user, role, isZeroSandbox]);
+
+  const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
 
   const [selectedFacility, setSelectedFacility] = useState(() => {
     if (role === 'STAFF') {
@@ -199,16 +218,14 @@ export default function InvoicesPage({ forcedTab }) {
       );
     }
     if (role === 'STAFF') {
-      const staffTargetCode = selectedFacility !== 'ALL' ? selectedFacility : (staffHouseCode || user?.houseCode);
-      if (!staffTargetCode) return invoices;
+      if (staffHouseCodes.length === 0) return [];
+      const staffTargetCode = selectedFacility !== 'ALL' ? selectedFacility : null;
       return invoices.filter((inv) => {
-        if (inv.houseCode) return inv.houseCode === staffTargetCode;
-        if (inv.house) {
-          const matchHouse = dynamicHouses.find(h => h.code === staffTargetCode);
-          if (matchHouse && inv.house.includes(matchHouse.name)) return true;
-          return inv.house.includes(staffTargetCode);
-        }
-        return false;
+        const invHouseCode =
+          inv.houseCode ||
+          dynamicHouses.find((h) => inv.house && inv.house.includes(h.name))?.code;
+        if (staffTargetCode) return invHouseCode === staffTargetCode;
+        return staffHouseCodes.includes(invHouseCode);
       });
     }
     if (selectedFacility === 'ALL') {

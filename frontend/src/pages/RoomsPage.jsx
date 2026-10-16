@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import {
   Home,
@@ -33,6 +33,7 @@ import {
   LogOut,
   Pencil,
   Lock,
+  Unlock,
   Clock,
   AlertTriangle,
   ArrowRight,
@@ -51,7 +52,7 @@ import MoveOutSettlementModal from '../components/settlement/MoveOutSettlementMo
 import TrialExpiryBanner from '../components/common/TrialExpiryBanner';
 import { getTrialStatus } from '../utils/packagePermissions';
 
-import { ALL_ROOMS, HOUSES_LIST, getRoomImage } from '../data/roomsData';
+import { ALL_ROOMS, HOUSES_LIST, getRoomImage, isDuplicateRoom, isSameHouse, normalizeRoomNumber, normalizeHouseCode } from '../data/roomsData';
 export { ALL_ROOMS, HOUSES_LIST };
 
 export const ROOM_IMAGE_PRESETS = [
@@ -107,7 +108,7 @@ export default function RoomsPage() {
   } = useData();
 
   // Danh sách cơ sở thực tế lưu trong hệ thống (từ rental_boarding_houses)
-  const storedBoardingHouses = useMemo(() => {
+  const [storedBoardingHouses, setStoredBoardingHouses] = useState(() => {
     try {
       const saved = localStorage.getItem('rental_boarding_houses');
       if (saved) {
@@ -141,6 +142,20 @@ export default function RoomsPage() {
         status: 'ACTIVE'
       }
     ];
+  });
+
+  useEffect(() => {
+    const handleSyncHouses = () => {
+      try {
+        const saved = localStorage.getItem('rental_boarding_houses');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) setStoredBoardingHouses(parsed);
+        }
+      } catch {}
+    };
+    window.addEventListener('storage', handleSyncHouses);
+    return () => window.removeEventListener('storage', handleSyncHouses);
   }, []);
 
   // Lọc cơ sở mà người dùng hiện tại có quyền xem
@@ -148,12 +163,18 @@ export default function RoomsPage() {
     if (storedBoardingHouses.length === 0) return [];
 
     if (user?.role === 'STAFF') {
-      const myUsername = user?.username;
+      const myUsername = (user?.username || '').toLowerCase();
       const myHouseCode = user?.houseCode;
       return storedBoardingHouses.filter((h) => {
-        if (h.createdBy && h.createdBy === myUsername) return true;
-        if (h.managerUsername && h.managerUsername === myUsername) return true;
+        const created = (h.createdBy || '').toLowerCase();
+        const manager = (h.managerUsername || '').toLowerCase();
+        if (created && created === myUsername) return true;
+        if (manager && manager === myUsername) return true;
         if (myHouseCode && h.code === myHouseCode) return true;
+        if (h.manager && user?.fullName && (
+          h.manager.toLowerCase().includes(user.fullName.toLowerCase()) ||
+          user.fullName.toLowerCase().includes(h.manager.toLowerCase())
+        )) return true;
         if (!isZeroSandbox) {
           if (myUsername === 'staff' && (h.code === 'CS-01' || !h.createdBy)) return true;
           if (myUsername === 'staff2' && h.code === 'CS-02') return true;
@@ -192,6 +213,15 @@ export default function RoomsPage() {
     }
     return items;
   }, [visibleHousesForUser, rooms, role]);
+
+  // Lấy tên cơ sở động từ storedBoardingHouses để luôn hiển thị chính xác tên cơ sở do chủ trọ đặt
+  const getHouseName = useCallback((houseCode, fallbackHouse) => {
+    if (!houseCode && !fallbackHouse) return '';
+    const normCode = normalizeHouseCode(houseCode);
+    const found = storedBoardingHouses.find((h) => h.code === normCode || h.code === houseCode || String(h.id) === String(houseCode));
+    if (found && found.name) return found.name;
+    return fallbackHouse || houseCode;
+  }, [storedBoardingHouses]);
 
   const [selectedHouse, setSelectedHouse] = useState(rawParam);
 
@@ -324,23 +354,8 @@ export default function RoomsPage() {
     if (isTenant) return false;
     const roomHouseCode = room.houseCode || 'CS-01';
 
-    try {
-      const savedHouses = localStorage.getItem('rental_boarding_houses');
-      if (savedHouses) {
-        const parsed = JSON.parse(savedHouses);
-        const targetHouse = parsed.find((h) => h.code === roomHouseCode);
-        if (targetHouse) {
-          if (targetHouse.createdBy && targetHouse.createdBy === user?.username) return true;
-          if (targetHouse.managerUsername && targetHouse.managerUsername === user?.username) return true;
-        }
-      }
-    } catch {}
-
-    if (!isZeroSandbox && user?.username === 'staff' && roomHouseCode === 'CS-01') return true;
-    if (!isZeroSandbox && user?.username === 'staff2' && roomHouseCode === 'CS-02') return true;
-    if (staffHouseCode && roomHouseCode === staffHouseCode) return true;
-
-    return false;
+    const staffManageableCodes = visibleHousesForUser.map((h) => h.code);
+    return staffManageableCodes.includes(roomHouseCode);
   };
 
   const handleOpenEditRoom = (room) => {
@@ -374,9 +389,16 @@ export default function RoomsPage() {
       alert('Vui lòng nhập số phòng!');
       return;
     }
+    const editTargetHouse = editRoomForm.houseCode || editingRoomModal.houseCode || 'CS-01';
+    if (isDuplicateRoom(rooms, editRoomForm.number, editTargetHouse, editingRoomModal.id)) {
+      alert(`⚠️ Không thể lưu: Phòng "${editRoomForm.number}" đã tồn tại trong cơ sở này!\n\nTrong cùng một cơ sở nhà trọ, các phòng phải có số / tên khác nhau để tránh nhầm lẫn khi quản lý.`);
+      return;
+    }
+    const resolvedHouseName = getHouseName(editTargetHouse, editRoomForm.house);
     updateRoom(editingRoomModal.id, {
       number: editRoomForm.number,
       houseCode: editRoomForm.houseCode,
+      house: resolvedHouseName,
       floor: editRoomForm.floor,
       price: Number(editRoomForm.price) || 3500000,
       deposit: Number(editRoomForm.deposit) || 3500000,
@@ -391,6 +413,7 @@ export default function RoomsPage() {
       setSelectedRoomDetails({
         ...selectedRoomDetails,
         ...editRoomForm,
+        house: resolvedHouseName,
         price: Number(editRoomForm.price),
         area: Number(editRoomForm.area),
         maxOccupants: Number(editRoomForm.maxOccupants)
@@ -792,7 +815,7 @@ export default function RoomsPage() {
     submitContractRenewalRequest({
       room: targetRoomNumber,
       targetRoom: targetRoomNumber,
-      house: targetRoomObj?.house || currentTenant?.house || 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
+      house: getHouseName(targetRoomObj?.houseCode || currentTenant?.houseCode, targetRoomObj?.house || currentTenant?.house),
       houseCode: targetRoomObj?.houseCode || currentTenant?.houseCode || 'CS-01',
       tenantName: user?.fullName || currentTenant?.fullName || 'Khách thuê',
       tenant: user?.fullName || currentTenant?.fullName || 'Khách thuê',
@@ -841,16 +864,23 @@ export default function RoomsPage() {
       )
     : [];
 
-  const staffHouseCode = user?.role === 'STAFF'
-    ? (user?.houseCode || (isZeroSandbox ? null : (user?.username === 'staff2' ? 'CS-02' : 'CS-01')))
-    : null;
+  const staffHouseCode = user?.role === 'STAFF' ? user?.houseCode : null;
+  const staffAllowedCodes = useMemo(() => visibleHousesForUser.map((h) => h.code), [visibleHousesForUser]);
+  const isAllowedReqForStaff = useCallback((r) => {
+    if (user?.role !== 'STAFF') return true;
+    if (staffAllowedCodes.length === 0) return false;
+    const reqHouse = r?.houseCode || (rooms || []).find((rm) => rm.number === (r?.targetRoom || r?.currentRoom))?.houseCode || 'CS-01';
+    return staffAllowedCodes.includes(reqHouse);
+  }, [user?.role, staffAllowedCodes, rooms]);
 
   // Ban Quản Lý CHỈ đếm và duyệt những đơn đã ĐỦ ĐIỀU KIỆN (chuyển phòng/thuê thêm/trả phòng PENDING, hoặc ở ghép ĐÃ ĐƯỢC CƯ DÂN ĐỒNG Ý)
-  // Nếu là STAFF: CHỈ đếm đơn thuộc đúng cơ sở mà Staff đó phụ trách (CS-01 hoặc CS-02)
+  // Nếu là STAFF: CHỈ đếm đơn thuộc đúng các cơ sở mà Staff đó phụ trách (dựa trên visibleHousesForUser)
   const pendingRequestsCount = roomRequests.filter((r) => {
-    if (staffHouseCode) {
-      const reqHouse = r.houseCode || (rooms || []).find((rm) => rm.number === (r.targetRoom || r.currentRoom))?.houseCode || 'CS-01';
-      if (reqHouse !== staffHouseCode) return false;
+    if (user?.role === 'STAFF') {
+      const staffManageableCodes = visibleHousesForUser.map((h) => h.code);
+      if (staffManageableCodes.length === 0) return false;
+      const reqHouse = r.houseCode || (rooms || []).find((rm) => rm.number === (r.targetRoom || r.currentRoom))?.houseCode;
+      if (!staffManageableCodes.includes(reqHouse)) return false;
     }
     return r.status === 'PENDING' || r.status === 'ROOMMATES_APPROVED';
   }).length;
@@ -872,7 +902,13 @@ export default function RoomsPage() {
       : null;
 
     const targetHouseCode = requestModal.room.houseCode || (requestModal.room.house?.includes('Bách Khoa') || requestModal.room.house?.includes('CS-02') ? 'CS-02' : 'CS-01');
-    const targetHouse = requestModal.room.house || (targetHouseCode === 'CS-02' ? 'Nhà Trọ Bách Khoa - Cơ Sở 2' : 'Nhà Trọ Cầu Giấy - Cơ Sở 1');
+    const targetHouse = getHouseName(targetHouseCode, requestModal.room.house);
+
+    const targetHouseObj = storedBoardingHouses.find((h) => h.code === targetHouseCode);
+    if (targetHouseObj?.status === 'LOCKED') {
+      setRequestErrorMsg(`⚠️ Cơ sở "${targetHouseObj.name || targetHouseCode}" hiện đang tạm khóa hoạt động (bảo trì/sửa chữa). Hệ thống tạm ngừng tiếp nhận đơn cho cơ sở này!`);
+      return;
+    }
 
     if (requestModal.type === 'TRANSFER') {
       // 1. Kiểm tra sức chứa
@@ -937,6 +973,22 @@ export default function RoomsPage() {
     }
   }, [visibleHousesForUser, newRoom.houseCode]);
 
+  // Kiểm tra trùng lặp số phòng trong cùng 1 cơ sở (bắt buộc phòng trong 1 cơ sở phải khác tên/số)
+  const addRoomTargetHouse = newRoom.houseCode || visibleHousesForUser[0]?.code || 'CS-01';
+  const isNewRoomDuplicate = Boolean(
+    newRoom.number &&
+    String(newRoom.number).trim() &&
+    isDuplicateRoom(rooms, newRoom.number, addRoomTargetHouse)
+  );
+
+  const editTargetHouse = editRoomForm.houseCode || editingRoomModal?.houseCode || 'CS-01';
+  const isEditRoomDuplicate = Boolean(
+    editingRoomModal &&
+    editRoomForm.number &&
+    String(editRoomForm.number).trim() &&
+    isDuplicateRoom(rooms, editRoomForm.number, editTargetHouse, editingRoomModal.id)
+  );
+
   // Keep state perfectly synchronized with URL query parameter & tenant active facility
   useEffect(() => {
     const currentParam = searchParams.get('house') || 'ALL';
@@ -965,12 +1017,25 @@ export default function RoomsPage() {
     }
   };
 
+  const staffManageableRooms = useMemo(() => {
+    if (user?.role === 'STAFF') {
+      const allowedCodes = visibleHousesForUser.map((h) => h.code);
+      return rooms.filter((r) => allowedCodes.includes(r.houseCode));
+    }
+    return rooms;
+  }, [rooms, user, visibleHousesForUser]);
+
   const filteredRooms = useMemo(() => {
     return rooms.filter((r) => {
       // QUY TẮC PHÂN QUYỀN STAFF & VÒNG ĐỜI KHÁCH THUÊ:
       if (user?.role === 'STAFF') {
-        const staffHouse = user?.houseCode || 'CS-01';
-        if (r.houseCode !== staffHouse) {
+        const staffManageableCodes = visibleHousesForUser.map((h) => h.code);
+        // Nếu Staff chưa có hoặc chưa được phân công cơ sở nào: TUYỆT ĐỐI KHÔNG XEM PHÒNG CỦA STAFF KHÁC
+        if (staffManageableCodes.length === 0) {
+          return false;
+        }
+        // Staff chỉ xem phòng thuộc các cơ sở của mình:
+        if (!staffManageableCodes.includes(r.houseCode)) {
           return false;
         }
       }
@@ -1017,10 +1082,25 @@ export default function RoomsPage() {
 
       return matchHouse && matchStatus && matchSearch;
     });
-  }, [rooms, isTenant, myRentedRoom, myRentedRoomObj, selectedHouse, filterStatus, searchTerm]);
+  }, [rooms, isTenant, myRentedRoom, myRentedRoomObj, selectedHouse, filterStatus, searchTerm, user, visibleHousesForUser]);
 
   const handleUpdateStatus = (id, newStatus) => {
+    const targetRoom = rooms.find(r => r.id === id);
+    if (newStatus === 'LOCKED' && targetRoom?.status === 'OCCUPIED') {
+      if (!window.confirm(`⚠️ Phòng ${targetRoom.number} hiện đang có khách thuê!\n\nBạn có chắc chắn muốn TẠM KHÓA phòng này không? (Phòng sẽ ngừng tiếp nhận khách mới).`)) {
+        return;
+      }
+    }
     updateRoomStatus(id, newStatus);
+    setPriceToast({
+      type: newStatus === 'LOCKED' ? 'WARNING' : 'SUCCESS',
+      message: newStatus === 'LOCKED'
+        ? `Đã tạm khóa phòng ${targetRoom?.number || id} thành công!`
+        : newStatus === 'AVAILABLE'
+        ? `Đã mở phòng ${targetRoom?.number || id} sang trạng thái Còn trống!`
+        : `Đã cập nhật trạng thái phòng ${targetRoom?.number || id} thành ${newStatus}!`
+    });
+    setTimeout(() => setPriceToast(null), 3500);
   };
 
   // Kiểm tra hạn mức gói cước SaaS cho Chủ Trọ khi Thêm Phòng
@@ -1044,6 +1124,12 @@ export default function RoomsPage() {
       return;
     }
 
+    const targetHouseCode = newRoom.houseCode || visibleHousesForUser[0]?.code || 'CS-01';
+    if (isDuplicateRoom(rooms, newRoom.number, targetHouseCode)) {
+      alert(`⚠️ Không thể tạo phòng: Phòng "${newRoom.number}" đã tồn tại trong cơ sở này!\n\nTheo quy định nghiệp vụ: Trong cùng một cơ sở nhà trọ, các phòng phải có số / tên khác nhau để đảm bảo quản lý hợp đồng và ghi điện nước.`);
+      return;
+    }
+
     // Kiểm tra giới hạn số phòng của gói cước
     if (rooms.length >= maxRoomsAllowed) {
       setShowModal(false);
@@ -1051,8 +1137,12 @@ export default function RoomsPage() {
       return;
     }
 
+    const resolvedHouseName = getHouseName(targetHouseCode, newRoom.house);
+
     addRoom({
       ...newRoom,
+      houseCode: targetHouseCode,
+      house: resolvedHouseName,
       image: newRoom.image || getRoomImage(newRoom)
     });
     setShowModal(false);
@@ -1075,6 +1165,26 @@ export default function RoomsPage() {
       (selectedHouse === '2' && h.code === 'CS-02') ||
       (selectedHouse === '3' && h.code === 'CS-03')
   ) || dynamicHousesList[0] || { code: 'ALL', name: 'Toàn Bộ Các Cơ Sở', totalRooms: 0 };
+
+  const currentHouseRecord = useMemo(() => {
+    return storedBoardingHouses.find(
+      (h) =>
+        h.code === selectedHouse ||
+        (selectedHouse === '1' && h.code === 'CS-01') ||
+        (selectedHouse === '2' && h.code === 'CS-02') ||
+        (selectedHouse === '3' && h.code === 'CS-03')
+    );
+  }, [storedBoardingHouses, selectedHouse]);
+
+  const isCurrentHouseLocked = currentHouseRecord?.status === 'LOCKED';
+
+  const selectedRoomHouse = useMemo(() => {
+    if (!selectedRoomDetails) return null;
+    const hCode = selectedRoomDetails.houseCode || 'CS-01';
+    return storedBoardingHouses.find((h) => h.code === hCode);
+  }, [selectedRoomDetails, storedBoardingHouses]);
+
+  const isSelectedRoomHouseLocked = selectedRoomHouse?.status === 'LOCKED';
 
   return (
     <div className="space-y-6">
@@ -1104,7 +1214,7 @@ export default function RoomsPage() {
               </Link>
               <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
               <span className="text-slate-800 font-bold">
-                {selectedHouse === 'ALL' ? `Toàn Bộ ${rooms.length} Phòng` : currentHouseInfo.name}
+                {selectedHouse === 'ALL' ? `Toàn Bộ ${staffManageableRooms.length} Phòng` : currentHouseInfo.name}
               </span>
             </div>
           )}
@@ -1112,13 +1222,13 @@ export default function RoomsPage() {
             {isTenant
               ? 'Tra Cứu Chuỗi & Phòng Của Chủ Trọ'
               : selectedHouse === 'ALL'
-              ? `Toàn Bộ Phòng Thuộc Chuỗi (${rooms.length} Phòng)`
+              ? `Toàn Bộ Phòng Thuộc Chuỗi (${staffManageableRooms.length} Phòng)`
               : `Danh Sách Phòng: ${currentHouseInfo.name}`}
           </h1>
           <p className="text-slate-500 text-sm mt-0.5 font-medium">
             {isTenant
               ? 'Tra cứu thông tin cơ sở chuỗi nhà trọ, danh sách phòng, tiện ích và giá thuê niêm yết của chủ trọ.'
-              : `Tổng số: ${filteredRooms.length} phòng | Trống: ${filteredRooms.filter((r) => r.status === 'AVAILABLE').length} | Giữ chỗ: ${filteredRooms.filter((r) => r.status === 'HOLDING').length} | Đang thuê: ${filteredRooms.filter((r) => r.status === 'OCCUPIED').length} | Bảo trì: ${filteredRooms.filter((r) => r.status === 'MAINTENANCE').length}`}
+              : `Tổng số: ${filteredRooms.length} phòng | Trống: ${filteredRooms.filter((r) => r.status === 'AVAILABLE').length} | Giữ chỗ: ${filteredRooms.filter((r) => r.status === 'HOLDING').length} | Đang thuê: ${filteredRooms.filter((r) => r.status === 'OCCUPIED').length} | Bảo trì: ${filteredRooms.filter((r) => r.status === 'MAINTENANCE').length} | Tạm khóa: ${filteredRooms.filter((r) => r.status === 'LOCKED').length}`}
           </p>
         </div>
 
@@ -1345,6 +1455,7 @@ export default function RoomsPage() {
             { id: 'HOLDING', label: '🔒 Đang giữ chỗ' },
             { id: 'OCCUPIED', label: 'Đang thuê' },
             { id: 'MAINTENANCE', label: 'Bảo trì' },
+            { id: 'LOCKED', label: '🚫 Tạm khóa' },
             { id: 'CLEANING', label: '🧹 Chờ dọn dẹp' }
           ].map((tab) => (
             <button
@@ -1364,20 +1475,47 @@ export default function RoomsPage() {
 
       {/* Banner cảnh báo lọc cơ sở */}
       {selectedHouse !== 'ALL' && (
-        <div className="flex items-center justify-between p-3.5 rounded-2xl bg-purple-50 border border-purple-200 text-purple-900 text-xs">
-          <div className="flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-purple-600 shrink-0" />
-            <span>
-              Đang hiển thị đúng <strong>{filteredRooms.length} phòng</strong> thuộc riêng cơ sở:{' '}
-              <strong className="underline">{currentHouseInfo?.name}</strong> ({currentHouseInfo?.code}).
-            </span>
+        <div className={`flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-2xl text-xs gap-3 ${
+          isCurrentHouseLocked
+            ? 'bg-rose-50 border-2 border-rose-300 text-rose-950 shadow-xs'
+            : 'bg-purple-50 border border-purple-200 text-purple-900'
+        }`}>
+          <div className="flex items-start sm:items-center gap-2.5">
+            {isCurrentHouseLocked ? (
+              <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                <Lock className="w-4 h-4 text-rose-600" />
+              </div>
+            ) : (
+              <Building2 className="w-4 h-4 text-purple-600 shrink-0" />
+            )}
+            <div>
+              {isCurrentHouseLocked ? (
+                <>
+                  <div className="font-extrabold text-rose-900">
+                    ⚠️ Cơ sở "{currentHouseInfo?.name}" ({currentHouseInfo?.code}) đang ở trạng thái TẠM KHÓA HOẠT ĐỘNG
+                  </div>
+                  <div className="text-[11px] text-rose-700 mt-0.5">
+                    Cơ sở đang tạm ngừng đón khách mới để đại tu cơ sở vật chất / kiểm tra PCCC. Đang hiển thị {filteredRooms.length} phòng của cơ sở này.
+                  </div>
+                </>
+              ) : (
+                <span>
+                  Đang hiển thị đúng <strong>{filteredRooms.length} phòng</strong> thuộc riêng cơ sở:{' '}
+                  <strong className="underline">{currentHouseInfo?.name}</strong> ({currentHouseInfo?.code}).
+                </span>
+              )}
+            </div>
           </div>
-          <button
-            onClick={() => setSelectedHouse('ALL')}
-            className="text-purple-700 hover:text-purple-900 font-bold underline ml-2 whitespace-nowrap cursor-pointer"
-          >
-            Hiển thị cả 36 phòng
-          </button>
+          {dynamicHousesList.length > 1 && (
+            <button
+              onClick={() => setSelectedHouse('ALL')}
+              className={`font-bold underline ml-2 whitespace-nowrap cursor-pointer text-right sm:text-left ${
+                isCurrentHouseLocked ? 'text-rose-700 hover:text-rose-900' : 'text-purple-700 hover:text-purple-900'
+              }`}
+            >
+              Xem tất cả ({rooms.length} phòng)
+            </button>
+          )}
         </div>
       )}
 
@@ -1478,6 +1616,11 @@ export default function RoomsPage() {
                           Bảo trì
                         </span>
                       )}
+                      {room.status === 'LOCKED' && (
+                        <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-rose-600/95 text-white backdrop-blur-md shadow-md border border-white/20 flex items-center gap-1 font-bold">
+                          🔒 Tạm khóa
+                        </span>
+                      )}
                       {room.status === 'CLEANING' && (
                         <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-orange-500/90 text-white backdrop-blur-md shadow-md border border-white/20">
                           🧹 Chờ dọn dẹp
@@ -1510,8 +1653,8 @@ export default function RoomsPage() {
                         <span className="px-1.5 py-0.5 rounded-md bg-purple-100 text-[10px] font-black text-purple-800">
                           {room.houseCode}
                         </span>
-                        <p className="text-xs text-slate-500 font-semibold truncate max-w-[140px]" title={room.house}>
-                          {room.house}
+                        <p className="text-xs text-slate-500 font-semibold truncate max-w-[140px]" title={getHouseName(room.houseCode, room.house)}>
+                          {getHouseName(room.houseCode, room.house)}
                         </p>
                       </div>
                       <p className="text-[11px] text-slate-400 font-medium mt-0.5">{room.floor}</p>
@@ -1536,6 +1679,11 @@ export default function RoomsPage() {
                       {room.status === 'MAINTENANCE' && (
                         <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs">
                           Bảo trì
+                        </span>
+                      )}
+                      {room.status === 'LOCKED' && (
+                        <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-rose-50 text-rose-700 border border-rose-200 shadow-2xs font-bold">
+                          🔒 Tạm khóa
                         </span>
                       )}
                       {room.status === 'CLEANING' && (
@@ -1597,15 +1745,41 @@ export default function RoomsPage() {
                       <select
                         value={room.status}
                         onChange={(e) => handleUpdateStatus(room.id, e.target.value)}
-                        className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg px-2 py-1 focus:outline-none focus:bg-white focus:border-purple-500 transition-colors cursor-pointer"
+                        className={`border text-xs font-semibold rounded-lg px-2 py-1 focus:outline-none transition-colors cursor-pointer ${
+                          room.status === 'LOCKED'
+                            ? 'bg-rose-50 border-rose-300 text-rose-700 font-bold focus:bg-white focus:border-rose-500'
+                            : 'bg-slate-50 border-slate-200 text-slate-700 focus:bg-white focus:border-purple-500'
+                        }`}
                       >
-                        <option value="AVAILABLE">Còn trống</option>
-                        <option value="OCCUPIED">Đang thuê</option>
-                        <option value="MAINTENANCE">Bảo trì</option>
+                        <option value="AVAILABLE">🟢 Còn trống</option>
+                        <option value="OCCUPIED">🔵 Đang thuê</option>
+                        <option value="MAINTENANCE">🟠 Bảo trì</option>
+                        <option value="LOCKED">🔒 Tạm khóa phòng</option>
                         <option value="CLEANING">🧹 Chờ dọn dẹp</option>
                       </select>
 
                       <div className="flex items-center gap-1.5">
+                        {room.status === 'LOCKED' ? (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateStatus(room.id, 'AVAILABLE')}
+                            className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[11px] font-bold rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1"
+                            title="Mở khóa phòng này để sẵn sàng đón khách thuê"
+                          >
+                            <Unlock className="w-3 h-3 text-emerald-600" />
+                            <span>Mở khóa</span>
+                          </button>
+                        ) : room.status === 'AVAILABLE' ? (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateStatus(room.id, 'LOCKED')}
+                            className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1"
+                            title="Tạm khóa phòng này (ngừng cho thuê tạm thời)"
+                          >
+                            <Lock className="w-3 h-3 text-rose-600" />
+                            <span>Tạm khóa</span>
+                          </button>
+                        ) : null}
                         {room.status === 'CLEANING' && (
                           <button
                             type="button"
@@ -1705,8 +1879,18 @@ export default function RoomsPage() {
               placeholder="Ví dụ: P.204"
               value={newRoom.number}
               onChange={(e) => setNewRoom({ ...newRoom, number: e.target.value })}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm text-slate-900 focus:outline-none focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
+              className={`w-full border rounded-xl px-3.5 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 ${
+                isNewRoomDuplicate
+                  ? 'bg-rose-50 border-rose-400 text-rose-900 focus:bg-white focus:border-rose-500 focus:ring-rose-500/20'
+                  : 'bg-slate-50 border-slate-200 focus:bg-white focus:border-purple-500 focus:ring-purple-500/20'
+              }`}
             />
+            {isNewRoomDuplicate && (
+              <div className="mt-1.5 p-2 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-1.5 text-xs text-rose-700 font-semibold">
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                <span>Phòng "{newRoom.number}" đã tồn tại trong cơ sở này! Các phòng trong 1 cơ sở phải khác tên nhau.</span>
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">Cơ sở thuộc chuỗi</label>
@@ -1846,9 +2030,9 @@ export default function RoomsPage() {
             </button>
             <button
               type="submit"
-              disabled={visibleHousesForUser.length === 0}
+              disabled={visibleHousesForUser.length === 0 || isNewRoomDuplicate}
               className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all ${
-                visibleHousesForUser.length === 0
+                visibleHousesForUser.length === 0 || isNewRoomDuplicate
                   ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                   : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-md shadow-purple-600/25 btn-press cursor-pointer'
               }`}
@@ -1876,7 +2060,7 @@ export default function RoomsPage() {
                     </span>
                   </h3>
                   <p className="text-xs text-slate-500 font-medium mt-0.5">
-                    {selectedRoomDetails.house} • {selectedRoomDetails.floor}
+                    {getHouseName(selectedRoomDetails.houseCode, selectedRoomDetails.house)} • {selectedRoomDetails.floor}
                   </p>
                 </div>
               </div>
@@ -1939,7 +2123,7 @@ export default function RoomsPage() {
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-black/20" />
                   <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between text-white">
                     <div>
-                      <div className="text-xs text-slate-200 font-medium">{selectedRoomDetails.house}</div>
+                      <div className="text-xs text-slate-200 font-medium">{getHouseName(selectedRoomDetails.houseCode, selectedRoomDetails.house)}</div>
                       <div className="text-lg font-black">{selectedRoomDetails.number} • {selectedRoomDetails.area} m²</div>
                     </div>
                     <span className="px-3 py-1 rounded-full text-xs font-bold bg-white/20 backdrop-blur-md border border-white/30">
@@ -1986,6 +2170,11 @@ export default function RoomsPage() {
                     {selectedRoomDetails.status === 'MAINTENANCE' && (
                       <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
                         🟠 Đang sửa chữa / Bảo trì
+                      </span>
+                    )}
+                    {selectedRoomDetails.status === 'LOCKED' && (
+                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                        🔒 Đang tạm khóa (Ngừng đón khách)
                       </span>
                     )}
                   </div>
@@ -2333,56 +2522,65 @@ export default function RoomsPage() {
                         </div>
                       )}
 
-                      <div className="flex flex-wrap items-center gap-2">
-                        {myRentedRoom ? (
-                          selectedRoomDetails.status === 'HOLDING' || selectedRoomDetails.status === 'RESERVED' ? (
-                            <button
-                              disabled
-                              className="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed flex items-center gap-1.5 shadow-none"
-                              title="Phòng đang được giữ chỗ bởi khách khác, không thể chuyển sang phòng này"
-                            >
-                              <span>🔒 Phòng Đang Được Giữ Chỗ (Không Thể Đổi Sang)</span>
-                            </button>
+                      {isSelectedRoomHouseLocked ? (
+                        <div className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 text-xs flex items-center gap-2">
+                          <Lock className="w-4 h-4 text-rose-600 shrink-0" />
+                          <span>
+                            <strong>Cơ sở đang tạm khóa hoạt động:</strong> Cơ sở "{selectedRoomHouse?.name || selectedRoomDetails.houseCode}" đang tạm dừng đón khách để bảo trì. Tạm thời không thể tiếp nhận đăng ký thuê mới cho phòng này.
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-2">
+                          {myRentedRoom ? (
+                            selectedRoomDetails.status === 'HOLDING' || selectedRoomDetails.status === 'RESERVED' ? (
+                              <button
+                                disabled
+                                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed flex items-center gap-1.5 shadow-none"
+                                title="Phòng đang được giữ chỗ bởi khách khác, không thể chuyển sang phòng này"
+                              >
+                                <span>🔒 Phòng Đang Được Giữ Chỗ (Không Thể Đổi Sang)</span>
+                              </button>
+                            ) : (
+                              <button
+                                disabled={isCurrentlyHolding}
+                                onClick={() => {
+                                  if (isCurrentlyHolding) return;
+                                  setRequestModal({ room: selectedRoomDetails, type: 'TRANSFER' });
+                                  setTransferFromRoom(myRentedRoom);
+                                  setRequestSuccess(false);
+                                  setRequestNote(`Em có nguyện vọng muốn chuyển từ phòng ${myRentedRoom} sang phòng ${selectedRoomDetails.number}`);
+                                }}
+                                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md ${
+                                  isCurrentlyHolding
+                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-50 shadow-none border border-slate-300 pointer-events-none'
+                                    : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-purple-600/20 cursor-pointer btn-press'
+                                }`}
+                                title={isCurrentlyHolding ? `Nút đã bị mờ do bạn đang giữ chỗ phòng ${heldRoomNumber}. Hãy hủy giữ chỗ để kích hoạt lại nút.` : ''}
+                              >
+                                <span>🔄 Chuyển Sang Phòng Này (Tự Động Trả Phòng Cũ ${myRentedRoom})</span>
+                              </button>
+                            )
                           ) : (
                             <button
                               disabled={isCurrentlyHolding}
                               onClick={() => {
                                 if (isCurrentlyHolding) return;
-                                setRequestModal({ room: selectedRoomDetails, type: 'TRANSFER' });
-                                setTransferFromRoom(myRentedRoom);
+                                setRequestModal({ room: selectedRoomDetails, type: 'RENT' });
                                 setRequestSuccess(false);
-                                setRequestNote(`Em có nguyện vọng muốn chuyển từ phòng ${myRentedRoom} sang phòng ${selectedRoomDetails.number}`);
+                                setRequestNote(`Em có nguyện vọng đăng ký thuê phòng ${selectedRoomDetails.number}`);
                               }}
-                              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md ${
+                              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md ${
                                 isCurrentlyHolding
                                   ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-50 shadow-none border border-slate-300 pointer-events-none'
                                   : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-purple-600/20 cursor-pointer btn-press'
                               }`}
                               title={isCurrentlyHolding ? `Nút đã bị mờ do bạn đang giữ chỗ phòng ${heldRoomNumber}. Hãy hủy giữ chỗ để kích hoạt lại nút.` : ''}
                             >
-                              <span>🔄 Chuyển Sang Phòng Này (Tự Động Trả Phòng Cũ ${myRentedRoom})</span>
+                              <span>🔑 Đăng Ký Thuê Phòng Này</span>
                             </button>
-                          )
-                        ) : (
-                          <button
-                            disabled={isCurrentlyHolding}
-                            onClick={() => {
-                              if (isCurrentlyHolding) return;
-                              setRequestModal({ room: selectedRoomDetails, type: 'RENT' });
-                              setRequestSuccess(false);
-                              setRequestNote(`Em có nguyện vọng đăng ký thuê phòng ${selectedRoomDetails.number}`);
-                            }}
-                            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md ${
-                              isCurrentlyHolding
-                                ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-50 shadow-none border border-slate-300 pointer-events-none'
-                                : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-purple-600/20 cursor-pointer btn-press'
-                            }`}
-                            title={isCurrentlyHolding ? `Nút đã bị mờ do bạn đang giữ chỗ phòng ${heldRoomNumber}. Hãy hủy giữ chỗ để kích hoạt lại nút.` : ''}
-                          >
-                            <span>🔑 Đăng Ký Thuê Phòng Này</span>
-                          </button>
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ) : selectedRoomDetails.status === 'OCCUPIED' && selectedRoomDetails.occupants < selectedRoomDetails.maxOccupants ? (
                     <div className="space-y-2">
@@ -2438,6 +2636,8 @@ export default function RoomsPage() {
                     <div className="text-xs text-slate-500 font-medium italic">
                       {selectedRoomDetails.status === 'MAINTENANCE'
                         ? '🟠 Phòng đang bảo trì, tạm thời không nhận đăng ký.'
+                        : selectedRoomDetails.status === 'LOCKED'
+                        ? '🔒 Phòng đang tạm khóa, hiện không tiếp nhận đăng ký thuê.'
                         : `🔒 Phòng này đã đủ số lượng người ở (${selectedRoomDetails.occupants}/${selectedRoomDetails.maxOccupants} người).`}
                     </div>
                   )}
@@ -2464,6 +2664,7 @@ export default function RoomsPage() {
                       <option value="AVAILABLE">Còn trống</option>
                       <option value="OCCUPIED">Đang thuê</option>
                       <option value="MAINTENANCE">Bảo trì</option>
+                      <option value="LOCKED">🔒 Tạm khóa phòng</option>
                       <option value="CLEANING">🧹 Chờ dọn dẹp</option>
                     </select>
                   </div>
@@ -2623,7 +2824,7 @@ export default function RoomsPage() {
                       </span>
                     </div>
                     <div className="text-[11px] text-slate-500 mt-0.5">
-                      {requestModal.room.house} • {requestModal.room.floor}
+                      {getHouseName(requestModal.room.houseCode, requestModal.room.house)} • {requestModal.room.floor}
                     </div>
                   </div>
                   <div className="text-right">
@@ -2829,13 +3030,13 @@ export default function RoomsPage() {
                 { 
                   id: 'ALL', 
                   label: 'Tất cả đơn', 
-                  count: roomRequests.filter(r => !staffHouseCode || (r.houseCode || (rooms || []).find(rm => rm.number === (r.targetRoom || r.currentRoom))?.houseCode || 'CS-01') === staffHouseCode).length 
+                  count: roomRequests.filter(r => isAllowedReqForStaff(r)).length 
                 },
                 {
                   id: 'PENDING',
                   label: 'Cần BQL duyệt',
                   count: roomRequests.filter(
-                    (r) => (!staffHouseCode || (r.houseCode || (rooms || []).find(rm => rm.number === (r.targetRoom || r.currentRoom))?.houseCode || 'CS-01') === staffHouseCode) &&
+                    (r) => isAllowedReqForStaff(r) &&
                       (r.status === 'PENDING' || r.status === 'ROOMMATES_APPROVED' || r.status === 'HOLDING')
                   ).length
                 },
@@ -2843,7 +3044,7 @@ export default function RoomsPage() {
                   id: 'WAITING',
                   label: 'Cư dân đang biểu quyết',
                   count: roomRequests.filter((r) => 
-                    (!staffHouseCode || (r.houseCode || (rooms || []).find(rm => rm.number === (r.targetRoom || r.currentRoom))?.houseCode || 'CS-01') === staffHouseCode) &&
+                    isAllowedReqForStaff(r) &&
                     r.status === 'WAITING_ROOMMATES'
                   ).length
                 },
@@ -2851,7 +3052,7 @@ export default function RoomsPage() {
                   id: 'APPROVED',
                   label: 'Đã duyệt',
                   count: roomRequests.filter((r) => 
-                    (!staffHouseCode || (r.houseCode || (rooms || []).find(rm => rm.number === (r.targetRoom || r.currentRoom))?.houseCode || 'CS-01') === staffHouseCode) &&
+                    isAllowedReqForStaff(r) &&
                     r.status === 'APPROVED'
                   ).length
                 },
@@ -2859,19 +3060,19 @@ export default function RoomsPage() {
                   id: 'REJECTED',
                   label: 'Đã từ chối',
                   count: roomRequests.filter(
-                    (r) => (!staffHouseCode || (r.houseCode || (rooms || []).find(rm => rm.number === (r.targetRoom || r.currentRoom))?.houseCode || 'CS-01') === staffHouseCode) &&
+                    (r) => isAllowedReqForStaff(r) &&
                       (r.status === 'REJECTED' || r.status === 'REJECTED_BY_ROOMMATES')
                   ).length
                 },
                 {
                   id: 'ROOMMATES_V2',
                   label: '🤝 Ở ghép CCCD (UC-S02B)',
-                  count: roommateRequestsV2.filter(r => !staffHouseCode || (r.houseCode || 'CS-01') === staffHouseCode).length
+                  count: roommateRequestsV2.filter(r => user?.role !== 'STAFF' || (staffAllowedCodes.length > 0 && staffAllowedCodes.includes(r.houseCode || 'CS-01'))).length
                 },
                 {
                   id: 'SETTLEMENTS',
                   label: '💰 Trả phòng & Hoàn cọc (UC-S07)',
-                  count: moveOutSettlements.filter(s => !staffHouseCode || (s.houseCode || 'CS-01') === staffHouseCode).length
+                  count: moveOutSettlements.filter(s => user?.role !== 'STAFF' || (staffAllowedCodes.length > 0 && staffAllowedCodes.includes(s.houseCode || 'CS-01'))).length
                 }
               ].map((tab) => (
                 <button
@@ -2989,10 +3190,7 @@ export default function RoomsPage() {
               )
             ) : (!isTenant
               ? roomRequests.filter((r) => {
-                  if (staffHouseCode) {
-                    const reqHouse = r.houseCode || (rooms || []).find((rm) => rm.number === (r.targetRoom || r.currentRoom))?.houseCode || 'CS-01';
-                    if (reqHouse !== staffHouseCode) return false;
-                  }
+                  if (!isAllowedReqForStaff(r)) return false;
                   if (requestFilter === 'ALL') return true;
                   if (requestFilter === 'PENDING')
                     return r.status === 'PENDING' || r.status === 'ROOMMATES_APPROVED';
@@ -3012,10 +3210,7 @@ export default function RoomsPage() {
             ) : (
               (!isTenant
                 ? roomRequests.filter((r) => {
-                    if (staffHouseCode) {
-                      const reqHouse = r.houseCode || (rooms || []).find((rm) => rm.number === (r.targetRoom || r.currentRoom))?.houseCode || 'CS-01';
-                      if (reqHouse !== staffHouseCode) return false;
-                    }
+                    if (!isAllowedReqForStaff(r)) return false;
                     if (requestFilter === 'ALL') return true;
                     if (requestFilter === 'PENDING')
                       return (
@@ -3855,7 +4050,7 @@ export default function RoomsPage() {
                     disabled={!isVacant}
                     className={!isVacant ? 'text-slate-400 italic bg-slate-100' : 'font-bold text-slate-800'}
                   >
-                    [{r.houseCode}] {r.number} • {r.floor} ({r.house}) - Hiện tại: {r.price.toLocaleString('vi-VN')} đ/th {isVacant ? '🟢 [Còn trống - Được sửa]' : '🔴 [ĐANG CÓ NGƯỜI - KHÓA SỬA]'}
+                    [{r.houseCode}] {r.number} • {r.floor} ({getHouseName(r.houseCode, r.house)}) - Hiện tại: {r.price.toLocaleString('vi-VN')} đ/th {isVacant ? '🟢 [Còn trống - Được sửa]' : '🔴 [ĐANG CÓ NGƯỜI - KHÓA SỬA]'}
                   </option>
                 );
               })}
@@ -3997,8 +4192,18 @@ export default function RoomsPage() {
                     value={editRoomForm.number}
                     onChange={(e) => setEditRoomForm({ ...editRoomForm, number: e.target.value })}
                     placeholder="Ví dụ: P.101"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs focus:outline-none focus:bg-white focus:border-purple-500 font-mono"
+                    className={`w-full px-3 py-2 border rounded-xl font-bold text-xs focus:outline-none font-mono ${
+                      isEditRoomDuplicate
+                        ? 'bg-rose-50 border-rose-400 text-rose-900 focus:bg-white focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20'
+                        : 'bg-slate-50 border-slate-200 text-slate-800 focus:bg-white focus:border-purple-500'
+                    }`}
                   />
+                  {isEditRoomDuplicate && (
+                    <div className="mt-1.5 p-2 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-1.5 text-xs text-rose-700 font-semibold">
+                      <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                      <span>Phòng "{editRoomForm.number}" đã tồn tại trong cơ sở này! Các phòng trong 1 cơ sở phải khác tên nhau.</span>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Thuộc cơ sở *</label>
@@ -4097,6 +4302,7 @@ export default function RoomsPage() {
                   <option value="AVAILABLE">🟢 Còn trống (Sẵn sàng đón khách)</option>
                   <option value="OCCUPIED">🔵 Đang có khách thuê</option>
                   <option value="MAINTENANCE">🟠 Đang sửa chữa / Bảo trì</option>
+                  <option value="LOCKED">🔒 Tạm khóa phòng (Không cho thuê)</option>
                   <option value="CLEANING">🧹 Chờ dọn dẹp vệ sinh</option>
                 </select>
               </div>
@@ -4210,7 +4416,12 @@ export default function RoomsPage() {
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold rounded-xl shadow-md shadow-purple-600/25 cursor-pointer btn-press"
+                    disabled={isEditRoomDuplicate}
+                    className={`px-5 py-2 font-bold rounded-xl shadow-md transition-all ${
+                      isEditRoomDuplicate
+                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                        : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-purple-600/25 cursor-pointer btn-press'
+                    }`}
                   >
                     Lưu Thay Đổi
                   </button>

@@ -1,0 +1,274 @@
+- generic [ref=f1e3]:
+  - complementary [ref=f1e4]:
+    - generic [ref=f1e5]:
+      - generic [ref=f1e13]:
+        - generic [ref=f1e14]: TRỌ VIỆT SAAS
+        - generic [ref=f1e15]: Quản lý vận hành tập trung
+      - navigation [ref=f1e16]:
+        - generic [ref=f1e17]: PHÂN HỆ QUẢN TRỊ HỆ THỐNG
+        - link "Tổng Quan Nền Tảng" [ref=f1e18] [cursor=pointer]:
+          - /url: /
+        - link "Quản Trị Chủ Trọ & Gói" [ref=f1e25] [cursor=pointer]:
+          - /url: /admin/landlords
+        - link "Quản Trị & Duyệt Cơ Sở" [ref=f1e32] [cursor=pointer]:
+          - /url: /admin/houses
+        - link "Hóa Đơn Cước Gói SaaS" [ref=f1e38] [cursor=pointer]:
+          - /url: /admin/saas-invoices
+        - link "Cấu Hình Tích Hợp" [ref=f1e43] [cursor=pointer]:
+          - /url: /admin/integrations
+        - link "Giám Sát Hệ Thống & Logs" [ref=f1e49] [cursor=pointer]:
+          - /url: /admin/system
+        - link "Báo Cáo Toàn Sàn" [ref=f1e54] [cursor=pointer]:
+          - /url: /reports
+      - generic [ref=f1e59]:
+        - generic [ref=f1e60]: Hệ thống ổn định
+        - generic [ref=f1e62]: 10 Microservices · 99,9% trực tuyến
+  - generic [ref=f1e63]:
+    - banner [ref=f1e64]:
+      - generic [ref=f1e65]:
+        - generic [ref=f1e67]: Cổng Quản Trị Nền Tảng SaaS
+        - generic [ref=f1e68]: • Giám Sát Đối Tác Toàn Sàn
+      - generic [ref=f1e69]:
+        - button "🧪 Reset Về 0 Test" [ref=f1e70] [cursor=pointer]
+        - button "🔄 Khôi Phục Gốc" [ref=f1e72] [cursor=pointer]
+        - combobox [ref=f1e75] [cursor=pointer]:
+          - option "👑 Admin" [selected]
+          - option "👔 Staff 1 (Cơ Sở 1)"
+          - option "👔 Staff 2 (Cơ Sở 2)"
+          - option "👤 Khách 1 (An)"
+          - option "👤 Khách 2 (Cường)"
+          - option "🔍 Khách Mới"
+        - button "Xem thông báo hệ thống" [ref=f1e77]
+        - generic [ref=f1e81]:
+          - generic [ref=f1e82]: Q
+          - generic [ref=f1e83]:
+            - generic [ref=f1e84]:
+              - generic [ref=f1e85]: Quản Trị Viên Chuỗi (Admin)
+              - generic [ref=f1e86]: ADMIN
+            - generic [ref=f1e87]: admin@rental.vn
+          - button "Đăng xuất" [ref=f1e88]
+    - main [ref=f1e92]:
+      - generic [ref=f1e94]:
+        - generic [ref=f1e96]:
+          - generic [ref=f1e97]:
+            - generic [ref=f1e98]: Giám Sát Hạ Tầng & APM Microservices • UC-A03
+            - heading "Giám Sát 10 Vi Dịch Vụ & Nhật Ký Kiểm Toán (Audit Logs)" [level=1] [ref=f1e101]
+            - paragraph [ref=f1e102]: Luồng giám sát thời gian thực kết nối Spring Boot Actuator, kiểm soát tải CPU, Heap Memory JVM, hàng đợi RabbitMQ Broker và truy vết an ninh nền tảng.
+          - generic [ref=f1e103]:
+            - button "🟢 Đang Live" [ref=f1e104] [cursor=pointer]
+            - button "⚡ Thử Tải Đột Biến" [ref=f1e107] [cursor=pointer]:
+              - generic [ref=f1e108]: ⚡
+              - generic [ref=f1e109]: Thử Tải Đột Biến
+            - button "Làm Mới" [ref=f1e110] [cursor=pointer]
+            - link "Eureka Portal" [ref=f1e117] [cursor=pointer]:
+              - /url: http://localhost:8761
+        - generic [ref=f1e123]:
+          - generic [ref=f1e124]:
+            - button "📊 APM 10 Microservices & Cụm Server" [ref=f1e125] [cursor=pointer]
+            - button "🛡️ Nhật Ký Kiểm Toán An Ninh 0" [ref=f1e126] [cursor=pointer]:
+              - generic [ref=f1e127]: 🛡️ Nhật Ký Kiểm Toán An Ninh
+              - generic [ref=f1e128]: "0"
+          - generic [ref=f1e129]:
+            - generic [ref=f1e131]: "WebSocket/Actuator Stream:"
+            - generic [ref=f1e132]: 01:24:19
+        - generic [ref=f1e133]:
+          - generic [ref=f1e134]:
+            - generic [ref=f1e135]:
+              - generic [ref=f1e136]: DỊCH VỤ SẴN SÀNG
+              - generic [ref=f1e141]: 10/10
+              - generic [ref=f1e142]: "100% UP • Eureka Heartbeat: 30s"
+            - generic [ref=f1e143]:
+              - generic [ref=f1e144]: RABBITMQ EVENT BUS
+              - generic [ref=f1e152]: 1.443 msgs/s
+              - generic [ref=f1e153]: "Dead Letter: 0 msg lỗi • 0 Backlog"
+            - generic [ref=f1e154]:
+              - generic [ref=f1e155]: ĐỘ TRỄ API GATEWAY
+              - generic [ref=f1e159]: 15.7 ms
+              - generic [ref=f1e160]: Gateway proxy routing latency
+            - generic [ref=f1e161]:
+              - generic [ref=f1e162]: TỔNG HEAP RAM / CPU CLUSTER
+              - generic [ref=f1e167]: 2.4% TB Tải
+              - generic [ref=f1e168]: "RAM: 3.565 / 10.240 MB (34.8%)"
+          - generic [ref=f1e169]:
+            - generic [ref=f1e170]:
+              - generic [ref=f1e171]:
+                - generic [ref=f1e177]:
+                  - generic [ref=f1e178]: Auth Service (JWT, RBAC & KYC)
+                  - generic [ref=f1e179]: Port :8081 • 30 threads
+                - generic [ref=f1e180]: UP
+              - generic [ref=f1e183]:
+                - generic [ref=f1e185]:
+                  - generic [ref=f1e186]:
+                    - generic [ref=f1e187]: "Heap Memory (JVM):"
+                    - generic [ref=f1e188]: GC Clean
+                  - generic [ref=f1e189]: 792MB / 1024MB (77%)
+                - generic [ref=f1e193]:
+                  - generic [ref=f1e194]: "CPU Usage:"
+                  - generic [ref=f1e195]: 1.5%
+                - generic [ref=f1e198]:
+                  - generic [ref=f1e199]:
+                    - text: "Lưu lượng:"
+                    - strong [ref=f1e200]: 90 req/s
+                  - generic [ref=f1e201]: Actuator 200 OK
+            - generic [ref=f1e202]:
+              - generic [ref=f1e203]:
+                - generic [ref=f1e209]:
+                  - generic [ref=f1e210]: Room & Boarding House Service
+                  - generic [ref=f1e211]: Port :8082 • 30 threads
+                - generic [ref=f1e212]: UP
+              - generic [ref=f1e215]:
+                - generic [ref=f1e217]:
+                  - generic [ref=f1e218]: "Heap Memory (JVM):"
+                  - generic [ref=f1e220]: 748MB / 1024MB (73%)
+                - generic [ref=f1e224]:
+                  - generic [ref=f1e225]: "CPU Usage:"
+                  - generic [ref=f1e226]: 1.9%
+                - generic [ref=f1e229]:
+                  - generic [ref=f1e230]:
+                    - text: "Lưu lượng:"
+                    - strong [ref=f1e231]: 43 req/s
+                  - generic [ref=f1e232]: Actuator 200 OK
+            - generic [ref=f1e233]:
+              - generic [ref=f1e234]:
+                - generic [ref=f1e240]:
+                  - generic [ref=f1e241]: Tenant Service (Roommates & VNeID)
+                  - generic [ref=f1e242]: Port :8083 • 38 threads
+                - generic [ref=f1e243]: UP
+              - generic [ref=f1e246]:
+                - generic [ref=f1e248]:
+                  - generic [ref=f1e249]: "Heap Memory (JVM):"
+                  - generic [ref=f1e251]: 699MB / 1024MB (68%)
+                - generic [ref=f1e255]:
+                  - generic [ref=f1e256]: "CPU Usage:"
+                  - generic [ref=f1e257]: 1.9%
+                - generic [ref=f1e260]:
+                  - generic [ref=f1e261]:
+                    - text: "Lưu lượng:"
+                    - strong [ref=f1e262]: 40 req/s
+                  - generic [ref=f1e263]: Actuator 200 OK
+            - generic [ref=f1e264]:
+              - generic [ref=f1e265]:
+                - generic [ref=f1e271]:
+                  - generic [ref=f1e272]: Contract Service (E-Signature)
+                  - generic [ref=f1e273]: Port :8084 • 25 threads
+                - generic [ref=f1e274]: UP
+              - generic [ref=f1e277]:
+                - generic [ref=f1e279]:
+                  - generic [ref=f1e280]: "Heap Memory (JVM):"
+                  - generic [ref=f1e282]: 678MB / 1024MB (66%)
+                - generic [ref=f1e286]:
+                  - generic [ref=f1e287]: "CPU Usage:"
+                  - generic [ref=f1e288]: 1.6%
+                - generic [ref=f1e291]:
+                  - generic [ref=f1e292]:
+                    - text: "Lưu lượng:"
+                    - strong [ref=f1e293]: 23 req/s
+                  - generic [ref=f1e294]: Actuator 200 OK
+            - generic [ref=f1e295]:
+              - generic [ref=f1e296]:
+                - generic [ref=f1e302]:
+                  - generic [ref=f1e303]: Meter Reading Service (Chỉ Số Điện Nước)
+                  - generic [ref=f1e304]: Port :8085 • 32 threads
+                - generic [ref=f1e305]: UP
+              - generic [ref=f1e308]:
+                - generic [ref=f1e310]:
+                  - generic [ref=f1e311]: "Heap Memory (JVM):"
+                  - generic [ref=f1e313]: 771MB / 1024MB (75%)
+                - generic [ref=f1e317]:
+                  - generic [ref=f1e318]: "CPU Usage:"
+                  - generic [ref=f1e319]: 1.8%
+                - generic [ref=f1e322]:
+                  - generic [ref=f1e323]:
+                    - text: "Lưu lượng:"
+                    - strong [ref=f1e324]: 48 req/s
+                  - generic [ref=f1e325]: Actuator 200 OK
+            - generic [ref=f1e326]:
+              - generic [ref=f1e327]:
+                - generic [ref=f1e333]:
+                  - generic [ref=f1e334]: Billing & Invoice Service
+                  - generic [ref=f1e335]: Port :8086 • 32 threads
+                - generic [ref=f1e336]: UP
+              - generic [ref=f1e339]:
+                - generic [ref=f1e341]:
+                  - generic [ref=f1e342]: "Heap Memory (JVM):"
+                  - generic [ref=f1e344]: 511MB / 1024MB (50%)
+                - generic [ref=f1e348]:
+                  - generic [ref=f1e349]: "CPU Usage:"
+                  - generic [ref=f1e350]: 2.3%
+                - generic [ref=f1e353]:
+                  - generic [ref=f1e354]:
+                    - text: "Lưu lượng:"
+                    - strong [ref=f1e355]: 51 req/s
+                  - generic [ref=f1e356]: Actuator 200 OK
+            - generic [ref=f1e357]:
+              - generic [ref=f1e358]:
+                - generic [ref=f1e364]:
+                  - generic [ref=f1e365]: Payment Service (SePay/VietQR/VNPay)
+                  - generic [ref=f1e366]: Port :8087 • 35 threads
+                - generic [ref=f1e367]: UP
+              - generic [ref=f1e370]:
+                - generic [ref=f1e372]:
+                  - generic [ref=f1e373]: "Heap Memory (JVM):"
+                  - generic [ref=f1e375]: 660MB / 1024MB (64%)
+                - generic [ref=f1e379]:
+                  - generic [ref=f1e380]: "CPU Usage:"
+                  - generic [ref=f1e381]: 1.9%
+                - generic [ref=f1e384]:
+                  - generic [ref=f1e385]:
+                    - text: "Lưu lượng:"
+                    - strong [ref=f1e386]: 60 req/s
+                  - generic [ref=f1e387]: Actuator 200 OK
+            - generic [ref=f1e388]:
+              - generic [ref=f1e389]:
+                - generic [ref=f1e395]:
+                  - generic [ref=f1e396]: Maintenance & Ticket Service
+                  - generic [ref=f1e397]: Port :8088 • 24 threads
+                - generic [ref=f1e398]: UP
+              - generic [ref=f1e401]:
+                - generic [ref=f1e403]:
+                  - generic [ref=f1e404]: "Heap Memory (JVM):"
+                  - generic [ref=f1e406]: 247MB / 512MB (48%)
+                - generic [ref=f1e410]:
+                  - generic [ref=f1e411]: "CPU Usage:"
+                  - generic [ref=f1e412]: 1.2%
+                - generic [ref=f1e415]:
+                  - generic [ref=f1e416]:
+                    - text: "Lưu lượng:"
+                    - strong [ref=f1e417]: 20 req/s
+                  - generic [ref=f1e418]: Actuator 200 OK
+            - generic [ref=f1e419]:
+              - generic [ref=f1e420]:
+                - generic [ref=f1e426]:
+                  - generic [ref=f1e427]: Report & BI Aggregation Service
+                  - generic [ref=f1e428]: Port :8089 • 34 threads
+                - generic [ref=f1e429]: UP
+              - generic [ref=f1e432]:
+                - generic [ref=f1e434]:
+                  - generic [ref=f1e435]: "Heap Memory (JVM):"
+                  - generic [ref=f1e437]: 478MB / 1024MB (47%)
+                - generic [ref=f1e441]:
+                  - generic [ref=f1e442]: "CPU Usage:"
+                  - generic [ref=f1e443]: 3%
+                - generic [ref=f1e446]:
+                  - generic [ref=f1e447]:
+                    - text: "Lưu lượng:"
+                    - strong [ref=f1e448]: 31 req/s
+                  - generic [ref=f1e449]: Actuator 200 OK
+            - generic [ref=f1e450]:
+              - generic [ref=f1e451]:
+                - generic [ref=f1e457]:
+                  - generic [ref=f1e458]: AI Computer Vision & OCR Service
+                  - generic [ref=f1e459]: Port :8000 • 42 threads
+                - generic [ref=f1e460]: UP
+              - generic [ref=f1e463]:
+                - generic [ref=f1e465]:
+                  - generic [ref=f1e466]: "Heap Memory (JVM):"
+                  - generic [ref=f1e468]: 1402MB / 2048MB (68%)
+                - generic [ref=f1e472]:
+                  - generic [ref=f1e473]: "CPU Usage:"
+                  - generic [ref=f1e474]: 8%
+                - generic [ref=f1e477]:
+                  - generic [ref=f1e478]:
+                    - text: "Lưu lượng:"
+                    - strong [ref=f1e479]: 61 req/s
+                  - generic [ref=f1e480]: Actuator 200 OK

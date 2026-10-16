@@ -250,8 +250,22 @@ export default function MetersPage() {
     return readings.filter((r) => {
       // Scoping theo Staff: Mỗi Staff chỉ chốt số cho cơ sở mình phụ trách
       if (user?.role === 'STAFF') {
-        const staffHouse = user?.houseCode || (isZeroSandbox ? null : (dynamicHouses[0]?.code || 'CS-01'));
-        if (staffHouse && r.houseCode !== staffHouse) {
+        const u = (user?.username || '').toLowerCase();
+        const staffHouseCodes = dynamicHouses.filter((h) => {
+          const created = (h.createdBy || '').toLowerCase();
+          const manager = (h.managerUsername || '').toLowerCase();
+          if (created && created === u) return true;
+          if (manager && manager === u) return true;
+          if (user?.houseCode && h.code === user.houseCode) return true;
+          if (!isZeroSandbox) {
+            if (u === 'staff' && (h.code === 'CS-01' || !h.createdBy)) return true;
+            if (u === 'staff2' && h.code === 'CS-02') return true;
+          }
+          return false;
+        }).map((h) => h.code);
+
+        if (staffHouseCodes.length === 0) return false;
+        if (!staffHouseCodes.includes(r.houseCode)) {
           return false;
         }
       }

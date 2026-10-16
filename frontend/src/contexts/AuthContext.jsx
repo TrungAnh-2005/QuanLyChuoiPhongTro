@@ -15,7 +15,7 @@ const DEMO_USERS = {
   },
   STAFF: {
     username: 'staff',
-    fullName: isZeroSandbox ? 'Lê Thị Thu Ngân (Staff 1)' : 'Lê Thị Thu Ngân (Staff CS1 - Cầu Giấy)',
+    fullName: 'Lê Thị Thu Ngân',
     email: 'staff1@rental.vn',
     phone: '0912.888.666',
     houseCode: isZeroSandbox ? null : 'CS-01',
@@ -25,7 +25,7 @@ const DEMO_USERS = {
   },
   STAFF_1: {
     username: 'staff',
-    fullName: isZeroSandbox ? 'Lê Thị Thu Ngân (Staff 1)' : 'Lê Thị Thu Ngân (Staff CS1 - Cầu Giấy)',
+    fullName: 'Lê Thị Thu Ngân',
     email: 'staff1@rental.vn',
     phone: '0912.888.666',
     houseCode: isZeroSandbox ? null : 'CS-01',
@@ -35,7 +35,7 @@ const DEMO_USERS = {
   },
   STAFF_2: {
     username: 'staff2',
-    fullName: isZeroSandbox ? 'Đàm Văn Táo (Staff 2)' : 'Đàm Văn Táo (Staff CS2 - Bách Khoa)',
+    fullName: 'Đàm Văn Táo',
     email: 'staff2@rental.vn',
     phone: '0988.777.999',
     houseCode: isZeroSandbox ? null : 'CS-02',

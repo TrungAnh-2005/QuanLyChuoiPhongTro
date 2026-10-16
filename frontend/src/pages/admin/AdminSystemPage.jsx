@@ -659,29 +659,41 @@ export default function AdminSystemPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3 px-4 text-slate-500 font-mono whitespace-nowrap">{log.timestamp}</td>
-                    <td className="py-3 px-4 font-mono text-indigo-700 font-bold">{log.ip}</td>
-                    <td className="py-3 px-4">
-                      <span className="font-bold text-slate-800">{log.username}</span>
-                      <span className="block text-[10px] text-slate-400 font-mono">{log.role}</span>
+                {filteredLogs.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" className="py-12 text-center text-slate-400">
+                      <div className="space-y-1.5">
+                        <Activity className="w-8 h-8 text-slate-300 mx-auto" />
+                        <p className="font-bold text-slate-600 text-xs">Chưa có nhật ký kiểm toán nào</p>
+                        <p className="text-[11px] text-slate-400">Hệ thống đã được reset sạch về 0. Toàn bộ thao tác mới sẽ tự động được ghi nhận tại đây theo thời gian thực.</p>
+                      </div>
                     </td>
-                    <td className="py-3 px-4">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
-                        log.action.includes('SPIKE')
-                          ? 'bg-rose-100 text-rose-800 border border-rose-300'
-                          : log.action.includes('REFRESH')
-                          ? 'bg-purple-100 text-purple-800 border border-purple-300'
-                          : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                      }`}>
-                        {log.action}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-slate-700 font-medium">{log.target}</td>
-                    <td className="py-3 px-4 text-slate-600 max-w-xs truncate">{log.details}</td>
                   </tr>
-                ))}
+                ) : (
+                  filteredLogs.map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-4 text-slate-500 font-mono whitespace-nowrap">{log.timestamp}</td>
+                      <td className="py-3 px-4 font-mono text-indigo-700 font-bold">{log.ip}</td>
+                      <td className="py-3 px-4">
+                        <span className="font-bold text-slate-800">{log.username}</span>
+                        <span className="block text-[10px] text-slate-400 font-mono">{log.role}</span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                          log.action.includes('SPIKE')
+                            ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                            : log.action.includes('REFRESH')
+                            ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                            : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                        }`}>
+                          {log.action}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-slate-700 font-medium">{log.target}</td>
+                      <td className="py-3 px-4 text-slate-600 max-w-xs truncate">{log.details}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

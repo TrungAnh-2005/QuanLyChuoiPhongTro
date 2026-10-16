@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Users,
   Plus,
@@ -46,6 +46,62 @@ export default function AdminLandlordsPage() {
     verifyLandlordKyc,
     rooms = []
   } = useData();
+
+  // Load actual boarding houses from system to dynamically compute landlord facilities
+  const [boardingHouses, setBoardingHouses] = useState(() => {
+    try {
+      const saved = localStorage.getItem('rental_boarding_houses');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
+
+  useEffect(() => {
+    const handleSync = () => {
+      try {
+        const saved = localStorage.getItem('rental_boarding_houses');
+        if (saved) setBoardingHouses(JSON.parse(saved));
+      } catch {}
+    };
+    handleSync();
+    window.addEventListener('storage', handleSync);
+    return () => window.removeEventListener('storage', handleSync);
+  }, []);
+
+  // Compute live facilities & rooms for each landlord dynamically
+  const getLandlordStats = (landlord) => {
+    const myHouses = (boardingHouses || []).filter((h) => {
+      const u = (h.managerUsername || h.createdBy || '').toLowerCase();
+      const lUser = (landlord.username || '').toLowerCase();
+      if (u === lUser) return true;
+      if (
+        h.manager &&
+        landlord.fullName &&
+        (h.manager.toLowerCase().includes(landlord.fullName.toLowerCase()) ||
+          landlord.fullName.toLowerCase().includes(h.manager.toLowerCase()))
+      ) {
+        return true;
+      }
+      if (
+        h.managerPhone &&
+        landlord.phone &&
+        h.managerPhone.replace(/\D/g, '') === landlord.phone.replace(/\D/g, '')
+      ) {
+        return true;
+      }
+      return false;
+    });
+
+    const houseCount = myHouses.length > 0 ? myHouses.length : (landlord.housesCount ?? 0);
+    const houseCodes = myHouses.map((h) => h.code);
+    const myRealRooms = (rooms || []).filter((r) => houseCodes.includes(r.houseCode));
+    const roomCount =
+      myRealRooms.length > 0
+        ? myRealRooms.length
+        : myHouses.reduce((sum, h) => sum + (Number(h.totalRooms) || 0), 0) || (landlord.roomsCount ?? 0);
+
+    return { myHouses, houseCount, roomCount };
+  };
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPackage, setFilterPackage] = useState('ALL');
@@ -169,9 +225,16 @@ export default function AdminLandlordsPage() {
 
   const activeCount = landlords.filter((l) => l.status === 'ACTIVE').length;
   const lockedCount = landlords.filter((l) => l.status === 'LOCKED').length;
-  const totalFacilities = isZeroSandbox ? 0 : landlords.reduce((acc, l) => acc + (l.housesCount ?? 1), 0);
-  const totalRoomsCount = isZeroSandbox ? 0 : rooms.length;
+  const totalFacilities = boardingHouses.length > 0
+    ? boardingHouses.length
+    : landlords.reduce((acc, l) => acc + getLandlordStats(l).houseCount, 0);
+  const totalRoomsCount = (rooms && rooms.length > 0)
+    ? rooms.length
+    : boardingHouses.reduce((acc, h) => acc + (Number(h.totalRooms) || 0), 0);
   const pendingKycCount = landlordProfiles.filter((p) => p.kycStatus === 'PENDING').length;
+  const hasActivePackages = landlords.some(
+    (l) => l.packageCode && l.packageCode !== 'NONE' && l.packageCode !== 'TRIAL'
+  );
 
   return (
     <div className="space-y-6 page-enter">
@@ -280,12 +343,24 @@ export default function AdminLandlordsPage() {
             </div>
           </div>
           <div className="flex items-baseline justify-between">
-            <div className="text-2xl font-black text-slate-900 tracking-tight">{isZeroSandbox ? "CHƯA ĐĂNG KÝ GÓI" : "PRO & ENTERPRISE"}</div>
-            <span className={`text-xs font-bold px-2 py-0.5 rounded-lg border ${isZeroSandbox ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-blue-50 text-blue-600 border-blue-200"}`}>{isZeroSandbox ? "Chưa kích hoạt" : "Tự động gia hạn"}</span>
+            <div className="text-2xl font-black text-slate-900 tracking-tight">
+              {hasActivePackages || totalFacilities > 0 ? "PRO & ENTERPRISE" : "CHƯA ĐĂNG KÝ GÓI"}
+            </div>
+            <span
+              className={`text-xs font-bold px-2 py-0.5 rounded-lg border ${
+                hasActivePackages || totalFacilities > 0
+                  ? "bg-blue-50 text-blue-600 border-blue-200"
+                  : "bg-amber-50 text-amber-700 border-amber-200"
+              }`}
+            >
+              {hasActivePackages || totalFacilities > 0 ? "Tự động gia hạn" : "Chưa kích hoạt"}
+            </span>
           </div>
           <div className="text-xs text-slate-400 pt-1 border-t border-slate-100 flex items-center justify-between">
             <span>Hạn mức mở rộng:</span>
-            <span className="text-slate-700 font-semibold">{isZeroSandbox ? "0 cơ sở" : "Không giới hạn"}</span>
+            <span className="text-slate-700 font-semibold">
+              {hasActivePackages || totalFacilities > 0 ? "Không giới hạn" : "0 cơ sở"}
+            </span>
           </div>
         </div>
       </div>
@@ -537,16 +612,21 @@ export default function AdminLandlordsPage() {
                     </td>
 
                     <td className="py-4 px-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                          <Building2 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                          <span>{landlord.housesCount ?? (isZeroSandbox ? 0 : 1)} cơ sở</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                          <span>{landlord.roomsCount ?? (isZeroSandbox ? 0 : 10)} phòng trọ</span>
-                        </div>
-                      </div>
+                      {(() => {
+                        const stats = getLandlordStats(landlord);
+                        return (
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                              <Building2 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                              <span>{stats.houseCount} cơ sở</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              <span>{stats.roomCount} phòng trọ</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     <td className="py-4 px-4">

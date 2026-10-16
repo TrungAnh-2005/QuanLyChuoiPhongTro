@@ -582,15 +582,35 @@ export default function TenantsPage() {
     }));
   };
 
-  const staffHouseCode = user?.role === 'STAFF' ? (user.houseCode || (isZeroSandbox ? null : (facilities[0]?.code || 'CS-01'))) : null;
+  const staffManageableHouses = useMemo(() => {
+    if (user?.role !== 'STAFF') return facilities;
+    const u = (user?.username || '').toLowerCase();
+    return facilities.filter((h) => {
+      const created = (h.createdBy || '').toLowerCase();
+      const manager = (h.managerUsername || '').toLowerCase();
+      if (created && created === u) return true;
+      if (manager && manager === u) return true;
+      if (user?.houseCode && h.code === user.houseCode) return true;
+      if (!isZeroSandbox) {
+        if (u === 'staff' && (h.code === 'CS-01' || !h.createdBy)) return true;
+        if (u === 'staff2' && h.code === 'CS-02') return true;
+      }
+      return false;
+    });
+  }, [facilities, user]);
+
+  const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
 
   // Lấy tập hợp khách thuộc phạm vi cơ sở (Tenant Scoping & Multi-tenancy Isolation)
   // Tuyệt đối không hiển thị khách tự do chưa thuê bất kỳ phòng nào trong danh bạ quản lý của Staff
   const scopedTenants = useMemo(() => {
     return (tenants || []).filter((t) => {
-      // 1. Nếu là Staff: chỉ quản lý khách thuộc cơ sở do Staff này phụ trách
-      if (staffHouseCode) {
-        const matchHouse = t.houseCode === staffHouseCode || (t.house && t.house.includes(staffHouseCode));
+      // 1. Nếu là Staff: chỉ quản lý khách thuộc các cơ sở do Staff này phụ trách
+      if (user?.role === 'STAFF') {
+        if (staffHouseCodes.length === 0) return false;
+        const matchHouse =
+          staffHouseCodes.includes(t.houseCode) ||
+          staffHouseCodes.some((c) => t.house && t.house.includes(c));
         if (!matchHouse) return false;
       }
 
@@ -602,7 +622,7 @@ export default function TenantsPage() {
       // Khách vãng lai / chưa có phòng (WAITING_ROOM) không thuộc cơ sở nào -> không cho Staff xem
       return hasRoom || isPastTenant;
     });
-  }, [tenants, staffHouseCode]);
+  }, [tenants, staffHouseCodes, user]);
 
   const filteredTenants = useMemo(() => {
     return scopedTenants.filter((t) => {

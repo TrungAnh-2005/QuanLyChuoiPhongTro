@@ -1,3 +1,39 @@
+export function normalizeHouseCode(code) {
+  if (!code) return 'CS-01';
+  const c = String(code).trim().toUpperCase();
+  if (c === '1' || c === 'CS-01' || c === 'CS1') return 'CS-01';
+  if (c === '2' || c === 'CS-02' || c === 'CS2') return 'CS-02';
+  if (c === '3' || c === 'CS-03' || c === 'CS3') return 'CS-03';
+  return c;
+}
+
+export function isSameHouse(codeA, codeB) {
+  return normalizeHouseCode(codeA) === normalizeHouseCode(codeB);
+}
+
+export function normalizeRoomNumber(number) {
+  if (!number) return '';
+  return String(number)
+    .trim()
+    .toLowerCase()
+    .replace(/^phòng\s*/i, '')
+    .replace(/^p[\.\s_-]*/i, '')
+    .trim();
+}
+
+export function isDuplicateRoom(existingRooms, targetNumber, targetHouseCode, excludeRoomId = null) {
+  if (!targetNumber || !String(targetNumber).trim()) return false;
+  const normNum = normalizeRoomNumber(targetNumber);
+  if (!normNum) return false;
+  const targetHouse = normalizeHouseCode(targetHouseCode);
+  return (existingRooms || []).some((r) => {
+    if (excludeRoomId !== null && excludeRoomId !== undefined && (r.id === excludeRoomId || r.number === excludeRoomId)) {
+      return false;
+    }
+    return isSameHouse(r.houseCode, targetHouse) && normalizeRoomNumber(r.number) === normNum;
+  });
+}
+
 export function getRoomImage(room) {
   if (room?.image) return room.image;
   const floor = parseInt(room?.floor?.replace(/\D/g, '') || '1', 10);

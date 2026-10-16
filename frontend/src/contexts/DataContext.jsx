@@ -1,8 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { ALL_ROOMS } from '../data/roomsData';
+import { ALL_ROOMS, isDuplicateRoom, isSameHouse, normalizeRoomNumber, normalizeHouseCode } from '../data/roomsData';
 import { useAuth } from './AuthContext';
 
 const DataContext = createContext(null);
+
+export function cleanPersonName(name) {
+  if (!name || typeof name !== 'string') return '';
+  return name.replace(/\s*\((?:Staff|Chủ trọ)[^)]*\)/gi, '').trim();
+}
 
 const DEFAULT_INVOICES = [
   // Kh?p ch?nh x?c 100% v?i s? li?u ch?t công tơ Th?ng 9 (2026-09):
@@ -334,7 +339,7 @@ const DEFAULT_SAAS_INVOICES = [
     code: 'HD-SAAS-2026-01',
     landlordId: 1,
     landlordUsername: 'staff',
-    landlordName: 'Lê Thị Thu Ngân (Staff 1 - CS1)',
+    landlordName: 'Lê Thị Thu Ngân',
     landlordPhone: '0912.888.666',
     packageName: 'Gói Chuyên Nghiệp (PRO - Không Giới Hạn Cơ Sở)',
     packageCode: 'PRO',
@@ -356,13 +361,14 @@ const DEFAULT_SAAS_INVOICES = [
     code: 'HD-SAAS-2026-02',
     landlordId: 2,
     landlordUsername: 'staff2',
-    landlordName: 'Đàm Văn Táo (Staff 2 - CS2)',
+    landlordName: 'Đàm Văn Táo',
     landlordPhone: '0988.777.999',
     packageName: 'Gói Cơ Bản (BASIC - Quản lý 10 phòng)',
     packageCode: 'BASIC',
     billingCycle: '12 Tháng (Năm 2026)',
     period: '15/02/2026 - 15/02/2027',
-    amount: 2000,
+    amount: 1910400,
+    total: 1910400,
     issuedDate: '15/02/2026',
     dueDate: '25/02/2026',
     paidAt: null,
@@ -379,7 +385,7 @@ const DEFAULT_LANDLORDS = [
   {
     id: 1,
     username: 'staff',
-    fullName: 'Lê Thị Thu Ngân (Chủ trọ CS1)',
+    fullName: 'Lê Thị Thu Ngân',
     email: 'staff@rental.vn',
     phone: '0912.888.666',
     role: 'STAFF',
@@ -394,7 +400,7 @@ const DEFAULT_LANDLORDS = [
   {
     id: 2,
     username: 'staff2',
-    fullName: 'Đàm Văn Táo (Chủ trọ CS2 Bách Khoa)',
+    fullName: 'Đàm Văn Táo',
     email: 'staff2@rental.vn',
     phone: '0988.777.999',
     role: 'STAFF',
@@ -732,7 +738,7 @@ export const DEFAULT_LANDLORD_PROFILES = [
     userId: 1,
     username: 'staff',
     fullName: 'Lê Thị Thu Ngân',
-    landlordName: 'Lê Thị Thu Ngân (Staff 1)',
+    landlordName: 'Lê Thị Thu Ngân',
     landlordPhone: '0912.888.666',
     phone: '0912.888.666',
     identityCard: '001089012345',
@@ -758,7 +764,7 @@ export const DEFAULT_LANDLORD_PROFILES = [
     userId: 2,
     username: 'staff2',
     fullName: 'Đàm Văn Táo',
-    landlordName: 'Đàm Văn Táo (Staff 2)',
+    landlordName: 'Đàm Văn Táo',
     landlordPhone: '0988.777.999',
     phone: '0988.777.999',
     identityCard: '001192003456',
@@ -1239,6 +1245,65 @@ export const DataProvider = ({ children }) => {
       }
     } catch {}
 
+    // Tự động chuẩn hóa & giải quyết triệt để các phòng bị trùng lặp số phòng trong cùng 1 cơ sở
+    try {
+      if (Array.isArray(list) && list.length > 0) {
+        const seenHouseRooms = new Set();
+        let changed = false;
+        list = list.map((r) => {
+          const houseCode = normalizeHouseCode(r.houseCode);
+          const normNum = normalizeRoomNumber(r.number);
+          const key = `${houseCode}__${normNum}`;
+          if (seenHouseRooms.has(key)) {
+            changed = true;
+            let candidateNum = r.number;
+            const match = String(r.number).match(/\d+/);
+            if (match) {
+              let nextVal = parseInt(match[0], 10) + 1;
+              const hasP = String(r.number).startsWith('P.') || String(r.number).startsWith('p.');
+              while (
+                seenHouseRooms.has(`${houseCode}__${normalizeRoomNumber(hasP ? `P.${nextVal}` : `${nextVal}`)}`) ||
+                list.some(other => isSameHouse(other.houseCode, houseCode) && normalizeRoomNumber(other.number) === String(nextVal))
+              ) {
+                nextVal++;
+              }
+              candidateNum = hasP ? `P.${nextVal}` : `${nextVal}`;
+            } else {
+              candidateNum = `${r.number} (2)`;
+            }
+            const newKey = `${houseCode}__${normalizeRoomNumber(candidateNum)}`;
+            seenHouseRooms.add(newKey);
+            return { ...r, number: candidateNum };
+          }
+          seenHouseRooms.add(key);
+          return r;
+        });
+        if (changed) {
+          try {
+            localStorage.setItem('rental_rooms', JSON.stringify(list));
+          } catch {}
+        }
+      }
+    } catch {}
+
+    // Đồng bộ tên cơ sở (house) với tên cơ sở thực tế mà người dùng đã thiết lập trong rental_boarding_houses
+    try {
+      const sHouses = localStorage.getItem('rental_boarding_houses');
+      if (sHouses) {
+        const pHouses = JSON.parse(sHouses);
+        if (Array.isArray(pHouses) && pHouses.length > 0) {
+          list = list.map((r) => {
+            const hCode = normalizeHouseCode(r.houseCode);
+            const foundHouse = pHouses.find((h) => h.code === hCode || String(h.id) === String(hCode));
+            if (foundHouse && foundHouse.name && r.house !== foundHouse.name) {
+              return { ...r, house: foundHouse.name };
+            }
+            return r;
+          });
+        }
+      }
+    } catch {}
+
     return list;
   });
 
@@ -1415,6 +1480,39 @@ export const DataProvider = ({ children }) => {
   useEffect(() => {
     localStorage.setItem('rental_room_requests', JSON.stringify(roomRequests));
   }, [roomRequests]);
+
+  // Tự động đồng bộ tên cơ sở vào danh sách phòng khi rental_boarding_houses thay đổi
+  useEffect(() => {
+    const handleSyncHouseNames = () => {
+      try {
+        const sHouses = localStorage.getItem('rental_boarding_houses');
+        if (sHouses) {
+          const pHouses = JSON.parse(sHouses);
+          if (Array.isArray(pHouses) && pHouses.length > 0) {
+            setRooms((prev) => {
+              let hasChange = false;
+              const next = prev.map((r) => {
+                const hCode = normalizeHouseCode(r.houseCode);
+                const foundHouse = pHouses.find((h) => h.code === hCode || String(h.id) === String(hCode));
+                if (foundHouse && foundHouse.name && r.house !== foundHouse.name) {
+                  hasChange = true;
+                  return { ...r, house: foundHouse.name };
+                }
+                return r;
+              });
+              if (hasChange) {
+                try { localStorage.setItem('rental_rooms', JSON.stringify(next)); } catch {}
+                return next;
+              }
+              return prev;
+            });
+          }
+        }
+      } catch {}
+    };
+    window.addEventListener('storage', handleSyncHouseNames);
+    return () => window.removeEventListener('storage', handleSyncHouseNames);
+  }, []);
 
   // ACTIONS
 
@@ -2801,9 +2899,22 @@ export const DataProvider = ({ children }) => {
 
   // 6. Update room status (Staff or Admin)
   const updateRoomStatus = (roomId, newStatus) => {
-    setRooms((prev) =>
-      prev.map((r) => (r.id === roomId ? { ...r, status: newStatus } : r))
-    );
+    setRooms((prev) => {
+      const next = prev.map((r) => (r.id === roomId || r.number === roomId ? { ...r, status: newStatus } : r));
+      try { localStorage.setItem('rental_rooms', JSON.stringify(next)); } catch {}
+      return next;
+    });
+
+    const targetRoom = (rooms || []).find((r) => r.id === roomId || r.number === roomId);
+    if (targetRoom) {
+      addAuditLog({
+        role: auth?.user?.role || 'ROLE_STAFF',
+        username: auth?.user?.username || 'staff',
+        action: newStatus === 'LOCKED' ? 'LOCK_ROOM' : newStatus === 'AVAILABLE' ? 'UNLOCK_ROOM' : 'UPDATE_ROOM_STATUS',
+        target: targetRoom.number || String(roomId),
+        details: `Chủ trọ / Quản lý cập nhật trạng thái phòng ${targetRoom.number} thành ${newStatus === 'LOCKED' ? 'TẠM KHÓA' : newStatus}`
+      });
+    }
   };
 
   // 6.1. Sửa giá phòng (Staff / Admin)
@@ -2849,12 +2960,41 @@ export const DataProvider = ({ children }) => {
 
   // 7C. Update room specs (Staff or Admin)
   const updateRoom = (roomId, roomData) => {
+    if (roomData?.number) {
+      const currentRoom = rooms.find((r) => r.id === roomId || r.number === roomId);
+      const targetHouse = normalizeHouseCode(roomData.houseCode || currentRoom?.houseCode);
+      if (isDuplicateRoom(rooms, roomData.number, targetHouse, roomId)) {
+        alert(`⚠️ Không thể cập nhật: Phòng "${roomData.number}" đã tồn tại trong cơ sở ${targetHouse}!\n\nTrong cùng một cơ sở, các phòng phải có số / tên khác nhau.`);
+        return { success: false, message: `Phòng ${roomData.number} đã tồn tại trong cơ sở này!` };
+      }
+    }
+
     setRooms((prev) => {
+      const currentRoom = prev.find((r) => r.id === roomId || r.number === roomId);
+      if (roomData?.number) {
+        const targetHouse = normalizeHouseCode(roomData.houseCode || currentRoom?.houseCode);
+        if (isDuplicateRoom(prev, roomData.number, targetHouse, roomId)) {
+          return prev;
+        }
+      }
       const next = prev.map((r) => {
         if (r.id === roomId || r.number === roomId) {
+          const targetHouse = normalizeHouseCode(roomData?.houseCode || r.houseCode);
+          let resolvedHouseName = roomData?.house;
+          if (!resolvedHouseName) {
+            try {
+              const saved = localStorage.getItem('rental_boarding_houses');
+              if (saved) {
+                const parsed = JSON.parse(saved);
+                const matchH = parsed.find((h) => h.code === targetHouse || String(h.id) === String(targetHouse));
+                if (matchH && matchH.name) resolvedHouseName = matchH.name;
+              }
+            } catch {}
+          }
           return {
             ...r,
             ...roomData,
+            house: resolvedHouseName || r.house,
             price: roomData.price !== undefined ? Number(roomData.price) : r.price,
             area: roomData.area !== undefined ? Number(roomData.area) : r.area,
             maxOccupants: roomData.maxOccupants !== undefined ? Number(roomData.maxOccupants) : r.maxOccupants
@@ -2894,25 +3034,54 @@ export const DataProvider = ({ children }) => {
 
   // 7. Add new room (Staff or Admin)
   const addRoom = (roomData) => {
+    const targetHouseCode = normalizeHouseCode(roomData?.houseCode);
+    const targetNumber = roomData?.number;
+
+    if (isDuplicateRoom(rooms, targetNumber, targetHouseCode)) {
+      alert(`⚠️ Không thể thêm phòng!\n\nPhòng "${targetNumber}" đã tồn tại trong cơ sở ${targetHouseCode}. Trong cùng một cơ sở, các phòng phải có số / tên khác nhau.`);
+      return { success: false, message: `Phòng ${targetNumber} đã tồn tại trong cơ sở này!` };
+    }
+
+    // Lấy tên cơ sở thực tế từ rental_boarding_houses hoặc roomData.house
+    let facilityName = roomData?.house;
+    try {
+      const saved = localStorage.getItem('rental_boarding_houses');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const matchH = parsed.find((h) => h.code === targetHouseCode || String(h.id) === String(targetHouseCode));
+        if (matchH && matchH.name) {
+          facilityName = matchH.name;
+        }
+      }
+    } catch {}
+
+    if (!facilityName) {
+      facilityName =
+        targetHouseCode === 'CS-02'
+          ? 'Nhà Trọ Bách Khoa - Cơ Sở 2'
+          : targetHouseCode === 'CS-03'
+          ? 'Nhà Trọ Đống Đa - Cơ Sở 3'
+          : (roomData?.house || `Cơ sở ${targetHouseCode}`);
+    }
+
     const newRoomEntry = {
       id: Date.now(),
       number: roomData.number,
-      houseCode: roomData.houseCode || 'CS-01',
-      house:
-        roomData.houseCode === 'CS-02'
-          ? 'Nhà Trọ Bách Khoa - Cơ Sở 2'
-          : roomData.houseCode === 'CS-03'
-          ? 'Nhà Trọ Đống Đa - Cơ Sở 3'
-          : 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
+      houseCode: targetHouseCode,
+      house: facilityName,
       floor: roomData.floor || 'Tầng 1',
       price: Number(roomData.price) || 3500000,
       area: Number(roomData.area) || 25,
       occupants: 0,
       maxOccupants: Number(roomData.maxOccupants) || 2,
       status: roomData.status || 'AVAILABLE',
-      amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh']
+      amenities: roomData.amenities || ['WiFi', 'Điều hòa', 'Nóng lạnh'],
+      image: roomData.image || ''
     };
     setRooms((prev) => {
+      if (isDuplicateRoom(prev, newRoomEntry.number, newRoomEntry.houseCode)) {
+        return prev;
+      }
       const next = [newRoomEntry, ...prev];
       try { localStorage.setItem('rental_rooms', JSON.stringify(next)); } catch {}
       return next;
@@ -3034,16 +3203,23 @@ export const DataProvider = ({ children }) => {
       const s = localStorage.getItem('rental_saas_invoices');
       if (s) {
         const list = JSON.parse(s);
-        return list.map((inv) => {
-          if (inv.code === 'HD-SAAS-2026-02' || inv.id === 'SAAS-2026-002') {
+        const fixed = list.map((inv) => {
+          if (
+            inv.code === 'HD-SAAS-2026-02' ||
+            inv.id === 'SAAS-2026-002' ||
+            (inv.packageCode === 'BASIC' && (inv.amount === 2000 || inv.total === 2000))
+          ) {
             return {
               ...inv,
-              amount: 2000,
-              providerBank: '35825112005 - MBBank (ĐÀM TRUNG ANH)'
+              amount: 1910400,
+              total: 1910400,
+              providerBank: inv.providerBank || '9999888899 - MBBank (Ngân hàng Quân Đội)'
             };
           }
           return inv;
         });
+        localStorage.setItem('rental_saas_invoices', JSON.stringify(fixed));
+        return fixed;
       }
       if (isZeroSandbox) return [];
       return DEFAULT_SAAS_INVOICES;
@@ -3052,8 +3228,8 @@ export const DataProvider = ({ children }) => {
     }
   });
 
-  
   const createSaasInvoice = (invoiceData) => {
+    const amountVal = Number(invoiceData.amount || invoiceData.total) || 1910400;
     const newInv = {
       id: invoiceData.id || `SAAS-${Date.now()}`,
       code: invoiceData.code || `HD-SAAS-2026-${String(saasInvoices.length + 1).padStart(2, '0')}`,
@@ -3065,7 +3241,8 @@ export const DataProvider = ({ children }) => {
       packageCode: invoiceData.packageCode || 'PRO',
       billingCycle: invoiceData.billingCycle || '12 Tháng (Năm 2026)',
       period: invoiceData.period || '01/01/2026 - 31/12/2026',
-      amount: Number(invoiceData.amount || invoiceData.total) || 4990000,
+      amount: amountVal,
+      total: amountVal,
       issuedDate: invoiceData.issuedDate || new Date().toLocaleDateString('vi-VN'),
       dueDate: invoiceData.dueDate || '10/10/2026',
       paidAt: null,
@@ -3099,36 +3276,61 @@ export const DataProvider = ({ children }) => {
   };
 
   const paySaasInvoice = (invoiceIdOrCode, paymentMethod = 'Cổng VNPay Nền Tảng', customPackageCode = null, customLandlordId = null) => {
-    let matchedInv = null;
+    // 1. Tìm hóa đơn đồng bộ từ saasInvoices hiện hành hoặc localStorage
+    let currentInvoices = [];
+    try {
+      const saved = localStorage.getItem('rental_saas_invoices');
+      currentInvoices = saved ? JSON.parse(saved) : (Array.isArray(saasInvoices) ? saasInvoices : []);
+    } catch {
+      currentInvoices = Array.isArray(saasInvoices) ? saasInvoices : [];
+    }
+
+    const strTarget = invoiceIdOrCode ? String(invoiceIdOrCode).trim().toLowerCase() : '';
+    let matchedInv = currentInvoices.find((inv) =>
+      inv.id === invoiceIdOrCode ||
+      inv.code === invoiceIdOrCode ||
+      (strTarget && (String(inv.id).trim().toLowerCase() === strTarget || String(inv.code).trim().toLowerCase() === strTarget))
+    );
+
+    // Tìm tương đối nếu chưa khớp chính xác
+    if (!matchedInv && strTarget) {
+      matchedInv = currentInvoices.find((inv) =>
+        inv.status === 'UNPAID' &&
+        (String(inv.id).toLowerCase().includes(strTarget) ||
+         String(inv.code).toLowerCase().includes(strTarget) ||
+         strTarget.includes(String(inv.id).toLowerCase()) ||
+         strTarget.includes(String(inv.code).toLowerCase()))
+      );
+    }
+
+    if (!matchedInv) {
+      matchedInv = currentInvoices.find((inv) => inv.status === 'UNPAID');
+    }
+
+    const targetId = matchedInv?.id || invoiceIdOrCode;
+    const targetLId = customLandlordId || matchedInv?.landlordId || 1;
+    const targetPkg = customPackageCode || matchedInv?.packageCode || 'ENTERPRISE';
+
+    // Xác định chủ trọ thực tế
+    let landlordObj = (landlords || []).find(l => l.id === targetLId || l.username === (targetLId === 2 ? 'staff2' : 'staff'));
+    if (!landlordObj) {
+      try {
+        const sL = localStorage.getItem('rental_landlords');
+        const lList = sL ? JSON.parse(sL) : [];
+        landlordObj = lList.find(l => l.id === targetLId || l.username === (targetLId === 2 ? 'staff2' : 'staff'));
+      } catch {}
+    }
+
+    const rawLandlordName = matchedInv?.landlordName || landlordObj?.fullName || (targetLId === 2 ? 'Đàm Văn Táo' : 'Lê Thị Thu Ngân');
+    const resolvedLandlordName = cleanPersonName(rawLandlordName);
+    const resolvedLandlordPhone = matchedInv?.landlordPhone || landlordObj?.phone || (targetLId === 2 ? '0988.777.999' : '0912.888.666');
+    const resolvedLandlordUsername = matchedInv?.landlordUsername || landlordObj?.username || (targetLId === 2 ? 'staff2' : 'staff');
+
+    // Xác định số tiền chuẩn: tuyệt đối không để 0 đ
+    const defaultPackageAmount = targetPkg === 'ENTERPRISE' ? 9590400 : (targetPkg === 'PRO' ? 4990000 : 1910400);
+    const invoiceAmount = Number(matchedInv?.amount || matchedInv?.total) || defaultPackageAmount;
 
     setSaasInvoices((prev) => {
-      // 1. Khớp chính xác id hoặc code
-      matchedInv = prev.find((inv) =>
-        inv.id === invoiceIdOrCode ||
-        inv.code === invoiceIdOrCode ||
-        (invoiceIdOrCode && String(inv.id).trim().toLowerCase() === String(invoiceIdOrCode).trim().toLowerCase()) ||
-        (invoiceIdOrCode && String(inv.code).trim().toLowerCase() === String(invoiceIdOrCode).trim().toLowerCase())
-      );
-
-      // 2. Nếu không khớp chính xác, tìm theo chuỗi tương đồng
-      if (!matchedInv && invoiceIdOrCode) {
-        const str = String(invoiceIdOrCode).toLowerCase();
-        matchedInv = prev.find((inv) =>
-          inv.status === 'UNPAID' &&
-          (String(inv.id).toLowerCase().includes(str) ||
-           String(inv.code).toLowerCase().includes(str) ||
-           str.includes(String(inv.id).toLowerCase()) ||
-           str.includes(String(inv.code).toLowerCase()))
-        );
-      }
-
-      // 3. Fallback: lấy hóa đơn UNPAID gần nhất nếu có
-      if (!matchedInv) {
-        matchedInv = prev.find((inv) => inv.status === 'UNPAID');
-      }
-
-      const targetId = matchedInv?.id || invoiceIdOrCode;
-
       const updated = prev.map((inv) => {
         const isTarget =
           inv.id === targetId ||
@@ -3138,7 +3340,6 @@ export const DataProvider = ({ children }) => {
           inv.code === invoiceIdOrCode;
 
         if (isTarget) {
-          matchedInv = inv;
           return {
             ...inv,
             status: 'PAID',
@@ -3153,9 +3354,6 @@ export const DataProvider = ({ children }) => {
     });
 
     // Tự động nâng cấp tài khoản chủ trọ sang ACTIVE và kích hoạt gói bản quyền
-    const targetLId = customLandlordId || matchedInv?.landlordId || 1;
-    const targetPkg = customPackageCode || matchedInv?.packageCode || 'ENTERPRISE';
-
     setLandlords((prev) => {
       const updated = prev.map((l) => {
         if (l.id === targetLId || l.username === (targetLId === 2 ? 'staff2' : 'staff')) {
@@ -3188,10 +3386,22 @@ export const DataProvider = ({ children }) => {
 
     addAuditLog({
       role: 'ROLE_STAFF',
-      username: matchedInv?.landlordUsername || 'landlord',
+      username: resolvedLandlordUsername,
       action: 'PAY_SAAS_SUBSCRIPTION',
       target: `SaaSInvoice #${matchedInv?.code || invoiceIdOrCode}`,
       details: `Chủ trọ nộp cước bản quyền phần mềm SaaS (${targetPkg}) cho Admin qua ${paymentMethod}`
+    });
+
+    // Bắn thông báo realtime đến Quản Trị Viên (Admin) - Đúng 1 lần duy nhất với số tiền thực tế
+    recordPackagePurchase({
+      landlordName: resolvedLandlordName,
+      landlordPhone: resolvedLandlordPhone,
+      landlordUsername: resolvedLandlordUsername,
+      packageCode: targetPkg,
+      packageName: matchedInv?.packageName || (targetPkg === 'ENTERPRISE' ? 'Gói Doanh Nghiệp (ENTERPRISE)' : targetPkg === 'PRO' ? 'Gói Chuyên Nghiệp (PRO)' : 'Gói Cơ Bản (BASIC)'),
+      amount: invoiceAmount,
+      paymentMethod,
+      invoiceCode: matchedInv?.code || invoiceIdOrCode
     });
   };
 
@@ -3227,7 +3437,7 @@ export const DataProvider = ({ children }) => {
           {
             id: 1,
             username: 'staff',
-            fullName: 'Lê Thị Thu Ngân (Chủ trọ CS1)',
+            fullName: 'Lê Thị Thu Ngân',
             email: 'staff@rental.vn',
             phone: '0912.888.666',
             role: 'STAFF',
@@ -3242,7 +3452,7 @@ export const DataProvider = ({ children }) => {
           {
             id: 2,
             username: 'staff2',
-            fullName: 'Đàm Văn Táo (Staff CS2 - Bách Khoa)',
+            fullName: 'Đàm Văn Táo',
             email: 'staff2@rental.vn',
             phone: '0988.777.999',
             role: 'STAFF',
@@ -3558,10 +3768,14 @@ export const DataProvider = ({ children }) => {
   const [microservices] = useState(DEFAULT_MICROSERVICES);
   const [auditLogs, setAuditLogs] = useState(() => {
     try {
+      if (isZeroSandbox) {
+        const s = localStorage.getItem('rental_audit_logs');
+        return s ? JSON.parse(s) : [];
+      }
       const s = localStorage.getItem('rental_audit_logs');
       return s ? JSON.parse(s) : DEFAULT_AUDIT_LOGS;
     } catch {
-      return DEFAULT_AUDIT_LOGS;
+      return isZeroSandbox ? [] : DEFAULT_AUDIT_LOGS;
     }
   });
 
@@ -3615,6 +3829,80 @@ export const DataProvider = ({ children }) => {
       action: 'DELETE_BOARDING_HOUSE',
       target: `${houseName} (${houseCode})`,
       details: `${deletedBy} (${deletedByRole}) đã xóa vĩnh viễn cơ sở "${houseName}" (${houseCode}) kèm ${roomsCount || 0} phòng trực thuộc khỏi hệ thống.`
+    });
+
+    return notice;
+  };
+
+  // Quản lý thông báo Chủ trọ đăng ký / mua gói dịch vụ SaaS thành công (Gửi thông báo cho Admin)
+  const [packagePurchaseNotices, setPackagePurchaseNotices] = useState(() => {
+    try {
+      const s = localStorage.getItem('rental_package_purchase_notices');
+      if (!s) return [];
+      const parsed = JSON.parse(s);
+      if (!Array.isArray(parsed)) return [];
+      // Lọc bỏ triệt để các thông báo ảo 0 đ và làm sạch tên chủ trọ (loại bỏ hậu tố CS1 / CS2)
+      const cleaned = parsed
+        .filter(
+          (p) => p && Number(p.amount) > 0 && !p.title?.includes('(0 đ)') && !p.desc?.includes('(0 đ)')
+        )
+        .map((p) => ({
+          ...p,
+          landlordName: cleanPersonName(p.landlordName) || 'Chủ trọ'
+        }));
+      if (cleaned.length !== parsed.length || JSON.stringify(cleaned) !== JSON.stringify(parsed)) {
+        localStorage.setItem('rental_package_purchase_notices', JSON.stringify(cleaned));
+      }
+      return cleaned;
+    } catch {
+      return [];
+    }
+  });
+
+  const recordPackagePurchase = ({ landlordName, landlordPhone, landlordUsername, packageCode, packageName, amount, paymentMethod, invoiceCode }) => {
+    const numAmount = Number(amount) || 0;
+    // Tuyệt đối không tạo thông báo ảo 0 đ
+    if (numAmount <= 0) {
+      console.warn('Bỏ qua thông báo mua gói SaaS ảo 0 đ');
+      return null;
+    }
+
+    const now = Date.now();
+    const finalLandlordName = cleanPersonName(landlordName) || 'Chủ trọ';
+    const notice = {
+      id: `pkg-buy-${now}`,
+      timestampMs: now,
+      landlordName: finalLandlordName,
+      landlordPhone: landlordPhone || '',
+      landlordUsername: landlordUsername || 'staff',
+      packageCode: packageCode || 'PRO',
+      packageName: packageName || (packageCode === 'ENTERPRISE' ? 'Gói Doanh Nghiệp (ENTERPRISE)' : 'Gói Chuyên Nghiệp (PRO)'),
+      amount: numAmount,
+      paymentMethod: paymentMethod || 'Cổng Thanh Toán Trực Tuyến',
+      invoiceCode: invoiceCode || '',
+      timestamp: new Date().toLocaleString('vi-VN'),
+      date: new Date().toLocaleDateString('vi-VN')
+    };
+
+    setPackagePurchaseNotices((prev) => {
+      // 1 lần thanh toán thành công chỉ đẩy ra đúng 1 thông báo
+      // Chống trùng lặp tuyệt đối theo invoiceCode hoặc cùng username/gói trong 60 giây
+      const isDuplicate = prev.some((p) => {
+        if (invoiceCode && p.invoiceCode === invoiceCode) return true;
+        const sameUser = (p.landlordUsername === notice.landlordUsername || p.landlordName === notice.landlordName);
+        const samePkg = p.packageCode === notice.packageCode;
+        const isRecent = p.timestampMs && (now - p.timestampMs < 60000);
+        return sameUser && samePkg && isRecent;
+      });
+
+      if (isDuplicate) {
+        console.warn('Đã có thông báo mua gói vừa được đẩy, tránh trùng lặp 2 thông báo');
+        return prev;
+      }
+
+      const updated = [notice, ...prev];
+      localStorage.setItem('rental_package_purchase_notices', JSON.stringify(updated));
+      return updated;
     });
 
     return notice;
@@ -4694,6 +4982,7 @@ export const DataProvider = ({ children }) => {
       localStorage.setItem('rental_is_zero_sandbox', 'true');
       localStorage.setItem('rental_boarding_houses', JSON.stringify([]));
       localStorage.setItem('rental_landlord_profiles', JSON.stringify(DEFAULT_LANDLORD_PROFILES));
+      localStorage.setItem('rental_audit_logs', JSON.stringify([]));
       sessionStorage.clear();
     } catch {}
 
@@ -4701,6 +4990,7 @@ export const DataProvider = ({ children }) => {
     setTenants(ZERO_SANDBOX_TENANTS);
     setContracts([]);
     setSaasInvoices([]);
+    setAuditLogs([]);
     setLandlordProfiles(DEFAULT_LANDLORD_PROFILES);
     setInvoicesHistory({ [billingMonth]: [] });
     setMetersHistory({ [billingMonth]: [] });
@@ -4733,6 +5023,7 @@ export const DataProvider = ({ children }) => {
     setRoomMembers(DEFAULT_ROOM_MEMBERS);
     setTickets(DEFAULT_TICKETS);
     setLandlords(DEFAULT_LANDLORDS);
+    setAuditLogs(DEFAULT_AUDIT_LOGS);
 
     if (typeof window !== 'undefined') {
       window.location.href = window.location.href.split('#')[0];
@@ -4829,7 +5120,9 @@ export const DataProvider = ({ children }) => {
         sendSaasReminder,
         resetLandlordPassword,
         houseDeleteNotices,
-        recordHouseDeletion
+        recordHouseDeletion,
+        packagePurchaseNotices,
+        recordPackagePurchase
       }}
     >
       {children}

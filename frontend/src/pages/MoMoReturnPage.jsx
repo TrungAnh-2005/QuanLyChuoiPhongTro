@@ -40,9 +40,19 @@ export default function MoMoReturnPage() {
     }
   })();
 
+  const hasProcessedRef = React.useRef(false);
+
   useEffect(() => {
-    if (isSuccess && !processed) {
+    if (isSuccess && !hasProcessedRef.current && !processed) {
+      hasProcessedRef.current = true;
       setProcessed(true);
+
+      const txRef = orderId || invoiceId || 'momo_tx';
+      const lockKey = `rental_momo_tx_done_${txRef}`;
+      if (sessionStorage.getItem(lockKey)) {
+        return;
+      }
+      sessionStorage.setItem(lockKey, 'true');
 
       const keysToPay = new Set([
         pendingInfo?.code,
@@ -78,7 +88,7 @@ export default function MoMoReturnPage() {
         localStorage.removeItem('rental_pending_payment');
       } catch {}
     }
-  }, [isSuccess, processed, invoiceId, pendingInfo, message, payInvoice, paySaasInvoice, updateLandlordPackage]);
+  }, [isSuccess, processed, invoiceId, pendingInfo, message, payInvoice, paySaasInvoice, updateLandlordPackage, orderId]);
 
   return (
     <div className="max-w-2xl mx-auto py-8 px-4">
