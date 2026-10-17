@@ -3037,6 +3037,23 @@ export const DataProvider = ({ children }) => {
     const targetHouseCode = normalizeHouseCode(roomData?.houseCode);
     const targetNumber = roomData?.number;
 
+    // Kiểm tra trạng thái cơ sở (phải được phê duyệt mới được thêm phòng)
+    try {
+      const saved = localStorage.getItem('rental_boarding_houses');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const matchH = parsed.find((h) => h.code === targetHouseCode || String(h.id) === String(targetHouseCode));
+        if (matchH && matchH.status === 'PENDING_APPROVAL') {
+          alert(`⚠️ Không thể thêm phòng!\n\nCơ sở "${matchH.name || targetHouseCode}" đang CHỜ QUẢN TRỊ VIÊN (ADMIN) PHÊ DUYỆT.\n\nTheo quy định nghiệp vụ: Cơ sở phải được Admin phê duyệt đưa vào hoạt động chính thức thì mới có thể tạo danh mục phòng trọ.`);
+          return { success: false, message: 'Cơ sở đang chờ Admin phê duyệt!' };
+        }
+        if (matchH && matchH.status === 'LOCKED') {
+          alert(`⚠️ Không thể thêm phòng!\n\nCơ sở "${matchH.name || targetHouseCode}" đang ở trạng thái TẠM KHÓA HOẠT ĐỘNG.`);
+          return { success: false, message: 'Cơ sở đang bị tạm khóa!' };
+        }
+      }
+    } catch {}
+
     if (isDuplicateRoom(rooms, targetNumber, targetHouseCode)) {
       alert(`⚠️ Không thể thêm phòng!\n\nPhòng "${targetNumber}" đã tồn tại trong cơ sở ${targetHouseCode}. Trong cùng một cơ sở, các phòng phải có số / tên khác nhau.`);
       return { success: false, message: `Phòng ${targetNumber} đã tồn tại trong cơ sở này!` };

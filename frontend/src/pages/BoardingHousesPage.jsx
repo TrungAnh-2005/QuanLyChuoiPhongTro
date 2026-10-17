@@ -36,6 +36,7 @@ import PaymentModal from '../components/payment/PaymentModal';
 import HouseServiceConfigModal from '../components/staff/HouseServiceConfigModal';
 import TrialExpiryBanner from '../components/common/TrialExpiryBanner';
 import { getTrialStatus } from '../utils/packagePermissions';
+import { healBoardingHousesList } from '../data/roomsData';
 
 const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
 
@@ -122,11 +123,10 @@ export default function BoardingHousesPage() {
   const [houseScopeTab, setHouseScopeTab] = useState(isStaff ? 'ASSIGNED' : 'ALL'); // 'ALL' | 'ASSIGNED'
   const [houseStatusTab, setHouseStatusTab] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'LOCKED' | 'PENDING'
 
-  // Kiểm tra quyền quản lý cơ sở: Admin quản lý tất cả, Staff chỉ quản lý cơ sở của mình (do mình tạo hoặc được phân công)
+  // Kiểm tra quyền sở hữu cơ sở: Chỉ Staff/Chủ trọ phụ trách cơ sở đó mới được Sửa, Xóa, Cài đặt Biểu giá (Admin không can thiệp)
   const canManageHouse = (house) => {
     if (!house) return false;
-    if (role === 'ADMIN') return true;
-    if (!isStaff) return false;
+    if (role !== 'STAFF') return false;
     const myUsername = user?.username;
     if (!myUsername) return false;
     return (
@@ -164,17 +164,22 @@ export default function BoardingHousesPage() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showBuyPackageModal, setShowBuyPackageModal] = useState(false);
 
+  const healCustomHouses = (list) => {
+    if (!Array.isArray(list)) return list;
+    const healed = healBoardingHousesList(list);
+    return healed.map((h) => ({
+      ...h,
+      totalRooms: Math.min(Number(h.totalRooms) || 10, maxRoomsAllowed),
+      availableRooms: Math.min(Number(h.availableRooms ?? h.totalRooms) || 10, maxRoomsAllowed)
+    }));
+  };
+
   const [rawHouses, setHouses] = useState(() => {
     try {
       const saved = localStorage.getItem('rental_boarding_houses');
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Chuẩn hóa giới hạn phòng theo gói
-        return parsed.map(h => ({
-          ...h,
-          totalRooms: Math.min(Number(h.totalRooms) || 10, maxRoomsAllowed),
-          availableRooms: Math.min(Number(h.availableRooms ?? h.totalRooms) || 10, maxRoomsAllowed)
-        }));
+        return healCustomHouses(parsed);
       }
       if (isZeroSandbox) return [];
       return initialHouses;
@@ -182,6 +187,12 @@ export default function BoardingHousesPage() {
       return isZeroSandbox ? [] : initialHouses;
     }
   });
+
+  // Đếm số cơ sở mà Chủ trọ / Staff hiện tại đang sở hữu / quản lý (không tính gộp cơ sở của chủ trọ khác)
+  const myHousesCount = useMemo(() => {
+    if (role === 'ADMIN') return rawHouses.length;
+    return rawHouses.filter((h) => canManageHouse(h)).length;
+  }, [rawHouses, role, user]);
 
   // TÍNH TOÁN DỮ LIỆU ĐỘNG CHUẨN XÁC THEO THỜI GIAN THỰC (TASK 3 FIX)
   const enrichedHouses = useMemo(() => {
@@ -191,30 +202,29 @@ export default function BoardingHousesPage() {
         (r) => r.houseCode === house.code || (house.code === 'CS-01' && !r.houseCode)
       );
 
-      // Nếu có phòng trong DataContext thì tính toán chính xác, nếu chưa có thì giới hạn theo hạn mức gói
+      // Nếu cơ sở đang ở trạng thái CHỜ ADMIN DUYỆT (PENDING_APPROVAL), cơ sở chưa được cấp phép nên số phòng hoạt động bằng 0
+      const isPending = house.status === 'PENDING_APPROVAL';
       const rawFallbackRooms = Number(house.totalRooms) || 10;
-      const totalRooms = houseRooms.length > 0
-        ? houseRooms.length
-        : Math.min(rawFallbackRooms, maxRoomsAllowed);
-      const occupiedRooms = houseRooms.length > 0
-        ? houseRooms.filter((r) => r.status === 'OCCUPIED').length
-        : house.occupiedRooms;
-      const availableRooms = houseRooms.length > 0
-        ? houseRooms.filter((r) => r.status === 'AVAILABLE').length
-        : Math.min(Number(house.availableRooms ?? rawFallbackRooms) || 0, maxRoomsAllowed);
-      const holdingRooms = houseRooms.length > 0
-        ? houseRooms.filter((r) => r.status === 'HOLDING').length
-        : 0;
-      const maintenanceRooms = houseRooms.length > 0
-        ? houseRooms.filter((r) => r.status === 'MAINTENANCE').length
-        : 0;
+      const totalRooms = isPending
+        ? 0
+        : (houseRooms.length > 0 ? houseRooms.length : Math.min(rawFallbackRooms, maxRoomsAllowed));
+      const occupiedRooms = isPending
+        ? 0
+        : (houseRooms.length > 0 ? houseRooms.filter((r) => r.status === 'OCCUPIED').length : (house.occupiedRooms || 0));
+      const availableRooms = isPending
+        ? 0
+        : (houseRooms.length > 0 ? houseRooms.filter((r) => r.status === 'AVAILABLE').length : Math.min(Number(house.availableRooms ?? rawFallbackRooms) || 0, maxRoomsAllowed));
+      const holdingRooms = isPending ? 0 : (houseRooms.length > 0 ? houseRooms.filter((r) => r.status === 'HOLDING').length : 0);
+      const maintenanceRooms = isPending ? 0 : (houseRooms.length > 0 ? houseRooms.filter((r) => r.status === 'MAINTENANCE').length : 0);
 
       // Doanh thu ước tính hàng tháng của cơ sở
-      const monthlyRevenue = houseRooms.length > 0
-        ? houseRooms
-            .filter((r) => r.status === 'OCCUPIED')
-            .reduce((sum, r) => sum + (r.price || 3500000), 0)
-        : house.monthlyRevenue;
+      const monthlyRevenue = isPending
+        ? 0
+        : (houseRooms.length > 0
+            ? houseRooms
+                .filter((r) => r.status === 'OCCUPIED')
+                .reduce((sum, r) => sum + (r.price || 3500000), 0)
+            : (house.monthlyRevenue || 0));
 
       // Danh sách khách thuê thực tế đang ở tại cơ sở này
       const houseTenants = (tenants || []).filter((t) => {
@@ -242,7 +252,8 @@ export default function BoardingHousesPage() {
 
     if (isTenant) {
       list = list.filter((h) => h.code === 'CS-01');
-    } else if (isStaff && houseScopeTab === 'ASSIGNED') {
+    } else if (isStaff) {
+      // Staff chỉ xem cơ sở thuộc quyền quản lý của mình (Multi-Tenancy)
       list = list.filter((h) => canManageHouse(h));
     }
 
@@ -255,11 +266,18 @@ export default function BoardingHousesPage() {
       list = list.filter((h) => h.status === 'PENDING_APPROVAL');
     }
 
-    return list;
-  }, [enrichedHouses, isTenant, isStaff, houseScopeTab, houseStatusTab, staffHouseCode, user]);
+    // Sắp xếp cơ sở theo thứ tự số và chữ cái tăng dần (1 trước 2, A trước Z)
+    return [...list].sort((a, b) => {
+      const nameA = String(a.name || a.code || '').trim();
+      const nameB = String(b.name || b.code || '').trim();
+      const cmp = nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+      if (cmp !== 0) return cmp;
+      return String(a.code || '').localeCompare(String(b.code || ''), undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }, [enrichedHouses, isTenant, isStaff, houseStatusTab, staffHouseCode, user]);
 
   const houseCounts = useMemo(() => {
-    const baseList = isStaff && houseScopeTab === 'ASSIGNED'
+    const baseList = isStaff
       ? enrichedHouses.filter(canManageHouse)
       : enrichedHouses;
     return {
@@ -268,13 +286,15 @@ export default function BoardingHousesPage() {
       locked: baseList.filter((h) => h.status === 'LOCKED').length,
       pending: baseList.filter((h) => h.status === 'PENDING_APPROVAL').length,
     };
-  }, [enrichedHouses, isStaff, houseScopeTab]);
+  }, [enrichedHouses, isStaff]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [payingSaasInvoice, setPayingSaasInvoice] = useState(null);
   const [serviceConfigModalOpen, setServiceConfigModalOpen] = useState(false);
-  const [selectedHouseForConfig, setSelectedHouseForConfig] = useState('CS-01');
+  const [selectedHouseForConfig, setSelectedHouseForConfig] = useState(() => {
+    return isStaff ? (user?.houseCode || (user?.username === 'staff2' ? 'CS-02' : 'CS-01')) : 'CS-01';
+  });
   const [loading, setLoading] = useState(false);
   const [newHouse, setNewHouse] = useState({
     code: '',
@@ -290,8 +310,10 @@ export default function BoardingHousesPage() {
   const isNewNameDuplicate = useMemo(() => {
     const clean = (newHouse.name || '').trim().toLowerCase();
     if (!clean) return false;
-    return rawHouses.some((h) => (h.name || '').trim().toLowerCase() === clean);
-  }, [newHouse.name, rawHouses]);
+    // Multi-tenancy: Chỉ kiểm tra trùng tên trong các cơ sở thuộc quyền của Chủ trọ hiện tại
+    const myHouses = rawHouses.filter((h) => canManageHouse(h));
+    return myHouses.some((h) => (h.name || '').trim().toLowerCase() === clean);
+  }, [newHouse.name, rawHouses, user, role]);
 
   const handleImageFileUpload = (e, isEdit = false) => {
     const file = e.target.files?.[0];
@@ -347,18 +369,19 @@ export default function BoardingHousesPage() {
     }
   };
 
-  // Scoping theo quyền Staff: Mỗi Staff chỉ quản lý DUY NHẤT 1 cơ sở được phân công
-
-  const filtered = houses.filter(h => {
-    if (staffHouseCode && h.code !== staffHouseCode && !isZeroSandbox && houseScopeTab === 'ASSIGNED') {
-      return false;
-    }
-    return (
-      h.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      h.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      h.manager.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  });
+  // Scoping theo quyền Staff và tìm kiếm (đã được sắp xếp tăng dần từ `houses`)
+  const filtered = useMemo(() => {
+    return houses.filter(h => {
+      if (staffHouseCode && h.code !== staffHouseCode && !isZeroSandbox && houseScopeTab === 'ASSIGNED') {
+        return false;
+      }
+      return (
+        h.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        h.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        h.manager.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    });
+  }, [houses, staffHouseCode, isZeroSandbox, houseScopeTab, searchTerm]);
 
 
   const handleApproveHouse = (code) => {
@@ -424,10 +447,11 @@ export default function BoardingHousesPage() {
     if (!editingHouse) return false;
     const clean = (editHouseForm.name || '').trim().toLowerCase();
     if (!clean) return false;
-    return rawHouses.some(
+    const myHouses = rawHouses.filter((h) => canManageHouse(h));
+    return myHouses.some(
       (h) => h.code !== editingHouse.code && (h.name || '').trim().toLowerCase() === clean
     );
-  }, [editHouseForm.name, editingHouse, rawHouses]);
+  }, [editHouseForm.name, editingHouse, rawHouses, user, role]);
 
   const handleSaveEditHouse = (e) => {
     e.preventDefault();
@@ -555,17 +579,31 @@ export default function BoardingHousesPage() {
       alert(`⚠️ Tên cơ sở "${cleanName}" đã tồn tại trong chuỗi nhà trọ!\n\nMỗi cơ sở cần có tên riêng biệt (ví dụ: kèm tên quận hoặc số cơ sở) để tránh nhầm lẫn khi xếp phòng, ký hợp đồng và lập hóa đơn.`);
       return;
     }
+
+    if (myHousesCount >= maxHousesAllowed) {
+      setShowModal(false);
+      setShowUpgradeModal(true);
+      return;
+    }
     
-    // Mã cơ sở do hệ thống tự sinh tăng dần (CS-01, CS-02, CS-03...), không cho phép can thiệp thủ công
-    let nextNum = 1;
-    rawHouses.forEach((h) => {
-      const match = (h.code || '').match(/CS-(\d+)/i);
+    // Mã cơ sở do hệ thống tự sinh theo từng Chuỗi của Chủ trọ (Staff 1: S1-CS-01, Staff 2: S2-CS-01, Admin: CS-01...)
+    const staffPrefix = isStaff
+      ? (user?.username === 'staff2' ? 'S2-CS' : (user?.username === 'staff' ? 'S1-CS' : `${(user?.username || 'S').toUpperCase()}-CS`))
+      : 'CS';
+
+    // Đếm số thứ tự cơ sở trong riêng chuỗi trọ của Chủ trọ hiện tại
+    const myHouses = rawHouses.filter((h) => canManageHouse(h));
+    const existingSamePrefix = myHouses.filter((h) => (h.code || '').toUpperCase().startsWith(staffPrefix));
+    let nextPrefixNum = 1;
+    existingSamePrefix.forEach((h) => {
+      const match = (h.code || '').match(new RegExp(`${staffPrefix}-(\\d+)`, 'i'));
       if (match) {
         const n = parseInt(match[1], 10);
-        if (n >= nextNum) nextNum = n + 1;
+        if (n >= nextPrefixNum) nextPrefixNum = n + 1;
       }
     });
-    const newCode = `CS-${String(nextNum).padStart(2, '0')}`;
+
+    const newCode = `${staffPrefix}-${String(nextPrefixNum).padStart(2, '0')}`;
     const initialStatus = isStaff ? 'PENDING_APPROVAL' : 'ACTIVE';
     const targetRooms = Math.min(Number(newHouse.totalRooms) || 10, maxRoomsAllowed);
     const creatorUser = user?.username || (isStaff ? 'staff' : 'admin');
@@ -643,17 +681,20 @@ export default function BoardingHousesPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => {
-              setSelectedHouseForConfig('CS-01');
-              setServiceConfigModalOpen(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-bold rounded-xl shadow-xs transition-all"
-            title="UC-S01B: Cài đặt Biểu giá dịch vụ chi nhánh (Điện, Nước, Dịch vụ)"
-          >
-            <Receipt className="w-4 h-4 text-purple-600" />
-            <span>Biểu giá dịch vụ chi nhánh (UC-S01B)</span>
-          </button>
+          {isStaff && (
+            <button
+              onClick={() => {
+                const myHouseCode = houses[0]?.code || staffHouseCode || (user?.username === 'staff2' ? 'CS-02' : 'CS-01');
+                setSelectedHouseForConfig(myHouseCode);
+                setServiceConfigModalOpen(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-bold rounded-xl shadow-xs transition-all"
+              title="UC-S01B: Cài đặt Biểu giá dịch vụ chi nhánh (Điện, Nước, Dịch vụ)"
+            >
+              <Receipt className="w-4 h-4 text-purple-600" />
+              <span>Biểu giá dịch vụ chi nhánh (UC-S01B)</span>
+            </button>
+          )}
 
           <button
             onClick={() => {
@@ -662,7 +703,7 @@ export default function BoardingHousesPage() {
                 setShowBuyPackageModal(true);
                 return;
               }
-              if (rawHouses.length >= maxHousesAllowed) {
+              if (myHousesCount >= maxHousesAllowed) {
                 setShowUpgradeModal(true);
               } else {
                 let nextNum = 1;
@@ -694,11 +735,11 @@ export default function BoardingHousesPage() {
             <span>Thêm Cơ Sở Nhà Trọ</span>
             {maxHousesAllowed < 999 && (
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                rawHouses.length >= maxHousesAllowed
+                myHousesCount >= maxHousesAllowed
                   ? 'bg-amber-400 text-slate-950 animate-pulse'
                   : 'bg-white/20 text-white'
               }`}>
-                {rawHouses.length}/{maxHousesAllowed}
+                {myHousesCount}/{maxHousesAllowed}
               </span>
             )}
           </button>
@@ -847,6 +888,15 @@ export default function BoardingHousesPage() {
           </p>
           <button
             onClick={() => {
+              const trial = getTrialStatus(currentLandlord);
+              if (trial.isTrialExpired) {
+                setShowBuyPackageModal(true);
+                return;
+              }
+              if (myHousesCount >= maxHousesAllowed) {
+                setShowUpgradeModal(true);
+                return;
+              }
               let nextNum = 1;
               rawHouses.forEach((h) => {
                 const match = (h.code || '').match(/CS-(\d+)/i);
@@ -1114,6 +1164,33 @@ export default function BoardingHousesPage() {
                   </div>
                 )}
                 <div className="flex items-center gap-1.5 flex-wrap">
+                  {/* Quyền quản trị sàn của Admin đối với cơ sở đã kích hoạt */}
+                  {role === 'ADMIN' && house.status !== 'PENDING_APPROVAL' && (
+                    <button
+                      type="button"
+                      onClick={() => handleToggleLockHouse(house)}
+                      className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl transition border cursor-pointer ${
+                        house.status === 'LOCKED'
+                          ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200 shadow-xs'
+                          : 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200'
+                      }`}
+                      title={house.status === 'LOCKED' ? 'Mở khóa kích hoạt lại cơ sở đón khách' : 'Tạm khóa cơ sở (bảo trì / đại tu)'}
+                    >
+                      {house.status === 'LOCKED' ? (
+                        <>
+                          <Unlock className="w-3.5 h-3.5" />
+                          <span>Mở Khóa</span>
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="w-3.5 h-3.5" />
+                          <span>Tạm Khóa</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+
+                  {/* Quyền của Chủ trọ phụ trách cơ sở: Tạm khóa, Biểu giá, Sửa, Xóa */}
                   {canManageHouse(house) ? (
                     <>
                       {/* Nút Tạm Khóa / Mở Khóa Cơ Sở */}
@@ -1176,13 +1253,15 @@ export default function BoardingHousesPage() {
                       </button>
                     </>
                   ) : (
-                    <span
-                      className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200"
-                      title={`Cơ sở này do ${house.manager || 'Quản lý khác'} phụ trách`}
-                    >
-                      <Lock className="w-3 h-3 text-slate-400" />
-                      <span>Chỉ xem ({house.manager || 'Nhân sự khác'})</span>
-                    </span>
+                    role !== 'ADMIN' && (
+                      <span
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200"
+                        title={`Cơ sở này do ${house.manager || 'Quản lý khác'} phụ trách`}
+                      >
+                        <Lock className="w-3 h-3 text-slate-400" />
+                        <span>Chỉ xem ({house.manager || 'Nhân sự khác'})</span>
+                      </span>
+                    )
                   )}
                 </div>
 
@@ -1579,6 +1658,7 @@ export default function BoardingHousesPage() {
       <HouseServiceConfigModal
         isOpen={serviceConfigModalOpen}
         onClose={() => setServiceConfigModalOpen(false)}
+        houseCode={selectedHouseForConfig}
         defaultHouseId={selectedHouseForConfig}
       />
 

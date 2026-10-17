@@ -200,6 +200,7 @@ export default function InvoicesPage({ forcedTab }) {
   }, [dynamicHouses, user, role, isZeroSandbox]);
 
   const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
+  const staffHouseCode = user?.houseCode || staffHouseCodes[0] || null;
 
   const [selectedFacility, setSelectedFacility] = useState(() => {
     if (role === 'STAFF') {
@@ -210,12 +211,20 @@ export default function InvoicesPage({ forcedTab }) {
 
   const displayedInvoices = useMemo(() => {
     if (isTenant) {
-      return invoices.filter(
-        (inv) =>
-          inv.sentToTenant &&
-          (myRentedRooms.includes(inv.room) ||
-            (inv.tenant && inv.tenant.toLowerCase().includes((user?.fullName || '').toLowerCase())))
-      );
+      return invoices.filter((inv) => {
+        const isMyRoom =
+          myRentedRooms.includes(inv.room) ||
+          (user?.room && inv.room === user.room) ||
+          (user?.rooms && user.rooms.includes(inv.room));
+        const isMyName =
+          inv.tenant &&
+          user?.fullName &&
+          (inv.tenant.toLowerCase().includes(user.fullName.toLowerCase()) ||
+            user.fullName.toLowerCase().includes(inv.tenant.toLowerCase()));
+        if (!isMyRoom && !isMyName) return false;
+        if (inv.status === 'PENDING_METER') return false;
+        return inv.sentToTenant !== false;
+      });
     }
     if (role === 'STAFF') {
       if (staffHouseCodes.length === 0) return [];
@@ -240,7 +249,7 @@ export default function InvoicesPage({ forcedTab }) {
       }
       return true;
     });
-  }, [isTenant, invoices, myRentedRooms, user, selectedFacility, role, staffHouseCode, dynamicHouses]);
+  }, [isTenant, invoices, myRentedRooms, user, selectedFacility, role, staffHouseCode, dynamicHouses, staffHouseCodes]);
 
   const filtered = displayedInvoices.filter((inv) => {
     let matchStatus = true;
@@ -800,7 +809,7 @@ export default function InvoicesPage({ forcedTab }) {
               </div>
 
               <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto">
-                {['ALL', 'UNPAID', 'PAID', 'UNSENT'].map((st) => (
+                {(isTenant ? ['ALL', 'UNPAID', 'PAID'] : ['ALL', 'UNPAID', 'PAID', 'UNSENT']).map((st) => (
                   <button
                     key={st}
                     onClick={() => setFilter(st)}
@@ -813,9 +822,9 @@ export default function InvoicesPage({ forcedTab }) {
                     {st === 'ALL'
                       ? 'Tất Cả'
                       : st === 'UNPAID'
-                      ? 'Chưa Đóng'
+                      ? (isTenant ? 'Chưa Thanh Toán' : 'Chưa Đóng')
                       : st === 'PAID'
-                      ? 'Đã Thu'
+                      ? (isTenant ? 'Đã Thanh Toán' : 'Đã Thu')
                       : 'Chờ Chốt Số'}
                   </button>
                 ))}
@@ -837,88 +846,102 @@ export default function InvoicesPage({ forcedTab }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                  {filtered.map((inv) => (
-                    <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-4 px-5">
-                        <div className="font-bold text-slate-900 text-sm">{inv.room}</div>
-                        <div className="text-slate-500 text-[11px]">{inv.tenant}</div>
-                        <div className="text-slate-400 font-mono text-[10px]">{inv.code}</div>
-                      </td>
-
-                      <td className="py-4 px-4 font-semibold text-slate-800">
-                        {inv.roomFee.toLocaleString('vi-VN')} đ
-                      </td>
-
-                      <td className="py-4 px-4 font-semibold text-slate-800">
-                        {inv.status === 'PENDING_METER' ? (
-                          <span className="text-amber-600 font-bold">Chờ chốt số</span>
-                        ) : (
-                          `${(inv.elec + inv.water).toLocaleString('vi-VN')} đ`
-                        )}
-                      </td>
-
-                      <td className="py-4 px-4 text-slate-600">
-                        {inv.service.toLocaleString('vi-VN')} đ
-                      </td>
-
-                      <td className="py-4 px-4 font-black text-slate-900 text-sm">
-                        {inv.status === 'PENDING_METER'
-                          ? `${(inv.roomFee + inv.service).toLocaleString('vi-VN')} đ`
-                          : `${inv.total.toLocaleString('vi-VN')} đ`}
-                      </td>
-
-                      <td className="py-4 px-4">
-                        {inv.status === 'PAID' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">
-                            <CheckCircle className="w-3.5 h-3.5" />
-                            <span>Đã Thanh Toán</span>
-                          </span>
-                        ) : inv.status === 'PENDING_METER' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200">
-                            <Clock className="w-3.5 h-3.5 text-amber-500" />
-                            <span>Chờ Chốt Điện Nước</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-bold border border-amber-200">
-                            <Clock className="w-3.5 h-3.5" />
-                            <span>Chưa Thanh Toán</span>
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="py-4 px-5 text-right space-x-1.5">
-                        {inv.status !== 'PAID' && inv.status !== 'PENDING_METER' ? (
-                          isTenant ? (
-                            <button
-                              type="button"
-                              onClick={() => setPayingInvoice(inv)}
-                              className="px-3 py-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold text-xs rounded-xl shadow-xs transition btn-press inline-flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <CreditCard className="w-3.5 h-3.5" />
-                              <span>Thanh Toán VNPay / MoMo</span>
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleManualConfirmPay(inv.id)}
-                              className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition shadow-xs cursor-pointer"
-                              title="Thu tiền mặt trực tiếp từ khách thuê"
-                            >
-                              Thu tiền mặt
-                            </button>
-                          )
-                        ) : null}
-
-                        <button
-                          onClick={() => setSelectedInvoice(inv)}
-                          className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition inline-flex items-center gap-1 border border-slate-200"
-                        >
-                          <Printer className="w-3.5 h-3.5 text-purple-600" />
-                          <span>In Phiếu Thu</span>
-                        </button>
+                  {filtered.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-12 text-center text-slate-400">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <Receipt className="w-8 h-8 text-slate-300" />
+                          <p className="font-semibold text-sm text-slate-600">Không tìm thấy hóa đơn nào</p>
+                          <p className="text-xs text-slate-400">
+                            {isTenant ? 'Bạn chưa có hóa đơn phát hành trong kỳ này' : 'Chưa có hóa đơn phù hợp với bộ lọc'}
+                          </p>
+                        </div>
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    filtered.map((inv) => (
+                      <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-4 px-5">
+                          <div className="font-bold text-slate-900 text-sm">{inv.room}</div>
+                          <div className="text-slate-500 text-[11px]">{inv.tenant}</div>
+                          <div className="text-slate-400 font-mono text-[10px]">{inv.code}</div>
+                        </td>
+
+                        <td className="py-4 px-4 font-semibold text-slate-800">
+                          {inv.roomFee.toLocaleString('vi-VN')} đ
+                        </td>
+
+                        <td className="py-4 px-4 font-semibold text-slate-800">
+                          {inv.status === 'PENDING_METER' ? (
+                            <span className="text-amber-600 font-bold">Chờ chốt số</span>
+                          ) : (
+                            `${(inv.elec + inv.water).toLocaleString('vi-VN')} đ`
+                          )}
+                        </td>
+
+                        <td className="py-4 px-4 text-slate-600">
+                          {inv.service.toLocaleString('vi-VN')} đ
+                        </td>
+
+                        <td className="py-4 px-4 font-black text-slate-900 text-sm">
+                          {inv.status === 'PENDING_METER'
+                            ? `${(inv.roomFee + inv.service).toLocaleString('vi-VN')} đ`
+                            : `${inv.total.toLocaleString('vi-VN')} đ`}
+                        </td>
+
+                        <td className="py-4 px-4">
+                          {inv.status === 'PAID' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              <span>Đã Thanh Toán</span>
+                            </span>
+                          ) : inv.status === 'PENDING_METER' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200">
+                              <Clock className="w-3.5 h-3.5 text-amber-500" />
+                              <span>Chờ Chốt Điện Nước</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-bold border border-amber-200">
+                              <Clock className="w-3.5 h-3.5" />
+                              <span>Chưa Thanh Toán</span>
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="py-4 px-5 text-right space-x-1.5">
+                          {inv.status !== 'PAID' && inv.status !== 'PENDING_METER' ? (
+                            isTenant ? (
+                              <button
+                                type="button"
+                                onClick={() => setPayingInvoice(inv)}
+                                className="px-3 py-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold text-xs rounded-xl shadow-xs transition btn-press inline-flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <CreditCard className="w-3.5 h-3.5" />
+                                <span>Thanh Toán VNPay / MoMo</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleManualConfirmPay(inv.id)}
+                                className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition shadow-xs cursor-pointer"
+                                title="Thu tiền mặt trực tiếp từ khách thuê"
+                              >
+                                Thu tiền mặt
+                              </button>
+                            )
+                          ) : null}
+
+                          <button
+                            onClick={() => setSelectedInvoice(inv)}
+                            className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition inline-flex items-center gap-1 border border-slate-200"
+                          >
+                            <Printer className="w-3.5 h-3.5 text-purple-600" />
+                            <span>In Phiếu Thu</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>

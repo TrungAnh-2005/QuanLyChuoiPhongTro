@@ -66,7 +66,38 @@ export default function ReportsPage() {
   const isStaff = role === 'STAFF';
   const isAdmin = role === 'ADMIN';
 
+  const staffManageableHouses = useMemo(() => {
+    if (!isStaff) return [];
+    try {
+      const saved = localStorage.getItem('rental_boarding_houses');
+      const dynamicHouses = saved ? JSON.parse(saved) : [];
+      const u = (user?.username || '').toLowerCase();
+      return dynamicHouses.filter((h) => {
+        const created = (h.createdBy || '').toLowerCase();
+        const manager = (h.managerUsername || '').toLowerCase();
+        if (created && created === u) return true;
+        if (manager && manager === u) return true;
+        if (user?.houseCode && h.code === user.houseCode) return true;
+        if (!isZeroSandbox) {
+          if (u === 'staff' && (h.code === 'CS-01' || !h.createdBy)) return true;
+          if (u === 'staff2' && h.code === 'CS-02') return true;
+        }
+        return false;
+      });
+    } catch {
+      return [];
+    }
+  }, [user, isStaff, isZeroSandbox]);
+
+  const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
+
   const facilities = useMemo(() => {
+    if (isStaff) {
+      return [
+        { code: 'ALL', name: 'Toàn Bộ Cơ Sở Của Tôi' },
+        ...staffManageableHouses.map((h) => ({ code: h.code, name: h.name }))
+      ];
+    }
     try {
       const saved = localStorage.getItem('rental_boarding_houses');
       if (saved) {
@@ -83,7 +114,7 @@ export default function ReportsPage() {
     } catch {
       return isZeroSandbox ? [{ code: 'ALL', name: 'Toàn Bộ Các Cơ Sở' }] : DEFAULT_FACILITIES;
     }
-  }, [isZeroSandbox]);
+  }, [isZeroSandbox, isStaff, staffManageableHouses]);
 
   const totalSaasRevenue = useMemo(() => {
     return (saasInvoices || [])
@@ -102,9 +133,21 @@ export default function ReportsPage() {
 
   // Thống kê cơ sở cho Staff (UC-S06)
   const facilityStats = useMemo(() => {
+    let baseRooms = rooms;
+    let baseInvoices = invoices;
+
+    if (isStaff) {
+      baseRooms = rooms.filter((r) => staffHouseCodes.includes(r.houseCode));
+      baseInvoices = invoices.filter((i) => {
+        if (i.houseCode && staffHouseCodes.includes(i.houseCode)) return true;
+        const invRoom = rooms.find((r) => r.number === i.room);
+        return invRoom && staffHouseCodes.includes(invRoom.houseCode);
+      });
+    }
+
     const targetRooms = selectedFacility === 'ALL'
-      ? rooms
-      : rooms.filter((r) => r.houseCode === selectedFacility);
+      ? baseRooms
+      : baseRooms.filter((r) => r.houseCode === selectedFacility);
 
     const totalRooms = targetRooms.length;
     const occupiedRooms = targetRooms.filter((r) => r.status === 'OCCUPIED').length;
@@ -112,8 +155,8 @@ export default function ReportsPage() {
     const occupancyRate = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0;
 
     const targetInvoices = selectedFacility === 'ALL'
-      ? invoices
-      : invoices.filter((i) => i.house && i.house.includes(selectedFacility));
+      ? baseInvoices
+      : baseInvoices.filter((i) => (i.houseCode === selectedFacility) || (i.house && i.house.includes(selectedFacility)));
 
     const totalRevenue = targetInvoices
       .filter((i) => i.status === 'PAID')
@@ -131,14 +174,47 @@ export default function ReportsPage() {
       totalRevenue,
       overdueArrears
     };
-  }, [rooms, invoices, selectedFacility]);
+  }, [rooms, invoices, selectedFacility, isStaff, staffHouseCodes]);
 
-    const filteredChartData = useMemo(() => {
-    if (timeRange === 'SEP_2026') return yearlyData.slice(8);
-    if (timeRange === 'Q3_2026') return yearlyData.slice(6, 9);
-    if (timeRange === 'Q2_2026') return yearlyData.slice(3, 6);
-    return yearlyData;
-  }, [timeRange]);
+  // Biểu đồ tách biệt hoàn toàn giữa Doanh thu phần mềm SaaS (Admin) và Doanh thu tiền phòng (Staff/Chủ trọ)
+  const chartData = useMemo(() => {
+    const allMonths = [
+      'Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6', 'Tháng 7', 'Tháng 8', 'Tháng 9'
+    ];
+
+    let targetMonths = allMonths;
+    if (timeRange === 'SEP_2026') targetMonths = allMonths.slice(8);
+    else if (timeRange === 'Q3_2026') targetMonths = allMonths.slice(6, 9);
+    else if (timeRange === 'Q2_2026') targetMonths = allMonths.slice(3, 6);
+
+    if (isAdmin) {
+      // DÀNH CHO ADMIN: Thống kê Doanh thu gói cước SaaS & Dòng tiền GMV toàn sàn
+      return targetMonths.map((m) => {
+        const isSep = m === 'Tháng 9';
+        const saasRev = isSep ? (totalSaasRevenue / 1000000) : 0;
+        const gmv = isSep ? (totalGmv / 1000000) : 0;
+        return {
+          month: m,
+          revenue: Number(saasRev.toFixed(2)),
+          profit: Number(gmv.toFixed(2))
+        };
+      });
+    }
+
+    // DÀNH CHO STAFF / CHỦ TRỌ: Chỉ tính doanh thu tiền phòng và lợi nhuận của cơ sở được phân công
+    return targetMonths.map((m) => {
+      const isSep = m === 'Tháng 9';
+      // Doanh thu phòng thực tế thu được trong tháng của cơ sở đang chọn
+      const roomRev = isSep ? (facilityStats.totalRevenue / 1000000) : 0;
+      // Lợi nhuận ròng cơ sở = 75% doanh thu phòng sau khi trừ chi phí vận hành, điện nước buôn
+      const roomProfit = roomRev > 0 ? Number((roomRev * 0.75).toFixed(2)) : 0;
+      return {
+        month: m,
+        revenue: Number(roomRev.toFixed(2)),
+        profit: Number(roomProfit.toFixed(2))
+      };
+    });
+  }, [isAdmin, timeRange, totalSaasRevenue, totalGmv, facilityStats.totalRevenue]);
 
   return (
     <div className="space-y-6">
@@ -266,7 +342,7 @@ export default function ReportsPage() {
           <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
             <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Lợi Nhuận Ròng Ước Tính</div>
             <div className="text-2xl font-black text-slate-900 mt-2">
-              {Math.max(0, facilityStats.totalRevenue - 11800000).toLocaleString('vi-VN')} đ
+              {Math.round(facilityStats.totalRevenue * 0.75).toLocaleString('vi-VN')} đ
             </div>
             <div className="text-xs text-blue-600 font-medium mt-1">
               Đã trừ chi phí điện nước buôn & bảo trì
@@ -336,21 +412,27 @@ export default function ReportsPage() {
 
       {/* Main Chart */}
       <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs card-interactive">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-2">
           <div>
             <h2 className="text-base font-bold text-slate-900">
               {isAdmin
                 ? 'Xu Hướng Doanh Thu SaaS & Dòng Tiền GMV Toàn Sàn (Triệu VNĐ)'
-                : 'So Sánh Doanh Thu vs Lợi Nhuận Chuỗi Nhà Trọ (Triệu VNĐ)'}
+                : `Doanh Thu & Lợi Nhuận Cơ Sở: ${facilities.find((f) => f.code === selectedFacility)?.name || 'Cơ sở của tôi'} (Triệu VNĐ)`}
             </h2>
-            <p className="text-xs text-slate-500 font-medium">Số liệu thực tế 9 tháng đầu năm 2026</p>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              {isAdmin
+                ? 'Số liệu doanh thu phần mềm SaaS & dòng tiền thanh toán toàn sàn'
+                : 'Số liệu doanh thu tiền thuê phòng và lợi nhuận thực tế thu được của cơ sở'}
+            </p>
           </div>
-          <div className="flex items-center gap-4 text-xs">
-            <span className="flex items-center gap-1.5 text-purple-700 font-bold">
-              <span className="w-3 h-3 rounded bg-purple-600"></span> Doanh thu
+          <div className="flex items-center gap-4 text-xs font-bold">
+            <span className="flex items-center gap-1.5 text-purple-700">
+              <span className="w-3 h-3 rounded bg-purple-600"></span>
+              <span>{isAdmin ? 'Doanh thu phần mềm SaaS' : 'Doanh thu phòng'}</span>
             </span>
-            <span className="flex items-center gap-1.5 text-blue-600 font-bold">
-              <span className="w-3 h-3 rounded bg-blue-600"></span> Lợi nhuận
+            <span className="flex items-center gap-1.5 text-blue-600">
+              <span className="w-3 h-3 rounded bg-blue-600"></span>
+              <span>{isAdmin ? 'Dòng tiền GMV toàn sàn' : 'Lợi nhuận ròng'}</span>
             </span>
           </div>
         </div>
@@ -358,15 +440,7 @@ export default function ReportsPage() {
         <div className="h-80 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
-              data={
-    isZeroSandbox
-      ? yearlyData.map((d, idx) => ({
-          month: d.month,
-          revenue: idx === 8 ? totalGmv / 1000000 : 0,
-          profit: idx === 8 ? totalSaasRevenue / 1000000 : 0
-        }))
-      : (isAdmin ? saasPlatformData.map((d) => ({ month: d.month, revenue: d.saasFee, profit: d.saasFee * 0.82 })) : yearlyData)
-  }
+              data={chartData}
               margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
@@ -381,10 +455,20 @@ export default function ReportsPage() {
                   fontSize: '12px',
                   boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
                 }}
-                formatter={(val) => [`${val} Triệu VNĐ`]}
+                formatter={(val, name) => [`${val} Triệu VNĐ`, name]}
               />
-              <Bar dataKey="revenue" fill="#7c3aed" radius={[6, 6, 0, 0]} name="Doanh thu" />
-              <Bar dataKey="profit" fill="#2563eb" radius={[6, 6, 0, 0]} name="Lợi nhuận" />
+              <Bar
+                dataKey="revenue"
+                fill="#7c3aed"
+                radius={[6, 6, 0, 0]}
+                name={isAdmin ? 'Doanh thu phần mềm SaaS' : 'Doanh thu phòng'}
+              />
+              <Bar
+                dataKey="profit"
+                fill="#2563eb"
+                radius={[6, 6, 0, 0]}
+                name={isAdmin ? 'Dòng tiền GMV toàn sàn' : 'Lợi nhuận ròng'}
+              />
             </BarChart>
           </ResponsiveContainer>
         </div>

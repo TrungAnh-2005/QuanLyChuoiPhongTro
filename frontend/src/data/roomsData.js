@@ -1,13 +1,14 @@
 export function normalizeHouseCode(code) {
-  if (!code) return 'CS-01';
+  if (!code) return '';
   const c = String(code).trim().toUpperCase();
-  if (c === '1' || c === 'CS-01' || c === 'CS1') return 'CS-01';
-  if (c === '2' || c === 'CS-02' || c === 'CS2') return 'CS-02';
-  if (c === '3' || c === 'CS-03' || c === 'CS3') return 'CS-03';
+  if (c === 'CS-01' || c === 'CS1') return 'CS-01';
+  if (c === 'CS-02' || c === 'CS2') return 'CS-02';
+  if (c === 'CS-03' || c === 'CS3') return 'CS-03';
   return c;
 }
 
 export function isSameHouse(codeA, codeB) {
+  if (!codeA || !codeB) return false;
   return normalizeHouseCode(codeA) === normalizeHouseCode(codeB);
 }
 
@@ -26,6 +27,7 @@ export function isDuplicateRoom(existingRooms, targetNumber, targetHouseCode, ex
   const normNum = normalizeRoomNumber(targetNumber);
   if (!normNum) return false;
   const targetHouse = normalizeHouseCode(targetHouseCode);
+  if (!targetHouse) return false;
   return (existingRooms || []).some((r) => {
     if (excludeRoomId !== null && excludeRoomId !== undefined && (r.id === excludeRoomId || r.number === excludeRoomId)) {
       return false;
@@ -45,6 +47,93 @@ export function getRoomImage(room) {
     return '/assets/images/room_duplex_2.jpg';
   }
   return '/assets/images/room_studio_1.jpg';
+}
+
+export function healBoardingHousesList(list) {
+  if (!Array.isArray(list) || list.length === 0) return list;
+
+  let changed = false;
+  const usedCodes = new Set();
+  const codeRenames = {};
+
+  const healed = list.map((h) => {
+    const isCustom = (typeof h.id === 'number' && h.id > 1000) || h.createdAtMs || (h.createdAt && !h.features);
+    let code = (h.code || '').trim().toUpperCase();
+    const u = (h.createdBy || h.managerUsername || '').toLowerCase();
+
+    let prefix = 'CS';
+    if (u === 'staff' || u === 'staff1') prefix = 'S1-CS';
+    else if (u === 'staff2') prefix = 'S2-CS';
+    else if (u && u !== 'admin') prefix = `${u.toUpperCase()}-CS`;
+
+    // Nếu là cơ sở tự tạo nhưng lại mang mã mẫu ban đầu CS-02 / CS-03
+    if (isCustom && (code === 'CS-02' || code === 'CS-03')) {
+      code = '';
+    }
+
+    // Nếu mã trống hoặc bị TRÙNG với một cơ sở khác trong danh sách
+    if (!code || usedCodes.has(code)) {
+      // Ưu tiên số thứ tự theo tên cơ sở (ví dụ tên "1" -> 01, tên "2" -> 02)
+      let preferredNum = null;
+      const numMatch = (h.name || '').match(/(\d+)/);
+      if (numMatch) {
+        const candidateNum = parseInt(numMatch[1], 10);
+        const candidateCode = `${prefix}-${String(candidateNum).padStart(2, '0')}`;
+        if (!usedCodes.has(candidateCode)) {
+          preferredNum = candidateNum;
+        }
+      }
+
+      let seq = preferredNum || 1;
+      let newCode = `${prefix}-${String(seq).padStart(2, '0')}`;
+      while (usedCodes.has(newCode)) {
+        seq++;
+        newCode = `${prefix}-${String(seq).padStart(2, '0')}`;
+      }
+
+      if (h.code && h.code !== newCode) {
+        codeRenames[h.code] = newCode;
+      }
+      code = newCode;
+      changed = true;
+    }
+
+    usedCodes.add(code);
+    return code !== h.code ? { ...h, code } : h;
+  });
+
+  if (changed) {
+    try {
+      localStorage.setItem('rental_boarding_houses', JSON.stringify(healed));
+    } catch {}
+
+    // Đồng bộ phòng theo mã cơ sở mới nếu có thay đổi
+    try {
+      const savedRooms = localStorage.getItem('rental_rooms');
+      if (savedRooms) {
+        const parsedRooms = JSON.parse(savedRooms);
+        if (Array.isArray(parsedRooms)) {
+          let roomsChanged = false;
+          const updatedRooms = parsedRooms.map((r) => {
+            const matchedHouse = healed.find((h) =>
+              (h.name && r.house && (h.name === r.house || String(r.house).trim() === String(h.name).trim())) ||
+              (codeRenames[r.houseCode] && h.code === codeRenames[r.houseCode])
+            );
+            if (matchedHouse && matchedHouse.code !== r.houseCode) {
+              roomsChanged = true;
+              return { ...r, houseCode: matchedHouse.code, house: matchedHouse.name };
+            }
+            return r;
+          });
+          if (roomsChanged) {
+            localStorage.setItem('rental_rooms', JSON.stringify(updatedRooms));
+          }
+        }
+      }
+    } catch {}
+  }
+
+  return healed;
 }
 
 export const ALL_ROOMS = [

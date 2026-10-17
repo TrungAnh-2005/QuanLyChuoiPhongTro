@@ -40,7 +40,8 @@ import {
   Trash2,
   Image as ImageIcon,
   Upload,
-  Camera
+  Camera,
+  MapPin
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
@@ -52,7 +53,7 @@ import MoveOutSettlementModal from '../components/settlement/MoveOutSettlementMo
 import TrialExpiryBanner from '../components/common/TrialExpiryBanner';
 import { getTrialStatus } from '../utils/packagePermissions';
 
-import { ALL_ROOMS, HOUSES_LIST, getRoomImage, isDuplicateRoom, isSameHouse, normalizeRoomNumber, normalizeHouseCode } from '../data/roomsData';
+import { ALL_ROOMS, HOUSES_LIST, getRoomImage, isDuplicateRoom, isSameHouse, normalizeRoomNumber, normalizeHouseCode, healBoardingHousesList } from '../data/roomsData';
 export { ALL_ROOMS, HOUSES_LIST };
 
 export const ROOM_IMAGE_PRESETS = [
@@ -63,12 +64,47 @@ export const ROOM_IMAGE_PRESETS = [
   { label: 'Phòng Full Nội Thất Cao Cấp', url: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&auto=format&fit=crop' }
 ];
 
+export function getHouseFullAddress(h) {
+  if (h?.address && h.address.trim()) return h.address;
+  const name = h?.name || '';
+  const code = h?.code || '';
+  if (code.includes('CS-01') || name.includes('Cầu Giấy')) {
+    return 'Số 45, Ngõ 165 Cầu Giấy, Phường Dịch Vọng, Quận Cầu Giấy, Hà Nội';
+  }
+  if (code.includes('CS-02') || name.includes('Bách Khoa')) {
+    return 'Số 18, Ngõ Tự Do, Phường Đồng Tâm, Quận Hai Bà Trưng, Hà Nội';
+  }
+  if (code.includes('CS-03') || name.includes('Đống Đa')) {
+    return 'Số 92, Phố Chùa Láng, Phường Láng Thượng, Quận Đống Đa, Hà Nội';
+  }
+  return h?.location || 'Thành phố Hà Nội';
+}
+
+export function getHouseDistrict(h) {
+  const addr = getHouseFullAddress(h);
+  const name = h?.name || '';
+  const districts = [
+    'Cầu Giấy', 'Đống Đa', 'Hai Bà Trưng', 'Thanh Xuân', 'Ba Đình', 
+    'Hoàn Kiếm', 'Hoàng Mai', 'Nam Từ Liêm', 'Bắc Từ Liêm', 'Hà Đông', 'Tây Hồ', 'Long Biên'
+  ];
+  for (const d of districts) {
+    if (addr.includes(d) || name.includes(d)) return `Quận ${d}`;
+  }
+  const parts = addr.split(',').map(s => s.trim());
+  if (parts.length >= 2) {
+    const candidate = parts[parts.length - 2];
+    if (candidate && candidate.length < 25) return candidate;
+  }
+  return 'Khu Vực Trung Tâm';
+}
+
 const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
 
 export default function RoomsPage() {
   const { user, tenantRooms } = useAuth();
   const role = user?.role || 'ADMIN';
   const isTenant = role === 'TENANT';
+  const isStaff = role === 'STAFF';
 
   const [searchParams, setSearchParams] = useSearchParams();
   const rawParam = searchParams.get('house') || 'ALL';
@@ -107,13 +143,12 @@ export default function RoomsPage() {
     payInvoice
   } = useData();
 
-  // Danh sách cơ sở thực tế lưu trong hệ thống (từ rental_boarding_houses)
   const [storedBoardingHouses, setStoredBoardingHouses] = useState(() => {
     try {
       const saved = localStorage.getItem('rental_boarding_houses');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) return healBoardingHousesList(parsed);
       }
     } catch {}
     return isZeroSandbox ? [] : [
@@ -150,7 +185,7 @@ export default function RoomsPage() {
         const saved = localStorage.getItem('rental_boarding_houses');
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) setStoredBoardingHouses(parsed);
+          if (Array.isArray(parsed)) setStoredBoardingHouses(healBoardingHousesList(parsed));
         }
       } catch {}
     };
@@ -162,10 +197,12 @@ export default function RoomsPage() {
   const visibleHousesForUser = useMemo(() => {
     if (storedBoardingHouses.length === 0) return [];
 
+    let list = storedBoardingHouses;
+
     if (user?.role === 'STAFF') {
       const myUsername = (user?.username || '').toLowerCase();
       const myHouseCode = user?.houseCode;
-      return storedBoardingHouses.filter((h) => {
+      list = storedBoardingHouses.filter((h) => {
         const created = (h.createdBy || '').toLowerCase();
         const manager = (h.managerUsername || '').toLowerCase();
         if (created && created === myUsername) return true;
@@ -181,38 +218,165 @@ export default function RoomsPage() {
         }
         return false;
       });
-    }
-
-    if (isTenant) {
+    } else if (isTenant) {
       if (tenantRooms && Object.values(tenantRooms).flat().length > 0) {
         const myActiveRoom = rooms.find((r) => (user?.rooms || []).includes(r.number) || r.number === user?.room);
         if (myActiveRoom?.houseCode) {
-          return storedBoardingHouses.filter((h) => h.code === myActiveRoom.houseCode);
+          list = storedBoardingHouses.filter((h) => h.code === myActiveRoom.houseCode);
+        } else {
+          list = storedBoardingHouses.filter((h) => h.status !== 'PENDING_APPROVAL');
         }
+      } else {
+        // Khách mới hoặc chưa thuê phòng: Chỉ thấy các cơ sở đã được phê duyệt (status !== 'PENDING_APPROVAL')
+        list = storedBoardingHouses.filter((h) => h.status !== 'PENDING_APPROVAL');
       }
-      // Khách mới hoặc chưa thuê phòng: Chỉ thấy các cơ sở đã được phê duyệt (status !== 'PENDING_APPROVAL')
-      return storedBoardingHouses.filter((h) => h.status !== 'PENDING_APPROVAL');
     }
 
-    // Admin: Xem tất cả cơ sở trong hệ thống
-    return storedBoardingHouses;
+    // Sắp xếp các cơ sở tăng dần theo số và chữ cái (1 trước 2, A trước Z)
+    return [...list].sort((a, b) => {
+      const nameA = String(a.name || a.code || '').trim();
+      const nameB = String(b.name || b.code || '').trim();
+      const cmp = nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+      if (cmp !== 0) return cmp;
+      return String(a.code || '').localeCompare(String(b.code || ''), undefined, { numeric: true, sensitivity: 'base' });
+    });
   }, [storedBoardingHouses, user, isTenant, tenantRooms, rooms]);
+
+  // Danh sách cơ sở đã được Quản trị viên phê duyệt (ACTIVE) để cho phép tạo phòng
+  const approvedHousesForUser = useMemo(() => {
+    return visibleHousesForUser.filter(
+      (h) => h.status === 'ACTIVE' || (!h.status && h.status !== 'PENDING_APPROVAL' && h.status !== 'LOCKED')
+    );
+  }, [visibleHousesForUser]);
+
+  // Trích xuất danh sách Chủ Trọ độc lập từ các cơ sở hiện có
+  const uniqueLandlords = useMemo(() => {
+    const map = new Map();
+    visibleHousesForUser.forEach((h) => {
+      const u = (h.createdBy || h.managerUsername || '').toLowerCase();
+      let key = u || 'other';
+      let label = '';
+      if (u === 'staff' || u === 'staff1' || h.code.startsWith('S1-')) {
+        key = 'staff';
+        label = 'Lê Thị Thu Ngân (Staff 1)';
+      } else if (u === 'staff2' || h.code.startsWith('S2-')) {
+        key = 'staff2';
+        label = 'Đàm Văn Táo (Staff 2)';
+      } else if (u === 'admin') {
+        key = 'admin';
+        label = 'Ban Quản Trị Hệ Thống';
+      } else {
+        label = h.manager || u || 'Chủ trọ';
+      }
+      if (!map.has(key)) {
+        map.set(key, { key, label, count: 1 });
+      } else {
+        map.get(key).count += 1;
+      }
+    });
+    return Array.from(map.values());
+  }, [visibleHousesForUser]);
+
+  const [selectedLandlord, setSelectedLandlord] = useState('ALL');
 
   const dynamicHousesList = useMemo(() => {
     if (visibleHousesForUser.length === 0) return [];
-    const items = visibleHousesForUser.map((p) => ({
-      code: p.code,
-      name: p.name,
-      totalRooms: (rooms || []).filter((r) => r.houseCode === p.code || (p.code === 'CS-01' && !r.houseCode)).length
-    }));
-    if (items.length > 1 || role === 'ADMIN') {
+
+    // Nếu người dùng chọn lọc theo một Chủ trọ cụ thể
+    const filteredHouses = selectedLandlord === 'ALL'
+      ? visibleHousesForUser
+      : visibleHousesForUser.filter((p) => {
+          const u = (p.createdBy || p.managerUsername || '').toLowerCase();
+          if (selectedLandlord === 'staff') return u === 'staff' || u === 'staff1' || p.code.startsWith('S1-');
+          if (selectedLandlord === 'staff2') return u === 'staff2' || p.code.startsWith('S2-');
+          if (selectedLandlord === 'admin') return u === 'admin' || p.code.startsWith('CS-');
+          return u === selectedLandlord;
+        });
+
+    const items = filteredHouses.map((p) => {
+      const isPending = p.status === 'PENDING_APPROVAL';
+      const count = isPending ? 0 : (rooms || []).filter((r) => r.houseCode === p.code || (p.code === 'CS-01' && !r.houseCode)).length;
+
+      // Trích xuất địa chỉ ngắn gọn (Quận / Huyện)
+      let location = '';
+      if (p.address) {
+        const parts = p.address.split(',').map((s) => s.trim());
+        if (parts.length >= 2) {
+          location = `${parts[parts.length - 2]}, ${parts[parts.length - 1].replace(/Hà Nội/i, 'HN')}`;
+        } else {
+          location = p.address.length > 22 ? p.address.slice(0, 22) + '...' : p.address;
+        }
+      }
+
+      // Xác định tên chủ trọ quản lý
+      let landlordName = '';
+      const u = (p.createdBy || p.managerUsername || '').toLowerCase();
+      if (p.manager && !p.manager.toLowerCase().includes('admin')) {
+        landlordName = p.manager.replace(/\s*\(Staff.*?\)/i, '').trim();
+      } else if (u === 'staff' || u === 'staff1' || p.code.startsWith('S1-')) {
+        landlordName = 'Lê Thị Thu Ngân (Staff 1)';
+      } else if (u === 'staff2' || p.code.startsWith('S2-')) {
+        landlordName = 'Đàm Văn Táo (Staff 2)';
+      } else {
+        landlordName = p.manager || 'Quản lý cơ sở';
+      }
+
+      // Nhãn chuỗi (Tag)
+      let ownerTag = '';
+      if (u === 'staff' || u === 'staff1' || p.code.startsWith('S1-')) ownerTag = 'Staff 1';
+      else if (u === 'staff2' || p.code.startsWith('S2-')) ownerTag = 'Staff 2';
+      else if (u === 'admin') ownerTag = 'Admin';
+
+      return {
+        id: p.id,
+        code: p.code,
+        name: p.name + (isPending ? ' (Chờ duyệt)' : ''),
+        rawName: p.name,
+        location,
+        landlordName,
+        ownerTag,
+        address: p.address,
+        isPending,
+        totalRooms: count
+      };
+    });
+
+    // Sắp xếp các cơ sở theo thứ tự số và chữ cái tăng dần: 1 trước 2, A trước Z
+    items.sort((a, b) => {
+      const nameA = String(a.rawName || a.name || a.code || '').trim();
+      const nameB = String(b.rawName || b.name || b.code || '').trim();
+      const cmp = nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+      if (cmp !== 0) return cmp;
+      return String(a.code || '').localeCompare(String(b.code || ''), undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    // Staff không hiển thị nút "Tất Cả Các Cơ Sở", chỉ Admin hoặc khi cần xem toàn sàn mới có nút này
+    if (!isStaff && (items.length > 1 || role === 'ADMIN' || selectedLandlord === 'ALL')) {
       return [
-        { code: 'ALL', name: 'Tất Cả Các Cơ Sở', totalRooms: (rooms || []).length },
+        {
+          code: 'ALL',
+          name: 'Tất Cả Các Cơ Sở',
+          rawName: 'Tất Cả Các Cơ Sở',
+          location: 'Toàn bộ chuỗi',
+          landlordName: 'Hệ thống Trọ Việt',
+          ownerTag: 'Tất Cả',
+          totalRooms: (rooms || []).filter((r) => {
+            const h = storedBoardingHouses.find((house) => house.code === r.houseCode);
+            return !h || h.status !== 'PENDING_APPROVAL';
+          }).length
+        },
         ...items
       ];
     }
     return items;
-  }, [visibleHousesForUser, rooms, role]);
+  }, [visibleHousesForUser, rooms, role, isStaff, storedBoardingHouses, selectedLandlord]);
+
+  // Lấy chi tiết thông tin cơ sở
+  const getHouseDetails = useCallback((houseCode) => {
+    if (!houseCode) return null;
+    const normCode = normalizeHouseCode(houseCode);
+    return storedBoardingHouses.find((h) => h.code === normCode || h.code === houseCode || String(h.id) === String(houseCode)) || null;
+  }, [storedBoardingHouses]);
 
   // Lấy tên cơ sở động từ storedBoardingHouses để luôn hiển thị chính xác tên cơ sở do chủ trọ đặt
   const getHouseName = useCallback((houseCode, fallbackHouse) => {
@@ -223,20 +387,92 @@ export default function RoomsPage() {
     return fallbackHouse || houseCode;
   }, [storedBoardingHouses]);
 
-  const [selectedHouse, setSelectedHouse] = useState(rawParam);
+  const [selectedHouse, setSelectedHouse] = useState(() => {
+    if (isStaff && (!rawParam || rawParam === 'ALL')) {
+      return '';
+    }
+    return rawParam;
+  });
 
   useEffect(() => {
     if (dynamicHousesList.length > 0) {
+      // Nếu là Staff đang ở 'ALL' (do URL query param mặc định), tự động chuyển sang cơ sở đầu tiên
+      if (isStaff && selectedHouse === 'ALL') {
+        setSelectedHouse(dynamicHousesList[0].code);
+        return;
+      }
       const hasCode = dynamicHousesList.some((h) => h.code === selectedHouse);
       if (!hasCode) {
         setSelectedHouse(dynamicHousesList[0].code);
       }
     } else {
-      setSelectedHouse('ALL');
+      setSelectedHouse(isStaff ? '' : 'ALL');
     }
-  }, [dynamicHousesList, selectedHouse]);
+  }, [dynamicHousesList, selectedHouse, isStaff]);
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
+  const [tenantLocation, setTenantLocation] = useState(null);
+  const [tenantViewAllFlat, setTenantViewAllFlat] = useState(false);
+
+  // Danh sách các địa chỉ / khu vực gom nhóm theo Quận / Khu vực cho khách thuê
+  const locationGroups = useMemo(() => {
+    const validHouses = visibleHousesForUser.filter(h => h.status !== 'PENDING_APPROVAL');
+    const map = new Map();
+
+    validHouses.forEach((house) => {
+      const district = getHouseDistrict(house);
+      const houseRooms = (rooms || []).filter(r => r.houseCode === house.code);
+      const availableRooms = houseRooms.filter(r => r.status === 'AVAILABLE');
+      const prices = houseRooms.map(r => r.price || 0).filter(p => p > 0);
+      const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
+      const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;
+
+      if (!map.has(district)) {
+        map.set(district, {
+          district,
+          houses: [],
+          totalRooms: 0,
+          availableRoomsCount: 0,
+          minPrice: minPrice || 0,
+          maxPrice: maxPrice || 0,
+          landlords: new Set()
+        });
+      }
+
+      const group = map.get(district);
+      const owner = house.manager || house.landlordName || house.managerUsername || 'Chủ trọ';
+      group.houses.push({
+        ...house,
+        address: getHouseFullAddress(house),
+        landlordDisplay: owner,
+        roomsCount: houseRooms.length,
+        availableCount: availableRooms.length,
+        minPrice,
+        maxPrice
+      });
+      group.totalRooms += houseRooms.length;
+      group.availableRoomsCount += availableRooms.length;
+      if (minPrice > 0 && (group.minPrice === 0 || minPrice < group.minPrice)) group.minPrice = minPrice;
+      if (maxPrice > group.maxPrice) group.maxPrice = maxPrice;
+      group.landlords.add(owner);
+    });
+
+    return Array.from(map.values()).map(g => ({
+      ...g,
+      landlordsList: Array.from(g.landlords)
+    }));
+  }, [visibleHousesForUser, rooms]);
+
+  const activeHouseRecord = useMemo(() => {
+    return storedBoardingHouses.find(h => h.code === selectedHouse);
+  }, [storedBoardingHouses, selectedHouse]);
+
+  const activeDistrict = useMemo(() => {
+    if (selectedHouse !== 'ALL' && activeHouseRecord) {
+      return getHouseDistrict(activeHouseRecord);
+    }
+    return tenantLocation;
+  }, [selectedHouse, activeHouseRecord, tenantLocation]);
   const [showModal, setShowModal] = useState(false);
   const [selectedRoomDetails, setSelectedRoomDetails] = useState(null);
   const [roomDetailsTab, setRoomDetailsTab] = useState('SPECS'); // 'SPECS' | 'MEMBERS' | 'CONTRACT'
@@ -957,7 +1193,9 @@ export default function RoomsPage() {
 
   const [newRoom, setNewRoom] = useState({
     number: '',
-    houseCode: visibleHousesForUser[0]?.code || '',
+    houseCode: (selectedHouse && selectedHouse !== 'ALL' && approvedHousesForUser.some(h => h.code === selectedHouse))
+      ? selectedHouse
+      : (approvedHousesForUser[0]?.code || ''),
     floor: 'Tầng 1',
     price: 3500000,
     area: 25,
@@ -966,26 +1204,44 @@ export default function RoomsPage() {
     image: '/assets/images/room_studio_1.jpg'
   });
 
-  // Tự động đồng bộ mã cơ sở thực tế cho phòng mới
+  // Tự động đồng bộ mã cơ sở thực tế cho phòng mới (chỉ đồng bộ vào cơ sở ĐÃ ĐƯỢC DUYỆT)
   useEffect(() => {
-    if (visibleHousesForUser.length > 0 && !newRoom.houseCode) {
-      setNewRoom((prev) => ({ ...prev, houseCode: visibleHousesForUser[0].code }));
+    if (approvedHousesForUser.length > 0) {
+      const isCurrentValid = Boolean(newRoom.houseCode && approvedHousesForUser.some(h => h.code === newRoom.houseCode));
+      if (!isCurrentValid) {
+        const preferredHouse = (selectedHouse && selectedHouse !== 'ALL' && approvedHousesForUser.some(h => h.code === selectedHouse))
+          ? selectedHouse
+          : approvedHousesForUser[0].code;
+        setNewRoom((prev) => ({ ...prev, houseCode: preferredHouse }));
+      }
     }
-  }, [visibleHousesForUser, newRoom.houseCode]);
+  }, [approvedHousesForUser, selectedHouse, newRoom.houseCode]);
 
   // Kiểm tra trùng lặp số phòng trong cùng 1 cơ sở (bắt buộc phòng trong 1 cơ sở phải khác tên/số)
-  const addRoomTargetHouse = newRoom.houseCode || visibleHousesForUser[0]?.code || 'CS-01';
+  const addRoomTargetHouse = (
+    (newRoom.houseCode && approvedHousesForUser.some(h => h.code === newRoom.houseCode))
+      ? newRoom.houseCode
+      : (selectedHouse && selectedHouse !== 'ALL' && approvedHousesForUser.some(h => h.code === selectedHouse))
+        ? selectedHouse
+        : approvedHousesForUser[0]?.code
+  ) || '';
   const isNewRoomDuplicate = Boolean(
     newRoom.number &&
     String(newRoom.number).trim() &&
+    addRoomTargetHouse &&
     isDuplicateRoom(rooms, newRoom.number, addRoomTargetHouse)
   );
 
-  const editTargetHouse = editRoomForm.houseCode || editingRoomModal?.houseCode || 'CS-01';
+  const editTargetHouse = (
+    (editRoomForm.houseCode && visibleHousesForUser.some(h => h.code === editRoomForm.houseCode))
+      ? editRoomForm.houseCode
+      : editingRoomModal?.houseCode
+  ) || '';
   const isEditRoomDuplicate = Boolean(
     editingRoomModal &&
     editRoomForm.number &&
     String(editRoomForm.number).trim() &&
+    editTargetHouse &&
     isDuplicateRoom(rooms, editRoomForm.number, editTargetHouse, editingRoomModal.id)
   );
 
@@ -1024,6 +1280,8 @@ export default function RoomsPage() {
     }
     return rooms;
   }, [rooms, user, visibleHousesForUser]);
+
+  const myRoomsCount = role === 'ADMIN' ? rooms.length : staffManageableRooms.length;
 
   const filteredRooms = useMemo(() => {
     return rooms.filter((r) => {
@@ -1064,12 +1322,7 @@ export default function RoomsPage() {
       }
 
       // Lọc theo cơ sở do người dùng chọn:
-      const matchHouse =
-        selectedHouse === 'ALL' ||
-        r.houseCode === selectedHouse ||
-        (selectedHouse === '1' && r.houseCode === 'CS-01') ||
-        (selectedHouse === '2' && r.houseCode === 'CS-02') ||
-        (selectedHouse === '3' && r.houseCode === 'CS-03');
+      const matchHouse = selectedHouse === 'ALL' || r.houseCode === selectedHouse;
 
       // Lọc theo trạng thái phòng:
       const matchStatus = filterStatus === 'ALL' || r.status === filterStatus;
@@ -1080,9 +1333,15 @@ export default function RoomsPage() {
         r.house.toLowerCase().includes(searchTerm.toLowerCase()) ||
         r.houseCode.toLowerCase().includes(searchTerm.toLowerCase());
 
+      // Cơ sở đang chờ Admin duyệt thì chưa thể có phòng trọ hoạt động chính thức
+      const roomHouse = storedBoardingHouses.find((h) => h.code === r.houseCode);
+      if (roomHouse && roomHouse.status === 'PENDING_APPROVAL') {
+        return false;
+      }
+
       return matchHouse && matchStatus && matchSearch;
     });
-  }, [rooms, isTenant, myRentedRoom, myRentedRoomObj, selectedHouse, filterStatus, searchTerm, user, visibleHousesForUser]);
+  }, [rooms, isTenant, myRentedRoom, myRentedRoomObj, selectedHouse, filterStatus, searchTerm, user, visibleHousesForUser, storedBoardingHouses]);
 
   const handleUpdateStatus = (id, newStatus) => {
     const targetRoom = rooms.find(r => r.id === id);
@@ -1114,24 +1373,99 @@ export default function RoomsPage() {
     : (currentLandlord?.packageCode || 'BASIC');
   const maxRoomsAllowed = landlordPackage === 'ENTERPRISE' ? 99999 : landlordPackage === 'PRO' ? 100 : (landlordPackage === 'NONE' || landlordPackage === 'TRIAL' ? 10 : 30);
 
+  const handleOpenAddRoomModal = () => {
+    if (visibleHousesForUser.length === 0) {
+      alert(
+        "⚠️ Chưa thể tạo phòng trọ!\n\nBạn chưa có Cơ sở nhà trọ nào trong hệ thống.\nTheo quy định nghiệp vụ: Mỗi phòng trọ bắt buộc phải trực thuộc một Cơ sở cụ thể.\n\nVui lòng vào menu 'Cơ Sở Nhà Trọ' để tạo Cơ sở trước!"
+      );
+      return;
+    }
+
+    if (selectedHouse !== 'ALL') {
+      const selectedRecord = storedBoardingHouses.find((h) => h.code === selectedHouse);
+      if (selectedRecord?.status === 'PENDING_APPROVAL') {
+        alert(
+          `⚠️ Không thể tạo phòng trọ!\n\nCơ sở "${selectedRecord.name || selectedHouse}" (${selectedHouse}) đang ở trạng thái CHỜ ADMIN DUYỆT.\n\nTheo quy định nghiệp vụ:\n• Cơ sở mới đăng ký phải được Quản Trị Viên (Admin) thẩm định giấy tờ & phê duyệt đưa vào hoạt động chính thức trước.\n• Vui lòng liên hệ Admin hoặc chuyển sang tài khoản Admin để phê duyệt cơ sở này trước khi tạo phòng trọ.`
+        );
+        return;
+      }
+      if (selectedRecord?.status === 'LOCKED') {
+        alert(
+          `⚠️ Không thể tạo phòng: Cơ sở "${selectedRecord.name || selectedHouse}" hiện đang bị TẠM KHÓA HOẠT ĐỘNG!\n\nVui lòng mở khóa cơ sở trước khi thêm phòng.`
+        );
+        return;
+      }
+    }
+
+    if (approvedHousesForUser.length === 0) {
+      alert(
+        "⚠️ Chưa thể tạo phòng trọ!\n\nTất cả cơ sở của bạn hiện đang ở trạng thái CHỜ ADMIN DUYỆT hoặc TẠM KHÓA.\n\nTheo quy định nghiệp vụ: Bạn chỉ có thể tạo phòng trọ sau khi cơ sở được Quản Trị Viên (Admin) phê duyệt đưa vào hoạt động chính thức."
+      );
+      return;
+    }
+
+    const trial = getTrialStatus(currentLandlord);
+    if (trial.isTrialExpired) {
+      setQuotaExceededModal(true);
+      return;
+    }
+    if (myRoomsCount >= maxRoomsAllowed) {
+      setQuotaExceededModal(true);
+      return;
+    }
+    const targetHouse = (selectedHouse && selectedHouse !== 'ALL' && approvedHousesForUser.some(h => h.code === selectedHouse))
+      ? selectedHouse
+      : (approvedHousesForUser[0]?.code || '');
+    setNewRoom({
+      number: '',
+      houseCode: targetHouse,
+      floor: 'Tầng 1',
+      price: 3500000,
+      area: 25,
+      maxOccupants: 2,
+      status: 'AVAILABLE',
+      image: '/assets/images/room_studio_1.jpg'
+    });
+    setShowModal(true);
+  };
+
   const handleCreateRoom = (e) => {
     e.preventDefault();
     if (!newRoom.number) return;
 
-    if (visibleHousesForUser.length === 0 || !newRoom.houseCode) {
-      alert("⚠️ Không thể tạo phòng: Bạn chưa có Cơ sở nhà trọ nào!\n\nTheo quy định nghiệp vụ: Mỗi phòng trọ phải thuộc một Cơ sở cụ thể. Vui lòng tạo Cơ sở trước khi thêm phòng.");
+    const targetHouseCode = (
+      (newRoom.houseCode && approvedHousesForUser.some(h => h.code === newRoom.houseCode))
+        ? newRoom.houseCode
+        : (selectedHouse && selectedHouse !== 'ALL' && approvedHousesForUser.some(h => h.code === selectedHouse))
+          ? selectedHouse
+          : approvedHousesForUser[0]?.code
+    ) || '';
+
+    if (!targetHouseCode) {
+      alert("⚠️ Không thể tạo phòng: Bạn chưa có Cơ sở nào được phê duyệt hoạt động!\n\nVui lòng đợi Admin phê duyệt cơ sở trước khi thêm phòng.");
       setShowModal(false);
       return;
     }
 
-    const targetHouseCode = newRoom.houseCode || visibleHousesForUser[0]?.code || 'CS-01';
+    const targetRecord = storedBoardingHouses.find((h) => h.code === targetHouseCode);
+    if (targetRecord?.status === 'PENDING_APPROVAL') {
+      alert(
+        `⚠️ Không thể tạo phòng: Cơ sở "${targetRecord.name || targetHouseCode}" đang CHỜ QUẢN TRỊ VIÊN (ADMIN) PHÊ DUYỆT!\n\nVui lòng đợi Admin phê duyệt cơ sở trước khi thêm phòng.`
+      );
+      return;
+    }
+    if (targetRecord?.status === 'LOCKED') {
+      alert(`⚠️ Không thể tạo phòng: Cơ sở "${targetRecord.name || targetHouseCode}" đang bị TẠM KHÓA!`);
+      return;
+    }
+
     if (isDuplicateRoom(rooms, newRoom.number, targetHouseCode)) {
       alert(`⚠️ Không thể tạo phòng: Phòng "${newRoom.number}" đã tồn tại trong cơ sở này!\n\nTheo quy định nghiệp vụ: Trong cùng một cơ sở nhà trọ, các phòng phải có số / tên khác nhau để đảm bảo quản lý hợp đồng và ghi điện nước.`);
       return;
     }
 
-    // Kiểm tra giới hạn số phòng của gói cước
-    if (rooms.length >= maxRoomsAllowed) {
+    // Kiểm tra giới hạn số phòng của gói cước (tính theo chủ trọ hiện tại)
+    if (myRoomsCount >= maxRoomsAllowed) {
       setShowModal(false);
       setQuotaExceededModal(true);
       return;
@@ -1148,7 +1482,7 @@ export default function RoomsPage() {
     setShowModal(false);
     setNewRoom({
       number: '',
-      houseCode: visibleHousesForUser[0]?.code || '',
+      houseCode: targetHouseCode,
       floor: 'Tầng 1',
       price: 3500000,
       area: 25,
@@ -1159,24 +1493,17 @@ export default function RoomsPage() {
   };
 
   const currentHouseInfo = dynamicHousesList.find(
-    (h) =>
-      h.code === selectedHouse ||
-      (selectedHouse === '1' && h.code === 'CS-01') ||
-      (selectedHouse === '2' && h.code === 'CS-02') ||
-      (selectedHouse === '3' && h.code === 'CS-03')
+    (h) => h.code === selectedHouse
   ) || dynamicHousesList[0] || { code: 'ALL', name: 'Toàn Bộ Các Cơ Sở', totalRooms: 0 };
 
   const currentHouseRecord = useMemo(() => {
     return storedBoardingHouses.find(
-      (h) =>
-        h.code === selectedHouse ||
-        (selectedHouse === '1' && h.code === 'CS-01') ||
-        (selectedHouse === '2' && h.code === 'CS-02') ||
-        (selectedHouse === '3' && h.code === 'CS-03')
+      (h) => h.code === selectedHouse
     );
   }, [storedBoardingHouses, selectedHouse]);
 
   const isCurrentHouseLocked = currentHouseRecord?.status === 'LOCKED';
+  const isCurrentHousePendingApproval = currentHouseRecord?.status === 'PENDING_APPROVAL';
 
   const selectedRoomHouse = useMemo(() => {
     if (!selectedRoomDetails) return null;
@@ -1203,8 +1530,14 @@ export default function RoomsPage() {
         <div>
           {isTenant ? (
             <div className="flex items-center gap-2 text-xs font-semibold text-purple-600 mb-1">
-              <Building2 className="w-3.5 h-3.5" />
-              <span>Tra Cứu Chuỗi & Phòng Của Chủ Trọ</span>
+              <MapPin className="w-3.5 h-3.5" />
+              <span>
+                {selectedHouse !== 'ALL'
+                  ? `Cơ sở: ${currentHouseInfo.name}`
+                  : tenantLocation && !tenantViewAllFlat
+                  ? `Khu vực: ${tenantLocation}`
+                  : 'Tra Cứu Phòng Trọ Theo Địa Chỉ & Cơ Sở'}
+              </span>
             </div>
           ) : (
             <div className="flex items-center gap-2 text-xs font-semibold text-purple-600 mb-1">
@@ -1220,14 +1553,26 @@ export default function RoomsPage() {
           )}
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
             {isTenant
-              ? 'Tra Cứu Chuỗi & Phòng Của Chủ Trọ'
+              ? (selectedHouse !== 'ALL'
+                  ? `Danh Sách Phòng: ${currentHouseInfo.name}`
+                  : tenantLocation && !tenantViewAllFlat
+                  ? `Các Cơ Sở Nhà Trọ Tại ${tenantLocation}`
+                  : tenantViewAllFlat
+                  ? 'Toàn Bộ Phòng Đang Mở Cho Thuê'
+                  : 'Tìm Trọ Theo Địa Chỉ & Cơ Sở')
               : selectedHouse === 'ALL'
               ? `Toàn Bộ Phòng Thuộc Chuỗi (${staffManageableRooms.length} Phòng)`
               : `Danh Sách Phòng: ${currentHouseInfo.name}`}
           </h1>
           <p className="text-slate-500 text-sm mt-0.5 font-medium">
             {isTenant
-              ? 'Tra cứu thông tin cơ sở chuỗi nhà trọ, danh sách phòng, tiện ích và giá thuê niêm yết của chủ trọ.'
+              ? (selectedHouse !== 'ALL'
+                  ? `Địa chỉ: ${getHouseFullAddress(currentHouseRecord)} • Quản lý: ${currentHouseInfo.landlordName || 'Chủ trọ'}`
+                  : tenantLocation && !tenantViewAllFlat
+                  ? `Chọn cơ sở bạn muốn xem để khám phá các phòng trống, tiện ích và giá niêm yết.`
+                  : tenantViewAllFlat
+                  ? `Đang hiển thị toàn bộ phòng của tất cả các cơ sở trên toàn sàn.`
+                  : 'Chọn địa chỉ hoặc khu vực bạn muốn tìm phòng để xem các cơ sở của từng chủ trọ uy tín.')
               : `Tổng số: ${filteredRooms.length} phòng | Trống: ${filteredRooms.filter((r) => r.status === 'AVAILABLE').length} | Giữ chỗ: ${filteredRooms.filter((r) => r.status === 'HOLDING').length} | Đang thuê: ${filteredRooms.filter((r) => r.status === 'OCCUPIED').length} | Bảo trì: ${filteredRooms.filter((r) => r.status === 'MAINTENANCE').length} | Tạm khóa: ${filteredRooms.filter((r) => r.status === 'LOCKED').length}`}
           </p>
         </div>
@@ -1264,25 +1609,12 @@ export default function RoomsPage() {
             </button>
 
             <button
-              onClick={() => {
-                if (visibleHousesForUser.length === 0) {
-                  alert(
-                    "⚠️ Chưa thể tạo phòng trọ!\n\nBạn chưa có Cơ sở nhà trọ nào trong hệ thống.\nTheo quy định nghiệp vụ: Mỗi phòng trọ bắt buộc phải trực thuộc một Cơ sở cụ thể.\n\nVui lòng vào menu 'Cơ Sở Nhà Trọ' để tạo Cơ sở trước!"
-                  );
-                  return;
-                }
-                const trial = getTrialStatus(currentLandlord);
-                if (trial.isTrialExpired) {
-                  setQuotaExceededModal(true);
-                  return;
-                }
-                if (rooms.length >= maxRoomsAllowed) {
-                  setQuotaExceededModal(true);
-                } else {
-                  setShowModal(true);
-                }
-              }}
-              className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-purple-600/25 transition-all hover:scale-105 btn-press cursor-pointer"
+              onClick={handleOpenAddRoomModal}
+              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-xl transition-all btn-press cursor-pointer ${
+                isCurrentHousePendingApproval
+                  ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-md shadow-amber-500/25'
+                  : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-md shadow-purple-600/25 hover:scale-105'
+              }`}
             >
               <Plus className="w-4 h-4" />
               <span>Thêm Phòng Mới</span>
@@ -1290,11 +1622,15 @@ export default function RoomsPage() {
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-slate-950">
                   Cần tạo Cơ sở trước
                 </span>
+              ) : isCurrentHousePendingApproval ? (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200 text-amber-950 animate-pulse">
+                  Chờ Admin duyệt
+                </span>
               ) : maxRoomsAllowed < 99999 && (
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                  rooms.length >= maxRoomsAllowed ? 'bg-amber-400 text-slate-950 animate-pulse' : 'bg-white/20 text-white'
+                  myRoomsCount >= maxRoomsAllowed ? 'bg-amber-400 text-slate-950 animate-pulse' : 'bg-white/20 text-white'
                 }`}>
-                  {rooms.length}/{maxRoomsAllowed}
+                  {myRoomsCount}/{maxRoomsAllowed}
                 </span>
               )}
             </button>
@@ -1366,122 +1702,500 @@ export default function RoomsPage() {
         </div>
       )}
 
-      {/* Chọn Cơ Sở Để Xem Phòng Riêng Biệt */}
-      <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider">
-            <Building2 className="w-4 h-4 text-purple-600" />
-            <span>Chọn Cơ Sở Để Xem Phòng Riêng Biệt:</span>
-          </div>
-          {selectedHouse !== 'ALL' && dynamicHousesList.length > 1 && (
-            <button
-              onClick={() => setSelectedHouse('ALL')}
-              className="inline-flex items-center gap-1 text-xs font-bold text-purple-600 hover:text-purple-800 bg-purple-50 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Xem tất cả ({rooms.length} phòng)</span>
-            </button>
-          )}
-        </div>
+      {/* ĐIỀU HƯỚNG TÌM TRỌ PHÂN CẤP THEO ĐỊA CHỈ CHO KHÁCH THUÊ vs BỘ CHỌN CƠ SỞ CHO ADMIN/STAFF */}
+      {isTenant ? (
+        <div className="space-y-4">
+          {/* Thanh Breadcrumb Điều Hướng Đa Tầng */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs">
+            <div className="flex items-center gap-1.5 text-xs font-semibold flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  setTenantLocation(null);
+                  setTenantViewAllFlat(false);
+                  handleHouseChange('ALL');
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                  !tenantLocation && selectedHouse === 'ALL' && !tenantViewAllFlat
+                    ? 'bg-purple-600 text-white font-extrabold shadow-sm'
+                    : 'text-slate-600 hover:text-purple-700 hover:bg-purple-50'
+                }`}
+              >
+                <span>🏠 Tất Cả Địa Chỉ</span>
+              </button>
 
-        {dynamicHousesList.length === 0 ? (
-          <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl text-center space-y-2">
-            <p className="text-xs font-bold text-slate-700">
-              {role === 'STAFF'
-                ? 'Bạn chưa tạo cơ sở nào hoặc chưa được phân công cơ sở nào!'
-                : isTenant
-                ? 'Hiện tại chưa có cơ sở nhà trọ nào đang mở cho thuê!'
-                : 'Chưa có cơ sở nào được tạo trong hệ thống!'}
-            </p>
-            {role === 'STAFF' && (
-              <p className="text-[11px] text-slate-500">
-                Vui lòng vào mục{' '}
-                <Link to="/houses" className="text-purple-600 font-bold underline hover:text-purple-800">
-                  Cơ Sở Nhà Trọ
-                </Link>{' '}
-                để bấm "+ Thêm Cơ Sở Mới".
-              </p>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-            {dynamicHousesList.map((h) => {
-              const isSelected = selectedHouse === h.code;
-              return (
-                <button
-                  key={h.code}
-                  onClick={() => setSelectedHouse(h.code)}
-                  className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 btn-press cursor-pointer ${
-                    isSelected
-                      ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-600/20 ring-2 ring-indigo-500/20'
-                      : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/80 shadow-xs'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 truncate">
-                    <span>{h.code === 'ALL' ? '🏢' : '📍'}</span>
-                    <span className="truncate">{h.name}</span>
-                  </div>
-                  <span
-                    className={`ml-2 px-2 py-0.5 rounded-full text-[11px] font-black shrink-0 ${
-                      isSelected ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-800'
+              {(tenantLocation || (selectedHouse !== 'ALL' && activeDistrict)) && !tenantViewAllFlat && (
+                <>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleHouseChange('ALL');
+                      if (activeDistrict && !tenantLocation) setTenantLocation(activeDistrict);
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                      selectedHouse === 'ALL'
+                        ? 'bg-purple-600 text-white font-extrabold shadow-sm'
+                        : 'text-slate-600 hover:text-purple-700 hover:bg-purple-50'
                     }`}
                   >
-                    {h.totalRooms} phòng
+                    <MapPin className="w-3.5 h-3.5 text-rose-500" />
+                    <span>{tenantLocation || activeDistrict}</span>
+                  </button>
+                </>
+              )}
+
+              {selectedHouse !== 'ALL' && !tenantViewAllFlat && (
+                <>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+                  <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-100 text-purple-900 font-extrabold border border-purple-200">
+                    <Building2 className="w-3.5 h-3.5 text-purple-700" />
+                    <span>{currentHouseInfo.name}</span>
+                  </span>
+                </>
+              )}
+
+              {tenantViewAllFlat && (
+                <>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+                  <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600 text-white font-extrabold shadow-sm">
+                    <span>🏢 Toàn Bộ Phòng Trên Sàn</span>
+                  </span>
+                </>
+              )}
+            </div>
+
+            {/* Nút chuyển đổi nhanh chế độ xem */}
+            <div className="flex items-center gap-2">
+              {tenantViewAllFlat ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTenantViewAllFlat(false);
+                    setTenantLocation(null);
+                    handleHouseChange('ALL');
+                  }}
+                  className="flex items-center gap-1.5 text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-3.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs"
+                >
+                  <MapPin className="w-3.5 h-3.5 text-purple-600" />
+                  <span>Quay lại tìm theo Địa chỉ</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTenantViewAllFlat(true);
+                    handleHouseChange('ALL');
+                  }}
+                  className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-purple-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+                  title="Xem toàn bộ phòng của tất cả cơ sở dạng lưới phẳng"
+                >
+                  <span>🏢 Xem nhanh tất cả phòng ({rooms.length})</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* BƯỚC 1: CHỌN ĐỊA CHỈ / KHU VỰC (Khi chưa chọn địa chỉ & chưa chọn cơ sở) */}
+          {selectedHouse === 'ALL' && !tenantLocation && !tenantViewAllFlat && (
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                  <MapPin className="w-4 h-4 text-purple-600" />
+                  <span>Bước 1: Chọn Địa Chỉ / Khu Vực Bạn Muốn Tìm Trọ</span>
+                </div>
+                <span className="text-xs text-slate-500 font-medium">
+                  {locationGroups.length} khu vực ({visibleHousesForUser.length} cơ sở chuỗi)
+                </span>
+              </div>
+
+              {locationGroups.length === 0 ? (
+                <div className="p-8 bg-white rounded-2xl border border-slate-200 text-center text-slate-500 text-xs">
+                  Hiện chưa có cơ sở nhà trọ nào đang mở cho thuê trên hệ thống.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {locationGroups.map((group) => (
+                    <div
+                      key={group.district}
+                      onClick={() => {
+                        setTenantLocation(group.district);
+                        setTenantViewAllFlat(false);
+                      }}
+                      className="bento-card p-5 cursor-pointer hover:shadow-xl hover:border-purple-300 hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group border-slate-200/90 bg-white"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-100 to-indigo-100 text-purple-700 flex items-center justify-center font-bold text-xl group-hover:from-purple-600 group-hover:to-indigo-600 group-hover:text-white transition-all shadow-inner">
+                            <MapPin className="w-6 h-6" />
+                          </div>
+                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+                            🟢 Còn {group.availableRoomsCount} phòng trống
+                          </span>
+                        </div>
+
+                        <h3 className="text-lg font-black text-slate-900 mt-4 group-hover:text-purple-700 transition-colors">
+                          {group.district}
+                        </h3>
+
+                        <p className="text-xs text-slate-500 font-medium mt-1">
+                          Gồm {group.houses.length} cơ sở nhà trọ trực thuộc
+                        </p>
+
+                        <div className="mt-4 p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">Mức giá phổ biến:</span>
+                            <span className="font-extrabold text-purple-700">
+                              {group.minPrice > 0 ? `${(group.minPrice / 1000000).toFixed(1)} Tr` : '3.0 Tr'} - {group.maxPrice > 0 ? `${(group.maxPrice / 1000000).toFixed(1)} Tr` : '5.0 Tr'}/tháng
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] text-slate-600">
+                            <span>Chủ trọ / Ban QL:</span>
+                            <span className="font-semibold truncate max-w-[150px] text-slate-800" title={group.landlordsList.join(', ')}>
+                              {group.landlordsList.join(', ')}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-purple-600 group-hover:text-purple-700">
+                        <span>Khám phá các cơ sở tại đây</span>
+                        <ArrowRight className="w-4 h-4 group-hover:translate-x-1.5 transition-transform" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* BƯỚC 2: CÁC CƠ SỞ TẠI ĐỊA CHỈ ĐÃ CHỌN */}
+          {selectedHouse === 'ALL' && tenantLocation && !tenantViewAllFlat && (
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-purple-700">
+                    <Building2 className="w-4 h-4" />
+                    <span>Bước 2: Chọn Cơ Sở Nhà Trọ Tại {tenantLocation}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Có {(locationGroups.find(g => g.district === tenantLocation)?.houses || []).length} cơ sở của các chủ trọ đang mở cho thuê. Chọn một cơ sở để xem danh sách phòng:
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setTenantLocation(null)}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-purple-700 bg-white hover:bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl transition-all cursor-pointer self-start sm:self-auto shadow-2xs"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Đổi Địa Chỉ Khác</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {(locationGroups.find(g => g.district === tenantLocation)?.houses || []).map((house) => {
+                  return (
+                    <div
+                      key={house.code}
+                      className="bento-card p-5 border-slate-200/90 bg-white flex flex-col justify-between hover:shadow-xl hover:border-purple-300 transition-all duration-300 group"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5">
+                            <span className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-black text-base shadow-2xs">
+                              🏢
+                            </span>
+                            <div>
+                              <h4 className="font-black text-slate-900 text-sm group-hover:text-purple-700 transition-colors">
+                                {house.name}
+                              </h4>
+                              <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-100">
+                                {house.code}
+                              </span>
+                            </div>
+                          </div>
+                          <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                            🟢 Còn {house.availableCount} phòng trống
+                          </span>
+                        </div>
+
+                        <div className="mt-3 text-xs text-slate-600 flex items-start gap-1.5 bg-slate-50/70 p-2.5 rounded-xl border border-slate-100">
+                          <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
+                          <span className="font-medium leading-relaxed">{house.address}</span>
+                        </div>
+
+                        <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1.5 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">Chủ trọ / Quản lý:</span>
+                            <span className="font-bold text-slate-800">{house.landlordDisplay}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">Quy mô cơ sở:</span>
+                            <span className="font-semibold text-slate-700">{house.roomsCount} phòng</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">Khoảng giá thuê:</span>
+                            <span className="font-extrabold text-purple-700">
+                              {house.minPrice > 0 ? `${house.minPrice.toLocaleString('vi-VN')} đ` : 'Liên hệ'} {house.maxPrice > house.minPrice ? `- ${house.maxPrice.toLocaleString('vi-VN')} đ` : ''}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap gap-1 text-[10px]">
+                          <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-semibold border border-purple-100">Khóa vân tay</span>
+                          <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-semibold border border-purple-100">Camera 24/7</span>
+                          <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-semibold border border-purple-100">Giờ giấc tự do</span>
+                          <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-semibold border border-purple-100">Không chung chủ</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 pt-3 border-t border-slate-100">
+                        <button
+                          type="button"
+                          onClick={() => handleHouseChange(house.code)}
+                          className="w-full py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-purple-600/20 transition-all btn-press flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <span>Xem Các Phòng Thuộc Cơ Sở Này</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* GIAO DIỆN CHỌN CƠ SỞ CHO ADMIN & STAFF */
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider">
+              <Building2 className="w-4 h-4 text-purple-600" />
+              <span>{isStaff ? 'Cơ Sở Của Bạn (Bấm Chọn Để Xem Phòng Riêng Biệt):' : 'Chọn Cơ Sở Để Xem Phòng Riêng Biệt:'}</span>
+            </div>
+            {!isStaff && selectedHouse !== 'ALL' && dynamicHousesList.length > 1 && (
+              <button
+                onClick={() => handleHouseChange('ALL')}
+                className="inline-flex items-center gap-1 text-xs font-bold text-purple-600 hover:text-purple-800 bg-purple-50 px-2.5 py-1 rounded-lg transition-colors cursor-pointer self-start sm:self-auto"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Xem tất cả ({rooms.length} phòng)</span>
+              </button>
+            )}
+          </div>
+
+          {/* Thanh lọc theo Chủ Trọ (Chỉ hiển thị cho Admin khi hệ thống có từ 2 Chủ trọ trở lên) */}
+          {!isStaff && uniqueLandlords.length > 1 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 text-xs">
+              <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+                <span>👤 Lọc theo Chủ:</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedLandlord('ALL');
+                  handleHouseChange('ALL');
+                }}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                  selectedLandlord === 'ALL'
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Tất Cả ({visibleHousesForUser.length} cơ sở)
+              </button>
+              {uniqueLandlords.map((l) => (
+                <button
+                  key={l.key}
+                  type="button"
+                  onClick={() => {
+                    setSelectedLandlord(l.key);
+                    handleHouseChange('ALL');
+                  }}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+                    selectedLandlord === l.key
+                      ? 'bg-purple-600 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <span>{l.label}</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                    selectedLandlord === l.key ? 'bg-white/25 text-white' : 'bg-slate-200 text-slate-700'
+                  }`}>
+                    {l.count}
                   </span>
                 </button>
-              );
-            })}
+              ))}
+            </div>
+          )}
+
+          {dynamicHousesList.length === 0 ? (
+            <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl text-center space-y-2">
+              <p className="text-xs font-bold text-slate-700">
+                {role === 'STAFF'
+                  ? 'Bạn chưa tạo cơ sở nào hoặc chưa được phân công cơ sở nào!'
+                  : 'Chưa có cơ sở nào được tạo trong hệ thống!'}
+              </p>
+              {role === 'STAFF' && (
+                <p className="text-[11px] text-slate-500">
+                  Vui lòng vào mục{' '}
+                  <Link to="/houses" className="text-purple-600 font-bold underline hover:text-purple-800">
+                    Cơ Sở Nhà Trọ
+                  </Link>{' '}
+                  để bấm "+ Thêm Cơ Sở Mới".
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
+              {dynamicHousesList.map((h, idx) => {
+                const isSelected = selectedHouse === h.code;
+                return (
+                  <button
+                    key={`${h.code}-${h.id || idx}`}
+                    onClick={() => handleHouseChange(h.code)}
+                    className={`flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition-all duration-200 btn-press cursor-pointer text-left ${
+                      isSelected
+                        ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-600/20 ring-2 ring-indigo-500/20'
+                        : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/80 shadow-xs'
+                    }`}
+                  >
+                    <div className="flex flex-col min-w-0 pr-2 truncate">
+                      <div className="flex items-center gap-1.5 truncate">
+                        <span>{h.code === 'ALL' ? '🏢' : '📍'}</span>
+                        <span className="font-extrabold truncate text-xs">{h.rawName || h.name}</span>
+                        {h.ownerTag && h.code !== 'ALL' && (
+                          <span className={`text-[9.5px] px-1.5 py-0.5 rounded-md font-black shrink-0 ${
+                            isSelected ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-800'
+                          }`}>
+                            {h.ownerTag}
+                          </span>
+                        )}
+                      </div>
+                      {h.code !== 'ALL' ? (
+                        <span className={`text-[11px] truncate mt-0.5 font-medium ${
+                          isSelected ? 'text-white/85' : 'text-slate-400'
+                        }`}>
+                          {h.location ? `${h.location} • ` : ''}Chủ: {h.landlordName}
+                        </span>
+                      ) : (
+                        <span className={`text-[11px] truncate mt-0.5 font-medium ${
+                          isSelected ? 'text-white/85' : 'text-slate-400'
+                        }`}>
+                          Xem toàn bộ phòng trên sàn
+                        </span>
+                      )}
+                    </div>
+                    <span
+                      className={`ml-2 px-2.5 py-1 rounded-full text-[11px] font-black shrink-0 ${
+                        isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200/60'
+                      }`}
+                    >
+                      {h.totalRooms} phòng
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* KHỐI TÌM KIẾM & DANH SÁCH PHÒNG: Chỉ hiển thị khi đã chọn cơ sở (Bước 3), hoặc xem tất cả phòng, hoặc là Admin/Staff */}
+      {(!isTenant || selectedHouse !== 'ALL' || tenantViewAllFlat) && (
+        <div className="space-y-4">
+          {/* Banner giới thiệu cơ sở hiện tại dành cho khách thuê ở Bước 3 */}
+          {isTenant && selectedHouse !== 'ALL' && (
+            <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-purple-50 p-4 rounded-2xl border border-purple-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+              <div className="flex items-start sm:items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold text-lg shadow-sm shrink-0">
+                  🏢
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-extrabold text-sm text-slate-900">{currentHouseInfo.name}</h3>
+                    <span className="px-2 py-0.5 rounded-md bg-purple-200 text-purple-900 text-[10px] font-black">
+                      {currentHouseInfo.code}
+                    </span>
+                  </div>
+                  <p className="text-slate-600 text-xs mt-0.5 flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                    <span>{getHouseFullAddress(currentHouseRecord)}</span>
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Chủ trọ / Quản lý: <strong>{currentHouseInfo.landlordName || 'Chủ trọ'}</strong>
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  handleHouseChange('ALL');
+                  if (activeDistrict) setTenantLocation(activeDistrict);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-purple-700 border border-purple-200 rounded-xl font-bold text-xs shadow-2xs transition-all cursor-pointer self-start sm:self-auto"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Đổi Cơ Sở Khác</span>
+              </button>
+            </div>
+          )}
+
+          {/* Tìm Kiếm & Lọc Trạng Thái */}
+          <div className="bento-card p-3 flex flex-col sm:flex-row items-center gap-3">
+            <div className="relative flex-1 w-full">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Tìm theo số phòng (P.101, P.202...), tầng hoặc tiện ích..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+              {[
+                { id: 'ALL', label: 'Tất cả trạng thái' },
+                { id: 'AVAILABLE', label: 'Còn trống' },
+                { id: 'HOLDING', label: '🔒 Đang giữ chỗ' },
+                { id: 'OCCUPIED', label: 'Đang thuê' },
+                { id: 'MAINTENANCE', label: 'Bảo trì' },
+                { id: 'LOCKED', label: '🚫 Tạm khóa' },
+                { id: 'CLEANING', label: '🧹 Chờ dọn dẹp' }
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setFilterStatus(tab.id)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                    filterStatus === tab.id
+                      ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-sm'
+                      : 'text-slate-600 hover:text-purple-700 hover:bg-purple-50'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
-        )}
-      </div>
-
-      {/* Tìm Kiếm & Lọc Trạng Thái */}
-      <div className="bento-card p-3 flex flex-col sm:flex-row items-center gap-3">
-        <div className="relative flex-1 w-full">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Tìm theo số phòng (P.101, P.202...), tầng hoặc tiện ích..."
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15"
-          />
-        </div>
-
-        <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-          {[
-            { id: 'ALL', label: 'Tất cả trạng thái' },
-            { id: 'AVAILABLE', label: 'Còn trống' },
-            { id: 'HOLDING', label: '🔒 Đang giữ chỗ' },
-            { id: 'OCCUPIED', label: 'Đang thuê' },
-            { id: 'MAINTENANCE', label: 'Bảo trì' },
-            { id: 'LOCKED', label: '🚫 Tạm khóa' },
-            { id: 'CLEANING', label: '🧹 Chờ dọn dẹp' }
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setFilterStatus(tab.id)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                filterStatus === tab.id
-                  ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-purple-700 hover:bg-purple-50'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* Banner cảnh báo lọc cơ sở */}
       {selectedHouse !== 'ALL' && (
         <div className={`flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-2xl text-xs gap-3 ${
-          isCurrentHouseLocked
+          isCurrentHousePendingApproval
+            ? 'bg-amber-50 border-2 border-amber-300 text-amber-950 shadow-xs'
+            : isCurrentHouseLocked
             ? 'bg-rose-50 border-2 border-rose-300 text-rose-950 shadow-xs'
             : 'bg-purple-50 border border-purple-200 text-purple-900'
         }`}>
           <div className="flex items-start sm:items-center gap-2.5">
-            {isCurrentHouseLocked ? (
+            {isCurrentHousePendingApproval ? (
+              <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                <Clock className="w-4 h-4 text-amber-600 animate-pulse" />
+              </div>
+            ) : isCurrentHouseLocked ? (
               <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
                 <Lock className="w-4 h-4 text-rose-600" />
               </div>
@@ -1489,7 +2203,16 @@ export default function RoomsPage() {
               <Building2 className="w-4 h-4 text-purple-600 shrink-0" />
             )}
             <div>
-              {isCurrentHouseLocked ? (
+              {isCurrentHousePendingApproval ? (
+                <>
+                  <div className="font-extrabold text-amber-900">
+                    🕒 Cơ sở "{currentHouseInfo?.name}" ({currentHouseInfo?.code}) đang ở trạng thái CHỜ ADMIN DUYỆT
+                  </div>
+                  <div className="text-[11px] text-amber-800 mt-0.5">
+                    Cơ sở đang chờ Quản trị viên (Admin) thẩm định giấy tờ & cấp phép hoạt động. Bạn <strong>chưa thể thêm phòng trọ</strong> cho cơ sở này cho đến khi được duyệt.
+                  </div>
+                </>
+              ) : isCurrentHouseLocked ? (
                 <>
                   <div className="font-extrabold text-rose-900">
                     ⚠️ Cơ sở "{currentHouseInfo?.name}" ({currentHouseInfo?.code}) đang ở trạng thái TẠM KHÓA HOẠT ĐỘNG
@@ -1500,17 +2223,23 @@ export default function RoomsPage() {
                 </>
               ) : (
                 <span>
-                  Đang hiển thị đúng <strong>{filteredRooms.length} phòng</strong> thuộc riêng cơ sở:{' '}
-                  <strong className="underline">{currentHouseInfo?.name}</strong> ({currentHouseInfo?.code}).
+                  Đang hiển thị đúng <strong>{filteredRooms.length} phòng</strong> thuộc cơ sở:{' '}
+                  <strong className="underline">{currentHouseInfo?.name}</strong> ({currentHouseInfo?.code})
+                  {currentHouseInfo?.location ? ` • 📍 ${currentHouseInfo.location}` : ''}
+                  {currentHouseInfo?.landlordName ? ` • 👤 Quản lý: ${currentHouseInfo.landlordName}` : ''}.
                 </span>
               )}
             </div>
           </div>
-          {dynamicHousesList.length > 1 && (
+          {!isStaff && dynamicHousesList.length > 1 && (
             <button
-              onClick={() => setSelectedHouse('ALL')}
+              onClick={() => handleHouseChange('ALL')}
               className={`font-bold underline ml-2 whitespace-nowrap cursor-pointer text-right sm:text-left ${
-                isCurrentHouseLocked ? 'text-rose-700 hover:text-rose-900' : 'text-purple-700 hover:text-purple-900'
+                isCurrentHousePendingApproval
+                  ? 'text-amber-800 hover:text-amber-950'
+                  : isCurrentHouseLocked
+                  ? 'text-rose-700 hover:text-rose-900'
+                  : 'text-purple-700 hover:text-purple-900'
               }`}
             >
               Xem tất cả ({rooms.length} phòng)
@@ -1552,20 +2281,33 @@ export default function RoomsPage() {
               <Home className="w-8 h-8" />
             </div>
             <p className="text-slate-800 font-extrabold text-base">
-              {rooms.length === 0 ? 'Chưa có phòng trọ nào trong hệ thống' : 'Không tìm thấy phòng trọ nào phù hợp'}
+              {isCurrentHousePendingApproval
+                ? 'Cơ sở đang chờ Quản trị viên (Admin) phê duyệt'
+                : rooms.length === 0
+                ? 'Chưa có phòng trọ nào trong hệ thống'
+                : 'Không tìm thấy phòng trọ nào phù hợp'}
             </p>
             <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-5">
-              {rooms.length === 0
+              {isCurrentHousePendingApproval
+                ? 'Theo quy định nghiệp vụ: Cơ sở phải được Admin phê duyệt đưa vào hoạt động chính thức trước khi Chủ trọ có thể tạo danh mục phòng trọ.'
+                : rooms.length === 0
                 ? 'Cơ sở của bạn đã sẵn sàng. Hãy bấm nút bên dưới để thêm các phòng trọ đầu tiên!'
                 : 'Thử đổi từ khóa tìm kiếm hoặc bỏ chọn bộ lọc trạng thái'}
             </p>
             {!isTenant && (
-              <button
-                onClick={() => setShowModal(true)}
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-600/25 transition-all btn-press cursor-pointer"
-              >
-                <Plus className="w-4 h-4" /> Thêm Phòng Trọ Mới
-              </button>
+              isCurrentHousePendingApproval ? (
+                <div className="inline-flex items-center gap-2 px-5 py-2.5 bg-amber-100 border border-amber-300 text-amber-900 rounded-xl text-xs font-bold shadow-xs">
+                  <Clock className="w-4 h-4 text-amber-600 animate-pulse" />
+                  <span>Đang chờ Admin phê duyệt cơ sở này</span>
+                </div>
+              ) : (
+                <button
+                  onClick={handleOpenAddRoomModal}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-600/25 transition-all btn-press cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" /> Thêm Phòng Trọ Mới
+                </button>
+              )
             )}
           </div>
         )
@@ -1649,13 +2391,23 @@ export default function RoomsPage() {
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 mt-1">
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                         <span className="px-1.5 py-0.5 rounded-md bg-purple-100 text-[10px] font-black text-purple-800">
                           {room.houseCode}
                         </span>
-                        <p className="text-xs text-slate-500 font-semibold truncate max-w-[140px]" title={getHouseName(room.houseCode, room.house)}>
+                        <p className="text-xs text-slate-700 font-bold truncate max-w-[130px]" title={getHouseName(room.houseCode, room.house)}>
                           {getHouseName(room.houseCode, room.house)}
                         </p>
+                        {(() => {
+                          const h = getHouseDetails(room.houseCode);
+                          const u = (h?.createdBy || h?.managerUsername || '').toLowerCase();
+                          const ownerTag = (u === 'staff' || u === 'staff1' || room.houseCode?.startsWith('S1-')) ? 'Staff 1' : (u === 'staff2' || room.houseCode?.startsWith('S2-')) ? 'Staff 2' : '';
+                          return ownerTag ? (
+                            <span className="text-[9.5px] px-1.5 py-0.2 rounded font-extrabold bg-slate-100 text-slate-600 border border-slate-200">
+                              {ownerTag}
+                            </span>
+                          ) : null;
+                        })()}
                       </div>
                       <p className="text-[11px] text-slate-400 font-medium mt-0.5">{room.floor}</p>
                     </div>
@@ -1694,15 +2446,15 @@ export default function RoomsPage() {
                     </div>
                   </div>
 
-                  <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs">
+                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
                     <div>
-                      <div className="text-slate-500 font-medium">Giá thuê:</div>
-                      <div className="font-extrabold text-slate-900 text-sm mt-0.5">
-                        {room.price.toLocaleString('vi-VN')} đ<span className="text-xs font-normal text-slate-500">/th</span>
+                      <div className="text-[11px] text-slate-500 font-medium">Giá thuê:</div>
+                      <div className="font-black text-purple-700 text-base mt-0.5">
+                        {room.price.toLocaleString('vi-VN')} đ<span className="text-[11px] font-normal text-slate-400">/th</span>
                       </div>
                     </div>
-                    <div>
-                      <div className="text-slate-500 font-medium">Diện tích:</div>
+                    <div className="text-right">
+                      <div className="text-[11px] text-slate-500 font-medium">Diện tích:</div>
                       <div className="font-bold text-slate-700 mt-0.5">
                         {room.area} m² ({Math.max(room.occupants || 0, roomMembers.filter((m) => m.roomNumber === room.number && m.status !== 'MOVED_OUT').length)}/{room.maxOccupants} người)
                       </div>
@@ -1723,22 +2475,47 @@ export default function RoomsPage() {
 
                 <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                   {isTenant ? (
-                    <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center justify-between w-full gap-2">
                       {isMyRentedRoom ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-bold text-xs border border-emerald-200 shadow-2xs">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 font-bold text-xs border border-emerald-200 shadow-2xs">
                           <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
                           <span>Phòng bạn đang thuê</span>
                         </span>
+                      ) : room.status === 'AVAILABLE' ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedRoomDetails(room)}
+                            className="text-xs text-slate-700 hover:text-purple-700 font-bold px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all btn-press cursor-pointer flex-1 text-center"
+                          >
+                            Xem Chi Tiết
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRequestModal({ room, type: 'RENT' });
+                              setRequestSuccess(false);
+                              setRequestErrorMsg('');
+                            }}
+                            className="text-xs text-white font-bold px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 rounded-xl shadow-md shadow-purple-600/20 transition-all btn-press cursor-pointer flex-1 text-center"
+                          >
+                            Giữ Chỗ / Thuê
+                          </button>
+                        </>
                       ) : (
-                        <span className="text-xs text-slate-400 font-medium">Chỉ xem thông tin</span>
+                        <div className="flex items-center justify-between w-full">
+                          <span className="text-xs text-slate-400 font-medium">
+                            {room.status === 'HOLDING' ? '🔒 Đang giữ chỗ' : 'Không trống'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedRoomDetails(room)}
+                            className="text-xs text-purple-600 hover:text-purple-700 font-bold px-2.5 py-1 hover:bg-purple-50 rounded-lg transition-all cursor-pointer"
+                          >
+                            Chi tiết →
+                          </button>
+                        </div>
                       )}
-
-                      <button
-                        onClick={() => setSelectedRoomDetails(room)}
-                        className="text-xs text-purple-600 hover:text-purple-700 font-bold px-2.5 py-1 hover:bg-purple-50 rounded-lg transition-all btn-press-ghost cursor-pointer"
-                      >
-                        Chi tiết →
-                      </button>
                     </div>
                   ) : (
                     <div className="flex flex-wrap items-center justify-between gap-1.5 w-full">
@@ -1862,6 +2639,8 @@ export default function RoomsPage() {
           })}
         </div>
       )}
+        </div>
+      )}
 
       {/* Modal Thêm Phòng Trọ Mới */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} maxWidth="max-w-md">
@@ -1869,7 +2648,7 @@ export default function RoomsPage() {
         <form onSubmit={handleCreateRoom} className="space-y-4">
           <div className="p-2.5 bg-purple-50/70 border border-purple-200/80 rounded-xl flex items-center gap-2 text-xs text-purple-900">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>Phòng mới được kích hoạt ngay - <strong>Không cần Admin duyệt</strong> (Kiểm soát theo gói: {rooms.length}/{maxRoomsAllowed} phòng).</span>
+            <span>Phòng mới được kích hoạt ngay - <strong>Không cần Admin duyệt</strong> (Kiểm soát theo gói: {myRoomsCount}/{maxRoomsAllowed} phòng).</span>
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">Mã / Số phòng</label>
@@ -1894,13 +2673,13 @@ export default function RoomsPage() {
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">Cơ sở thuộc chuỗi</label>
-            {visibleHousesForUser.length > 0 ? (
+            {approvedHousesForUser.length > 0 ? (
               <select
-                value={newRoom.houseCode}
+                value={addRoomTargetHouse}
                 onChange={(e) => setNewRoom({ ...newRoom, houseCode: e.target.value })}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-semibold focus:outline-none focus:bg-white focus:border-purple-500"
               >
-                {visibleHousesForUser.map((h) => (
+                {approvedHousesForUser.map((h) => (
                   <option key={h.code} value={h.code}>
                     {h.name} ({h.code})
                   </option>
@@ -1910,17 +2689,17 @@ export default function RoomsPage() {
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1.5">
                 <div className="flex items-center gap-1.5 font-bold text-amber-950">
                   <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>Chưa có cơ sở nào trong hệ thống!</span>
+                  <span>Chưa có cơ sở nào được phê duyệt để thêm phòng!</span>
                 </div>
                 <p className="text-[11px] text-amber-800 leading-relaxed">
-                  Phòng trọ bắt buộc phải thuộc một cơ sở cụ thể. Vui lòng tạo cơ sở trước khi thêm phòng.
+                  Cơ sở mới tạo phải được Quản Trị Viên (Admin) phê duyệt đưa vào hoạt động chính thức thì mới có thể thêm phòng trọ.
                 </p>
                 <Link
                   to="/houses"
                   onClick={() => setShowModal(false)}
                   className="inline-flex items-center gap-1 text-xs font-bold text-purple-700 hover:underline pt-1"
                 >
-                  <span>Đi tới trang Tạo Cơ Sở</span>
+                  <span>Xem trạng thái cơ sở tại menu Cơ Sở</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
               </div>

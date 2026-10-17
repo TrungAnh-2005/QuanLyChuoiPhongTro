@@ -90,6 +90,32 @@ export default function TenantsPage() {
     }
   }, [isZeroSandbox]);
 
+  const staffManageableHouses = useMemo(() => {
+    if (user?.role !== 'STAFF') return facilities;
+    const u = (user?.username || '').toLowerCase();
+    try {
+      const saved = localStorage.getItem('rental_boarding_houses');
+      const parsedHouses = saved ? JSON.parse(saved) : [];
+      return facilities.filter((h) => {
+        const fullHouse = parsedHouses.find((ph) => ph.code === h.code);
+        const created = (fullHouse?.createdBy || '').toLowerCase();
+        const manager = (fullHouse?.managerUsername || '').toLowerCase();
+        if (created && created === u) return true;
+        if (manager && manager === u) return true;
+        if (user?.houseCode && h.code === user.houseCode) return true;
+        if (!isZeroSandbox) {
+          if (u === 'staff' && (h.code === 'CS-01' || !created)) return true;
+          if (u === 'staff2' && h.code === 'CS-02') return true;
+        }
+        return false;
+      });
+    } catch {
+      return facilities;
+    }
+  }, [facilities, user, isZeroSandbox]);
+
+  const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
+
   const landlordPackage = (isZeroSandbox && (!currentLandlord || currentLandlord.packageCode === 'NONE'))
     ? 'NONE'
     : (currentLandlord?.packageCode || 'BASIC');
@@ -388,8 +414,13 @@ export default function TenantsPage() {
       }
     });
 
-    return Array.from(map.values());
-  }, [roomMembers, tenants, rooms]);
+    let list = Array.from(map.values());
+    if (user?.role === 'STAFF') {
+      if (staffHouseCodes.length === 0) return [];
+      list = list.filter((r) => staffHouseCodes.includes(r.houseCode));
+    }
+    return list;
+  }, [roomMembers, tenants, rooms, user, staffHouseCodes]);
 
   // Bộ lọc cư dân theo tìm kiếm, cơ sở và trạng thái
   const filteredResidents = useMemo(() => {
@@ -516,13 +547,16 @@ export default function TenantsPage() {
   };
 
   // New tenant state với 3 mức thời hạn: 3, 6, 12 tháng
-  const [manualHouseCode, setManualHouseCode] = useState(() => facilities[0]?.code || '');
+  const [manualHouseCode, setManualHouseCode] = useState(() => {
+    return staffManageableHouses[0]?.code || facilities[0]?.code || '';
+  });
 
   useEffect(() => {
-    if (facilities.length > 0 && (!manualHouseCode || !facilities.some((f) => f.code === manualHouseCode))) {
-      setManualHouseCode(facilities[0].code);
+    const validFacilities = user?.role === 'STAFF' ? staffManageableHouses : facilities;
+    if (validFacilities.length > 0 && (!manualHouseCode || !validFacilities.some((f) => f.code === manualHouseCode))) {
+      setManualHouseCode(validFacilities[0].code);
     }
-  }, [facilities, manualHouseCode]);
+  }, [facilities, staffManageableHouses, manualHouseCode, user?.role]);
 
   const [newTenant, setNewTenant] = useState({
     fullName: '',
@@ -581,25 +615,6 @@ export default function TenantsPage() {
       deposit: found?.price || prev.deposit
     }));
   };
-
-  const staffManageableHouses = useMemo(() => {
-    if (user?.role !== 'STAFF') return facilities;
-    const u = (user?.username || '').toLowerCase();
-    return facilities.filter((h) => {
-      const created = (h.createdBy || '').toLowerCase();
-      const manager = (h.managerUsername || '').toLowerCase();
-      if (created && created === u) return true;
-      if (manager && manager === u) return true;
-      if (user?.houseCode && h.code === user.houseCode) return true;
-      if (!isZeroSandbox) {
-        if (u === 'staff' && (h.code === 'CS-01' || !h.createdBy)) return true;
-        if (u === 'staff2' && h.code === 'CS-02') return true;
-      }
-      return false;
-    });
-  }, [facilities, user]);
-
-  const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
 
   // Lấy tập hợp khách thuộc phạm vi cơ sở (Tenant Scoping & Multi-tenancy Isolation)
   // Tuyệt đối không hiển thị khách tự do chưa thuê bất kỳ phòng nào trong danh bạ quản lý của Staff
@@ -1227,10 +1242,12 @@ export default function TenantsPage() {
                 onChange={(e) => setResidentFacilityFilter(e.target.value)}
                 className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer"
               >
-                <option value="ALL">🏢 Tất Cả Cơ Sở</option>
-                <option value="CS-01">Cơ Sở 1 (Cầu Giấy)</option>
-                <option value="CS-02">Cơ Sở 2 (Bách Khoa)</option>
-                <option value="CS-03">Cơ Sở 3 (Đống Đa)</option>
+                <option value="ALL">🏢 {user?.role === 'STAFF' ? 'Tất Cả Cơ Sở Của Tôi' : 'Tất Cả Cơ Sở'}</option>
+                {staffManageableHouses.map((f) => (
+                  <option key={f.code} value={f.code}>
+                    {f.name}
+                  </option>
+                ))}
               </select>
 
               {/* Lọc Trạng Thái Tạm Trú */}
@@ -1545,7 +1562,7 @@ export default function TenantsPage() {
                   onChange={(e) => setManualHouseCode(e.target.value)}
                   className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-purple-500 shadow-2xs cursor-pointer"
                 >
-                  {facilities.map((f) => {
+                  {(user?.role === 'STAFF' ? staffManageableHouses : facilities).map((f) => {
                     const countVacant = (rooms || []).filter(
                       (r) => (r.houseCode || facilities[0]?.code) === f.code && r.status === 'AVAILABLE' && (!r.occupants || r.occupants === 0)
                     ).length;

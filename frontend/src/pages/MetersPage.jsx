@@ -153,14 +153,14 @@ export default function MetersPage() {
     // Ưu tiên khớp theo roomId để tránh xung đột trùng tên phòng giữa các cơ sở
     let target = null;
     if (readingData.roomId) {
-      target = readings.find((r) => r.id === readingData.roomId);
+      target = scopedReadings.find((r) => r.id === readingData.roomId);
     }
     if (!target && readingData.houseCode) {
-      target = readings.find((r) => r.room === readingData.room && r.houseCode === readingData.houseCode);
+      target = scopedReadings.find((r) => r.room === readingData.room && r.houseCode === readingData.houseCode);
     }
     if (!target) {
-      target = readings.find((r) => r.room === readingData.room && (!selectedHouse || selectedHouse === 'ALL' || r.houseCode === selectedHouse))
-            || readings.find((r) => r.room === readingData.room);
+      target = scopedReadings.find((r) => r.room === readingData.room && (!selectedHouse || selectedHouse === 'ALL' || r.houseCode === selectedHouse))
+            || scopedReadings.find((r) => r.room === readingData.room);
     }
 
     if (target) {
@@ -245,30 +245,39 @@ export default function MetersPage() {
     }
   }, [isZeroSandbox]);
 
+  // Scoping đa cơ sở theo Staff
+  const staffManageableHouses = useMemo(() => {
+    if (user?.role !== 'STAFF') return dynamicHouses;
+    const u = (user?.username || '').toLowerCase();
+    return dynamicHouses.filter((h) => {
+      const created = (h.createdBy || '').toLowerCase();
+      const manager = (h.managerUsername || '').toLowerCase();
+      if (created && created === u) return true;
+      if (manager && manager === u) return true;
+      if (user?.houseCode && h.code === user.houseCode) return true;
+      if (!isZeroSandbox) {
+        if (u === 'staff' && (h.code === 'CS-01' || !h.createdBy)) return true;
+        if (u === 'staff2' && h.code === 'CS-02') return true;
+      }
+      return false;
+    });
+  }, [dynamicHouses, user, isZeroSandbox]);
+
+  const staffHouseCodes = useMemo(() => {
+    return staffManageableHouses.map((h) => h.code);
+  }, [staffManageableHouses]);
+
+  // Danh sách công tơ được giới hạn nghiêm ngặt theo quyền Staff
+  const scopedReadings = useMemo(() => {
+    if (user?.role === 'STAFF') {
+      return readings.filter((r) => staffHouseCodes.includes(r.houseCode));
+    }
+    return readings;
+  }, [readings, user?.role, staffHouseCodes]);
+
   // Danh sách hiển thị theo bộ lọc
   const filteredReadings = useMemo(() => {
-    return readings.filter((r) => {
-      // Scoping theo Staff: Mỗi Staff chỉ chốt số cho cơ sở mình phụ trách
-      if (user?.role === 'STAFF') {
-        const u = (user?.username || '').toLowerCase();
-        const staffHouseCodes = dynamicHouses.filter((h) => {
-          const created = (h.createdBy || '').toLowerCase();
-          const manager = (h.managerUsername || '').toLowerCase();
-          if (created && created === u) return true;
-          if (manager && manager === u) return true;
-          if (user?.houseCode && h.code === user.houseCode) return true;
-          if (!isZeroSandbox) {
-            if (u === 'staff' && (h.code === 'CS-01' || !h.createdBy)) return true;
-            if (u === 'staff2' && h.code === 'CS-02') return true;
-          }
-          return false;
-        }).map((h) => h.code);
-
-        if (staffHouseCodes.length === 0) return false;
-        if (!staffHouseCodes.includes(r.houseCode)) {
-          return false;
-        }
-      }
+    return scopedReadings.filter((r) => {
       // Lọc theo cơ sở
       if (selectedHouse !== 'ALL' && r.houseCode !== selectedHouse) {
         return false;
@@ -290,19 +299,19 @@ export default function MetersPage() {
 
       return true;
     });
-  }, [readings, selectedHouse, statusFilter, searchTerm, invoices]);
+  }, [scopedReadings, selectedHouse, statusFilter, searchTerm, invoices]);
 
   // QUY TẮC QUAN TRỌNG:
   // Phòng đã thu tiền / đã chốt không được sửa số và không đưa vào danh sách quét AI
   const roomsForAi = useMemo(() => {
-    const unrecorded = readings.filter((r) => !isRoomClosedOrPaid(r));
+    const unrecorded = scopedReadings.filter((r) => !isRoomClosedOrPaid(r));
     const roomsList = unrecorded.map((r) => r.room);
     return Array.from(new Set(roomsList));
-  }, [readings, invoices]);
+  }, [scopedReadings, invoices]);
 
   // Chuẩn bị dữ liệu chỉ số cũ và trạng thái chốt cho modal
   const currentMetersData = useMemo(() => {
-    return readings.reduce((acc, r) => {
+    return scopedReadings.reduce((acc, r) => {
       acc[r.room] = {
         elecOld: r.oldElec,
         waterOld: r.oldWater,
@@ -312,14 +321,14 @@ export default function MetersPage() {
       };
       return acc;
     }, {});
-  }, [readings, invoices]);
+  }, [scopedReadings, invoices]);
 
   // Thống kê nhanh: Phòng đã thanh toán / khóa chốt được tính vào phòng đã chốt!
   // Lấy hồ sơ khách thuê hiện tại từ danh bạ tenants
   const recordedCount = useMemo(() => {
-    return readings.filter((r) => isRoomClosedOrPaid(r)).length;
-  }, [readings, invoices]);
-  const totalRoomsCount = readings.length || 36;
+    return scopedReadings.filter((r) => isRoomClosedOrPaid(r)).length;
+  }, [scopedReadings, invoices]);
+  const totalRoomsCount = scopedReadings.length;
   const unrecordedCount = Math.max(0, totalRoomsCount - recordedCount);
 
   const currentTenant = useMemo(() => {
@@ -931,7 +940,7 @@ export default function MetersPage() {
             </div>
             <div>
               <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
-                <span>Ghi Chỉ Số Điện & Nước Toàn Chuỗi</span>
+                <span>{user?.role === 'STAFF' ? 'Ghi Chỉ Số Điện & Nước Cơ Sở Của Tôi' : 'Ghi Chỉ Số Điện & Nước Toàn Chuỗi'}</span>
                 <span className="text-xs bg-amber-100 text-amber-800 font-bold px-2.5 py-0.5 rounded-full border border-amber-200">
                   {billingMonth === '2026-09' ? 'Tháng 09/2026' : billingMonth === '2026-10' ? 'Tháng 10/2026' : 'Tháng 08/2026'}
                 </span>
@@ -1053,19 +1062,16 @@ export default function MetersPage() {
               <span>Cơ sở:</span>
             </span>
             {[
-              { code: 'ALL', name: 'Tất Cả Các Cơ Sở', count: readings.length },
-              ...(user?.role === 'STAFF' && user?.houseCode
-                ? dynamicHouses.filter(h => h.code === user.houseCode).map(h => ({
-                    code: h.code,
-                    name: h.name.includes(':') ? h.name : `${h.code}: ${h.name.replace(/^Nhà Trọ\s*/i, '')}`,
-                    count: readings.filter((r) => r.houseCode === h.code).length
-                  }))
-                : dynamicHouses.map(h => ({
-                    code: h.code,
-                    name: h.name.includes(':') ? h.name : `${h.code}: ${h.name.replace(/^Nhà Trọ\s*/i, '')}`,
-                    count: readings.filter((r) => r.houseCode === h.code).length
-                  }))
-              )
+              {
+                code: 'ALL',
+                name: user?.role === 'STAFF' ? 'Toàn Bộ Cơ Sở Của Tôi' : 'Tất Cả Các Cơ Sở',
+                count: scopedReadings.length
+              },
+              ...staffManageableHouses.map((h) => ({
+                code: h.code,
+                name: h.name.includes(':') ? h.name : `${h.code}: ${h.name.replace(/^Nhà Trọ\s*/i, '')}`,
+                count: scopedReadings.filter((r) => r.houseCode === h.code).length
+              }))
             ].map((house) => (
               <button
                 key={house.code}
@@ -1481,12 +1487,12 @@ export default function MetersPage() {
         </form>
       </Modal>
 
-      {/* Modal Quét Công Tơ Bằng AI (Đầy đủ tất cả các phòng allRooms={readings}) */}
+      {/* Modal Quét Công Tơ Bằng AI (Đầy đủ tất cả các phòng allRooms={scopedReadings}) */}
       <MeterAiScannerModal
         isOpen={showAiScanner}
         onClose={() => setShowAiScanner(false)}
         onSaveReading={handleSaveFromAi}
-        allRooms={readings}
+        allRooms={scopedReadings}
         rooms={roomsForAi}
         currentMetersData={currentMetersData}
         utilityPrices={utilityPrices}

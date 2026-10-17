@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Wrench,
   Plus,
@@ -34,11 +34,37 @@ const CATEGORIES = [
 
 export default function MaintenancePage() {
   const { user, tenantRooms } = useAuth();
-  const { tickets, createTicket, updateTicketStatus, tenants, addMaintenanceFeeToInvoice } = useData();
+  const { tickets, createTicket, updateTicketStatus, tenants, addMaintenanceFeeToInvoice, rooms = [] } = useData();
   const role = user?.role || 'ADMIN';
   const isTenant = role === 'TENANT';
   const isStaff = role === 'STAFF';
   const isAdmin = role === 'ADMIN';
+
+  const staffManageableHouses = useMemo(() => {
+    if (role !== 'STAFF') return [];
+    try {
+      const saved = localStorage.getItem('rental_boarding_houses');
+      const dynamicHouses = saved ? JSON.parse(saved) : [];
+      const u = (user?.username || '').toLowerCase();
+      const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+      return dynamicHouses.filter((h) => {
+        const created = (h.createdBy || '').toLowerCase();
+        const manager = (h.managerUsername || '').toLowerCase();
+        if (created && created === u) return true;
+        if (manager && manager === u) return true;
+        if (user?.houseCode && h.code === user.houseCode) return true;
+        if (!isZeroSandbox) {
+          if (u === 'staff' && (h.code === 'CS-01' || !h.createdBy)) return true;
+          if (u === 'staff2' && h.code === 'CS-02') return true;
+        }
+        return false;
+      });
+    } catch {
+      return [];
+    }
+  }, [user, role]);
+
+  const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
 
   const isTenantNew = user?.username === 'tenant_new' || user?.fullName?.includes('Nam');
   const userRoom = isTenant && !isTenantNew
@@ -128,14 +154,32 @@ export default function MaintenancePage() {
     setAssignModal(null);
   };
 
-  const displayedTickets = isTenant
-    ? tickets.filter(
+  const displayedTickets = useMemo(() => {
+    if (isTenant) {
+      return tickets.filter(
         (t) =>
           myRentedRooms.includes(t.room) ||
           (typeof t.room === 'string' && t.room.toLowerCase().includes('khu vực chung')) ||
           (t.tenant && t.tenant.toLowerCase().includes((user?.fullName || '').toLowerCase()))
-      )
-    : tickets;
+      );
+    }
+    if (isStaff) {
+      if (staffHouseCodes.length === 0) return [];
+      return tickets.filter((t) => {
+        if (t.houseCode && staffHouseCodes.includes(t.houseCode)) return true;
+        const ticketRoom = (rooms || []).find((r) => r.number === t.room);
+        if (ticketRoom?.houseCode) {
+          return staffHouseCodes.includes(ticketRoom.houseCode);
+        }
+        // Fallback nhận diện cho phòng demo cơ sở CS-01
+        if (t.room && t.room.startsWith('P.')) {
+          if (staffHouseCodes.includes('CS-01')) return true;
+        }
+        return false;
+      });
+    }
+    return tickets;
+  }, [tickets, isTenant, isStaff, myRentedRooms, user, staffHouseCodes, rooms]);
 
   return (
     <div className="space-y-6">

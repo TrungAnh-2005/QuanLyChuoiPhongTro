@@ -739,13 +739,39 @@ export default function Dashboard() {
     return invoices.find((inv) => inv.room === myRoomNumber && (!inv.houseCode || inv.houseCode === currentRoomObj?.houseCode)) || null;
   }, [invoices, myRoomNumber, currentRoomObj, isContractPending]);
 
+  const staffManageableHouses = useMemo(() => {
+    if (role !== 'STAFF') return [];
+    try {
+      const saved = localStorage.getItem('rental_boarding_houses');
+      const dynamicHouses = saved ? JSON.parse(saved) : [];
+      const u = (user?.username || '').toLowerCase();
+      const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+      return dynamicHouses.filter((h) => {
+        const created = (h.createdBy || '').toLowerCase();
+        const manager = (h.managerUsername || '').toLowerCase();
+        if (created && created === u) return true;
+        if (manager && manager === u) return true;
+        if (user?.houseCode && h.code === user.houseCode) return true;
+        if (!isZeroSandbox) {
+          if (u === 'staff' && (h.code === 'CS-01' || !h.createdBy)) return true;
+          if (u === 'staff2' && h.code === 'CS-02') return true;
+        }
+        return false;
+      });
+    } catch {
+      return [];
+    }
+  }, [user, role]);
+
+  const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
+
   const scopedRooms = useMemo(() => {
     if (role === 'STAFF') {
-      const houseCode = user?.houseCode || 'CS-01';
-      return rooms.filter((r) => r.houseCode === houseCode);
+      if (staffHouseCodes.length === 0) return [];
+      return rooms.filter((r) => staffHouseCodes.includes(r.houseCode));
     }
     return rooms;
-  }, [rooms, role, user]);
+  }, [rooms, role, staffHouseCodes]);
 
   // =========================================================================
   // 1A. GIAO DIỆN BẮT BUỘC: NỘP TIỀN CỌC & KÝ HỢP ĐỒNG ĐIỆN TỬ (ONBOARDING GATE)
@@ -3038,9 +3064,36 @@ export default function Dashboard() {
     { name: 'Bảo Trì', value: maintenanceCount, color: '#f59e0b' },
   ];
 
-  const pendingMeterCount = invoices.filter((i) => i.status === 'PENDING_METER').length;
-  const unpaidCount = invoices.filter((i) => i.status === 'UNPAID').length;
-  const openTicketsCount = tickets.filter((t) => t.status === 'OPEN' || t.status === 'PENDING').length;
+  const pendingMeterCount = invoices.filter((i) => {
+    if (role === 'STAFF') {
+      if (staffHouseCodes.length === 0) return false;
+      const matchHouse = i.houseCode && staffHouseCodes.includes(i.houseCode);
+      const invRoom = (rooms || []).find((r) => r.number === i.room);
+      const matchRoom = invRoom && staffHouseCodes.includes(invRoom.houseCode);
+      if (!matchHouse && !matchRoom) return false;
+    }
+    return i.status === 'PENDING_METER';
+  }).length;
+
+  const unpaidCount = invoices.filter((i) => {
+    if (role === 'STAFF') {
+      if (staffHouseCodes.length === 0) return false;
+      const matchHouse = i.houseCode && staffHouseCodes.includes(i.houseCode);
+      const invRoom = (rooms || []).find((r) => r.number === i.room);
+      const matchRoom = invRoom && staffHouseCodes.includes(invRoom.houseCode);
+      if (!matchHouse && !matchRoom) return false;
+    }
+    return i.status === 'UNPAID';
+  }).length;
+
+  const openTicketsCount = tickets.filter((t) => {
+    if (role === 'STAFF') {
+      if (staffHouseCodes.length === 0) return false;
+      const ticketHouse = t.houseCode || (rooms || []).find((r) => r.number === t.room)?.houseCode || (t.room?.startsWith('P.') ? 'CS-01' : null);
+      if (!ticketHouse || !staffHouseCodes.includes(ticketHouse)) return false;
+    }
+    return t.status === 'OPEN' || t.status === 'PENDING';
+  }).length;
 
   return (
     <div className="space-y-6 page-enter">
