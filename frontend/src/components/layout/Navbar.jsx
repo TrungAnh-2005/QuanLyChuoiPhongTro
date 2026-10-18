@@ -784,10 +784,10 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
 
         {/* Ô tìm kiếm: Ẩn hoàn toàn khi ở quyền Admin (vì Admin không quản lý phòng lẻ và khách thuê) */}
         {role === 'ADMIN' ? (
-          <div className="hidden md:flex items-center gap-2.5 text-xs font-bold text-slate-600 bg-slate-100/80 px-3.5 py-2 rounded-xl border border-slate-200/70">
+          <div className="hidden 2xl:flex items-center gap-2 text-xs font-bold text-slate-600 bg-slate-100/80 px-3 py-1.5 rounded-xl border border-slate-200/70 whitespace-nowrap shrink-0">
             <span className="pulse-dot-green shrink-0" />
             <span className="text-slate-800 font-extrabold tracking-tight">Cổng Quản Trị Nền Tảng SaaS</span>
-            <span className="text-slate-400 text-[11px] font-normal">• Giám Sát Đối Tác Toàn Sàn</span>
+            <span className="text-slate-400 text-[11px] font-normal">• Giám Sát Toàn Sàn</span>
           </div>
         ) : (
           <div className="hidden md:flex relative w-full group max-w-md">
@@ -804,14 +804,14 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
       {/* Phải: Chuyển đổi vai trò + Thông báo + Thông tin tài khoản */}
       <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
         {/* Quick Role & Multi-Tenant Switcher - Bản đầy đủ trên Desktop lớn */}
-        <div className="hidden xl:flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/90 text-xs shadow-inner gap-1">
+        <div className="hidden xl:flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 text-xs shadow-inner gap-1">
           <button
             onClick={() => switchRole('ADMIN')}
             title="Quản trị viên hệ thống (Admin)"
-            className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press ${
+            className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press cursor-pointer ${
               role === 'ADMIN'
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/25 scale-[1.02]'
-                : 'text-slate-600 hover:text-purple-700 hover:bg-white/60'
+                ? 'bg-slate-900 text-white shadow-sm shadow-slate-900/20 scale-[1.02]'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
             }`}
           >
             👑 Admin
@@ -819,10 +819,10 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
           <button
             onClick={() => switchRole('STAFF_1')}
             title={hasSavedHouses ? "Staff 1: Lê Thị Thu Ngân (Cơ Sở 1 - Cầu Giấy)" : "Chủ trọ 1: Lê Thị Thu Ngân (Chưa tạo cơ sở)"}
-            className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press ${
+            className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press cursor-pointer ${
               role === 'STAFF' && (user?.username === 'staff' || user?.houseCode === 'CS-01')
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 scale-[1.02]'
-                : 'text-slate-600 hover:text-indigo-700 hover:bg-white/60'
+                ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/25 scale-[1.02]'
+                : 'text-slate-600 hover:text-indigo-700 hover:bg-white/80'
             }`}
           >
             👔 {hasSavedHouses ? 'Staff 1 (CS1)' : 'Chủ trọ 1'}
@@ -830,10 +830,10 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
           <button
             onClick={() => switchRole('STAFF_2')}
             title={hasSavedHouses ? "Staff 2: Đàm Văn Táo (Cơ Sở 2 - Bách Khoa)" : "Chủ trọ 2: Đàm Văn Táo (Chưa tạo cơ sở)"}
-            className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press ${
+            className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press cursor-pointer ${
               role === 'STAFF' && (user?.username === 'staff2' || user?.houseCode === 'CS-02')
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/25 scale-[1.02]'
-                : 'text-slate-600 hover:text-purple-700 hover:bg-white/60'
+                ? 'bg-purple-600 text-white shadow-sm shadow-purple-600/25 scale-[1.02]'
+                : 'text-slate-600 hover:text-purple-700 hover:bg-white/80'
             }`}
           >
             👔 {hasSavedHouses ? 'Staff 2 (CS2)' : 'Chủ trọ 2'}
@@ -844,37 +844,37 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
           <button
             onClick={() => switchRole('TENANT_1')}
             title={`Khách thuê 1: Nguyễn Văn An ${tenant1Room ? 'đang ở ' + tenant1Room : '(Chưa thuê)'}`}
-            className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press flex items-center gap-1 ${
+            className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press cursor-pointer flex items-center gap-1 ${
               role === 'TENANT' && (user?.username === 'tenant' || user?.username === 'tenant1')
-                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25 scale-[1.02]'
-                : 'text-slate-600 hover:text-emerald-700 hover:bg-white/60'
+                ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/25 scale-[1.02]'
+                : 'text-slate-600 hover:text-emerald-700 hover:bg-white/80'
             }`}
           >
-            <span>👤</span> Khách 1 <span className="text-[10px] opacity-80">({tenant1Room || 'Chưa thuê'})</span>
+            <span>👤</span> Khách 1 <span className="text-[10px] opacity-85 font-medium">({tenant1Room || 'Chưa thuê'})</span>
           </button>
 
           <button
             onClick={() => switchRole('TENANT_2')}
             title={`Khách thuê 2: Phạm Minh Cường ${tenant2Room ? 'đang ở ' + tenant2Room : '(Chưa thuê)'}`}
-            className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press flex items-center gap-1 ${
+            className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press cursor-pointer flex items-center gap-1 ${
               role === 'TENANT' && user?.username === 'tenant2'
-                ? 'bg-teal-600 text-white shadow-md shadow-teal-600/25 scale-[1.02]'
-                : 'text-slate-600 hover:text-teal-700 hover:bg-white/60'
+                ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/25 scale-[1.02]'
+                : 'text-slate-600 hover:text-teal-700 hover:bg-white/80'
             }`}
           >
-            <span>👤</span> Khách 2 <span className="text-[10px] opacity-80">({tenant2Room || 'Chưa thuê'})</span>
+            <span>👤</span> Khách 2 <span className="text-[10px] opacity-85 font-medium">({tenant2Room || 'Chưa thuê'})</span>
           </button>
 
           <button
             onClick={() => switchRole('TENANT_NEW')}
             title={`Khách mới: Hoàng Văn Nam ${tenantNewRoom ? 'đang ở ' + tenantNewRoom : '(Chưa có phòng)'}`}
-            className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press flex items-center gap-1 ${
+            className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press cursor-pointer flex items-center gap-1 ${
               role === 'TENANT' && user?.username === 'tenant_new'
-                ? 'bg-amber-600 text-white shadow-md shadow-amber-600/25 scale-[1.02]'
-                : 'text-slate-600 hover:text-amber-700 hover:bg-white/60'
+                ? 'bg-amber-600 text-white shadow-sm shadow-amber-600/25 scale-[1.02]'
+                : 'text-slate-600 hover:text-amber-700 hover:bg-white/80'
             }`}
           >
-            <span>🔍</span> Khách Mới <span className="text-[10px] opacity-80 font-normal">({tenantNewRoom || 'Chưa thuê'})</span>
+            <span>🔍</span> Khách Mới <span className="text-[10px] opacity-85 font-normal">({tenantNewRoom || 'Chưa thuê'})</span>
           </button>
         </div>
 
@@ -897,7 +897,7 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
             }
           }}
           title="Đưa toàn bộ hệ thống về 0 để test từ đầu (Khách 1 & 2 thành khách mới, phòng trống 100%, doanh thu 0, Staff chưa mua gói)"
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white rounded-xl text-xs font-black transition-all shadow-md shadow-amber-500/25 cursor-pointer btn-press"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white rounded-xl text-xs font-black transition-all shadow-md shadow-amber-500/20 cursor-pointer btn-press"
         >
           <span>🧪 Reset Về 0 Test</span>
         </button>
@@ -918,7 +918,7 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
             }
           }}
           title="Khôi phục lại dữ liệu mẫu demo ban đầu"
-          className="flex items-center gap-1 px-2.5 py-1.5 text-slate-600 hover:text-purple-700 hover:bg-purple-50 rounded-xl text-xs font-bold transition border border-dashed border-slate-300 hover:border-purple-300 cursor-pointer btn-press"
+          className="flex items-center gap-1 px-2.5 py-1.5 text-slate-700 bg-white hover:bg-slate-50 hover:text-purple-700 rounded-xl text-xs font-bold transition-all border border-slate-200/90 shadow-2xs hover:border-purple-300 cursor-pointer btn-press"
         >
           <span>🔄 Khôi Phục Gốc</span>
         </button>

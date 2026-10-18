@@ -75,3 +75,4 @@ tests
 .agents
 node_modules
 skill-pp-kit
+.playwright-mcp

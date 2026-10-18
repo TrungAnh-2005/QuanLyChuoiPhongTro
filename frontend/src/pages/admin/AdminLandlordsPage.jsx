@@ -246,10 +246,8 @@ export default function AdminLandlordsPage() {
         </div>
       )}
 
-      {/* Header Bento Banner with Ambient Glow */}
-      <div className="bento-card p-6 sm:p-7 relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-5 bg-gradient-to-r from-white via-indigo-50/40 to-purple-50/30">
-        <div className="absolute -right-16 -top-16 w-80 h-80 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none animate-float-slow" />
-        <div className="absolute -left-16 -bottom-16 w-64 h-64 bg-purple-500/15 rounded-full blur-3xl pointer-events-none animate-float-reverse" />
+      {/* Header Bento Banner */}
+      <div className="bento-card p-6 sm:p-7 bg-white border border-slate-200/90 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-5">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="status-pill status-pill-indigo">
