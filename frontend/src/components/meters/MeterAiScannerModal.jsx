@@ -21,7 +21,7 @@ import {
   Filter,
   ArrowLeftRight
 } from 'lucide-react';
-import { scanMeterReading, classifyMeterSubmission, classifyMeterImage } from '../../../services/aiService';
+import { scanMeterReading, classifyMeterSubmission, classifyMeterImage } from '@/services/aiService';
 
 export default function MeterAiScannerModal({
   isOpen,

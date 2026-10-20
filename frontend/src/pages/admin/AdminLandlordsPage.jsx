@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 import Modal from '../../components/common/Modal';
-import CreateLandlordAiModal from './landlords/CreateLandlordAiModal';
+import CreateLandlordAiModal from '@/components/admin/CreateLandlordAiModal';
 import { checkKycTrialAbuse, registerKycTrial, getTrialStatus } from '../../utils/packagePermissions';
 
 const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';

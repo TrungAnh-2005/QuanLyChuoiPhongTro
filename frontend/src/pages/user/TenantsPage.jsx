@@ -25,13 +25,13 @@ import {
   Download,
   Clock
 } from 'lucide-react';
-import { useData } from '../contexts/DataContext';
-import { useAuth } from '../contexts/AuthContext';
-import Modal from '../components/common/Modal';
-import UpgradePromptModal from '../components/common/UpgradePromptModal';
-import BuySaasPackageModal from '../components/staff/BuySaasPackageModal';
-import PaymentModal from '../components/payment/PaymentModal';
-import CreateTenantModal from './admin/tenants/CreateTenantModal';
+import { useData } from '@/contexts/DataContext';
+import { useAuth } from '@/contexts/AuthContext';
+import Modal from '@/components/common/Modal';
+import UpgradePromptModal from '@/components/common/UpgradePromptModal';
+import BuySaasPackageModal from '@/components/staff/BuySaasPackageModal';
+import PaymentModal from '@/components/payment/PaymentModal';
+import CreateTenantModal from '@/components/tenants/CreateTenantModal';
 
 const DEFAULT_FACILITIES = [
   { code: 'CS-01', name: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', shortName: 'Cơ Sở 1 - Cầu Giấy' },

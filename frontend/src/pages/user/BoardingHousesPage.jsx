@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useData } from '@/contexts/DataContext';
 import {
   Building2,
   Plus,
@@ -28,15 +28,15 @@ import {
   Unlock
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import api from '../services/api';
-import Modal from '../components/common/Modal';
-import UpgradePromptModal from '../components/common/UpgradePromptModal';
-import BuySaasPackageModal from '../components/staff/BuySaasPackageModal';
-import PaymentModal from '../components/payment/PaymentModal';
-import HouseServiceConfigModal from '../components/staff/HouseServiceConfigModal';
-import TrialExpiryBanner from '../components/common/TrialExpiryBanner';
-import { getTrialStatus } from '../utils/packagePermissions';
-import { healBoardingHousesList } from '../data/roomsData';
+import api from '@/services/api';
+import Modal from '@/components/common/Modal';
+import UpgradePromptModal from '@/components/common/UpgradePromptModal';
+import BuySaasPackageModal from '@/components/staff/BuySaasPackageModal';
+import PaymentModal from '@/components/payment/PaymentModal';
+import HouseServiceConfigModal from '@/components/staff/HouseServiceConfigModal';
+import TrialExpiryBanner from '@/components/common/TrialExpiryBanner';
+import { getTrialStatus } from '@/utils/packagePermissions';
+import { healBoardingHousesList } from '@/data/roomsData';
 
 const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
 

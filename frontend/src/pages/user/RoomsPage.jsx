@@ -43,17 +43,18 @@ import {
   Camera,
   MapPin
 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
-import Modal from '../components/common/Modal';
-import ResidentContractModal from '../components/tenant/ResidentContractModal';
-import RoommateRequestModal from '../components/tenant/RoommateRequestModal';
-import TenantMoveOutNoticeModal from '../components/settlement/TenantMoveOutNoticeModal';
-import MoveOutSettlementModal from '../components/settlement/MoveOutSettlementModal';
-import TrialExpiryBanner from '../components/common/TrialExpiryBanner';
-import { getTrialStatus } from '../utils/packagePermissions';
+import { useAuth } from '@/contexts/AuthContext';
+import { useData } from '@/contexts/DataContext';
+import Modal from '@/components/common/Modal';
+import ResidentContractModal from '@/components/tenant/ResidentContractModal';
+import RoommateRequestModal from '@/components/tenant/RoommateRequestModal';
+import TenantMoveOutNoticeModal from '@/components/settlement/TenantMoveOutNoticeModal';
+import MoveOutSettlementModal from '@/components/settlement/MoveOutSettlementModal';
+import TrialExpiryBanner from '@/components/common/TrialExpiryBanner';
+import { getTrialStatus } from '@/utils/packagePermissions';
+import TenantRoomsPage from '@/pages/tenants/TenantRoomsPage';
 
-import { ALL_ROOMS, HOUSES_LIST, getRoomImage, isDuplicateRoom, isSameHouse, normalizeRoomNumber, normalizeHouseCode, healBoardingHousesList } from '../data/roomsData';
+import { ALL_ROOMS, HOUSES_LIST, getRoomImage, isDuplicateRoom, isSameHouse, normalizeRoomNumber, normalizeHouseCode, healBoardingHousesList } from '@/data/roomsData';
 export { ALL_ROOMS, HOUSES_LIST };
 
 export const ROOM_IMAGE_PRESETS = [
@@ -104,6 +105,11 @@ export default function RoomsPage() {
   const { user, tenantRooms } = useAuth();
   const role = user?.role || 'ADMIN';
   const isTenant = role === 'TENANT';
+
+  if (isTenant) {
+    return <TenantRoomsPage />;
+  }
+
   const isStaff = role === 'STAFF';
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1822,7 +1828,7 @@ export default function RoomsPage() {
                         setTenantLocation(group.district);
                         setTenantViewAllFlat(false);
                       }}
-                      className="bento-card p-5 cursor-pointer hover:shadow-xl hover:border-purple-300 hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group border-slate-200/90 bg-white"
+                      className="bento-card p-5 cursor-pointer hover:shadow-xl hover:scale-[1.02] transition-all duration-300 flex flex-col justify-between group border-slate-200/90 bg-white"
                     >
                       <div>
                         <div className="flex items-start justify-between gap-3">
@@ -1897,7 +1903,7 @@ export default function RoomsPage() {
                   return (
                     <div
                       key={house.code}
-                      className="bento-card p-5 border-slate-200/90 bg-white flex flex-col justify-between hover:shadow-xl hover:border-purple-300 transition-all duration-300 group"
+                      className="bento-card p-5 border-slate-200/90 bg-white flex flex-col justify-between hover:shadow-xl hover:scale-[1.02] transition-all duration-300 group"
                     >
                       <div>
                         <div className="flex items-start justify-between gap-2">

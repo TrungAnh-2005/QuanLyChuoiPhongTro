@@ -1,28 +1,35 @@
 import React, { useEffect, useState } from 'react';
-import { useSearchParams, Link, useNavigate } from 'react-router-dom';
-import { CheckCircle2, FileCheck, XCircle, Home, FileText, ArrowRight, ShieldCheck, Printer } from 'lucide-react';
-import { useData } from '../contexts/DataContext';
+import { useSearchParams, Link } from 'react-router-dom';
+import { CheckCircle2, XCircle, Home, ShieldCheck, Printer, FileCheck, Smartphone } from 'lucide-react';
+import { useData } from '@/contexts/DataContext';
 
-export default function VNPayReturnPage() {
+export default function MoMoReturnPage() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const { payInvoice, invoices, paySaasInvoice, updateLandlordPackage } = useData();
+  const { payInvoice, paySaasInvoice, updateLandlordPackage } = useData();
 
   const [processed, setProcessed] = useState(false);
 
-  // VNPay Sandbox return parameters
-  const responseCode = searchParams.get('vnp_ResponseCode');
-  const txnRef = searchParams.get('vnp_TxnRef') || '';
-  const amountStr = searchParams.get('vnp_Amount') || '0';
-  const bankCode = searchParams.get('vnp_BankCode') || 'NCB';
-  const transactionNo = searchParams.get('vnp_TransactionNo') || 'VNP' + Date.now().toString().slice(-8);
-  const orderInfo = searchParams.get('vnp_OrderInfo') || '';
+  // MoMo Sandbox return parameters
+  const resultCode = searchParams.get('resultCode') || '0';
+  const orderId = searchParams.get('orderId') || '';
+  const amountStr = searchParams.get('amount') || '4037500';
+  const message = searchParams.get('message') || 'Giao dịch thành công';
 
-  const isSuccess = responseCode === '00';
-  const amount = Number(amountStr) / 100; // VNPay chia 100
+  const isSuccess = resultCode === '0' || resultCode === '9000';
+  const amount = Number(amountStr);
 
-  // Trích xuất invoiceId hoặc phòng từ txnRef hoặc thông tin lưu tạm pending
-  const invoiceId = txnRef.includes('_') ? txnRef.split('_')[0] : txnRef;
+  const invoiceIdParam = searchParams.get('invoiceId');
+  let invoiceId = invoiceIdParam;
+  if (!invoiceId && orderId) {
+    const parts = orderId.split('_');
+    if (parts.length >= 3) {
+      invoiceId = parts[1];
+    } else if (parts.length === 2) {
+      invoiceId = parts[1];
+    } else {
+      invoiceId = orderId;
+    }
+  }
 
   const pendingInfo = (() => {
     try {
@@ -40,50 +47,48 @@ export default function VNPayReturnPage() {
       hasProcessedRef.current = true;
       setProcessed(true);
 
-      const txRef = txnRef || invoiceId || 'tx';
-      const lockKey = `rental_vnpay_tx_done_${txRef}`;
+      const txRef = orderId || invoiceId || 'momo_tx';
+      const lockKey = `rental_momo_tx_done_${txRef}`;
       if (sessionStorage.getItem(lockKey)) {
         return;
       }
       sessionStorage.setItem(lockKey, 'true');
 
-      // Gạch nợ hóa đơn thành công với tất cả các khóa nhận diện khả dĩ
       const keysToPay = new Set([
         pendingInfo?.code,
         pendingInfo?.id,
         pendingInfo?.room,
         invoiceId,
-        (orderInfo || '').match(/P\.\d+/i)?.[0],
-        (orderInfo || '').match(/HD-\d+-\d+/i)?.[0]
+        (message || '').match(/P\.\d+/i)?.[0],
+        (message || '').match(/HD-\d+-\d+/i)?.[0]
       ].filter(Boolean));
 
       const isSaas = Boolean(
         pendingInfo?.type === 'SAAS' ||
         String(invoiceId).startsWith('SAAS') ||
         String(pendingInfo?.id).startsWith('SAAS') ||
-        String(orderInfo || '').includes('HD-SAAS') ||
+        String(message || '').includes('HD-SAAS') ||
         String(pendingInfo?.code).includes('HD-SAAS')
       );
 
-      if (isSaas && typeof paySaasInvoice === 'function') {
+      if (isSaas && paySaasInvoice) {
         const targetPackage = pendingInfo?.packageCode || 'ENTERPRISE';
         const targetLandlord = pendingInfo?.landlordId || 1;
-        paySaasInvoice(pendingInfo?.id || invoiceId || pendingInfo?.code, `VNPay Sandbox (${bankCode})`, targetPackage, targetLandlord);
+        paySaasInvoice(pendingInfo?.id || invoiceId || pendingInfo?.code, 'Ví MoMo Sandbox', targetPackage, targetLandlord);
         if (typeof updateLandlordPackage === 'function') {
           updateLandlordPackage(targetLandlord, targetPackage);
         }
       } else {
         keysToPay.forEach((key) => {
-          payInvoice(key, `VNPay Sandbox (${bankCode})`);
+          payInvoice(key, 'Ví MoMo Sandbox');
         });
       }
 
-      // Xóa pending sau khi đã gạch nợ thành công
       try {
         localStorage.removeItem('rental_pending_payment');
       } catch {}
     }
-  }, [isSuccess, processed, invoiceId, pendingInfo, bankCode, orderInfo, payInvoice, paySaasInvoice, updateLandlordPackage, txnRef]);
+  }, [isSuccess, processed, invoiceId, pendingInfo, message, payInvoice, paySaasInvoice, updateLandlordPackage, orderId]);
 
   return (
     <div className="max-w-2xl mx-auto py-8 px-4">
@@ -92,7 +97,7 @@ export default function VNPayReturnPage() {
         <div
           className={`p-6 text-white text-center ${
             isSuccess
-              ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600'
+              ? 'bg-gradient-to-r from-pink-600 via-rose-600 to-purple-600'
               : 'bg-gradient-to-r from-rose-600 to-amber-600'
           }`}
         >
@@ -105,13 +110,13 @@ export default function VNPayReturnPage() {
           </div>
           <h1 className="text-2xl font-black">
             {isSuccess
-              ? 'Giao Dịch VNPay Sandbox Thành Công!'
-              : 'Giao Dịch VNPay Thất Bại Hoặc Bị Hủy'}
+              ? 'Giao Dịch Ví MoMo Sandbox Thành Công!'
+              : 'Giao Dịch MoMo Thất Bại Hoặc Bị Hủy'}
           </h1>
           <p className="text-white/90 text-xs mt-1">
             {isSuccess
               ? 'Hóa đơn tiền phòng đã được thanh toán và gạch nợ tự động trên hệ thống.'
-              : `Mã lỗi phản hồi từ cổng VNPay Sandbox: ${responseCode || 'CANCELLED'}`}
+              : `Mã lỗi phản hồi: ${resultCode} - ${message}`}
           </p>
         </div>
 
@@ -120,10 +125,11 @@ export default function VNPayReturnPage() {
           <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4.5 space-y-3 text-xs">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
               <span className="font-bold text-slate-500 uppercase tracking-wider text-[11px]">
-                Chi Tiết Giao Dịch VNPay Sandbox
+                Chi Tiết Giao Dịch Ví MoMo Sandbox
               </span>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-800">
-                CỔNG VNPAY TEST
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-pink-100 text-pink-800 flex items-center gap-1">
+                <Smartphone className="w-3 h-3" />
+                <span>VÍ MOMO TEST</span>
               </span>
             </div>
 
@@ -140,18 +146,13 @@ export default function VNPayReturnPage() {
             </div>
 
             <div className="flex justify-between">
-              <span className="text-slate-500">Ngân hàng thanh toán:</span>
-              <span className="font-bold text-slate-800">{bankCode} (Ngân hàng Quốc Dân Test)</span>
+              <span className="text-slate-500">Kênh thanh toán:</span>
+              <span className="font-bold text-slate-800">Ví Điện Tử MoMo (Sandbox UAT)</span>
             </div>
 
             <div className="flex justify-between">
-              <span className="text-slate-500">Mã giao dịch VNPay:</span>
-              <span className="font-mono font-medium text-slate-700">{transactionNo}</span>
-            </div>
-
-            <div className="flex justify-between">
-              <span className="text-slate-500">Mã tham chiếu hệ thống:</span>
-              <span className="font-mono text-slate-600">{txnRef}</span>
+              <span className="text-slate-500">Mã đơn hàng MoMo:</span>
+              <span className="font-mono text-slate-600">{orderId}</span>
             </div>
 
             <div className="flex justify-between">
@@ -173,10 +174,10 @@ export default function VNPayReturnPage() {
             </div>
           </div>
 
-          <div className="p-3 bg-purple-50/70 border border-purple-200/80 rounded-xl text-[11px] text-purple-900 flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-purple-600 shrink-0" />
+          <div className="p-3 bg-pink-50/70 border border-pink-200/80 rounded-xl text-[11px] text-pink-900 flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-pink-600 shrink-0" />
             <span>
-              <strong>Ghi nhận kế toán:</strong> Dữ liệu thanh toán qua cổng VNPay Sandbox đã được đồng bộ vào hệ thống quản lý chuỗi phòng trọ.
+              <strong>Ghi nhận kế toán:</strong> Dữ liệu thanh toán qua cổng MoMo Sandbox đã được đồng bộ vào hệ thống quản lý chuỗi phòng trọ.
             </span>
           </div>
 
@@ -189,23 +190,13 @@ export default function VNPayReturnPage() {
               <Printer className="w-4 h-4" />
               <span>In Phiếu Thu</span>
             </button>
-            {Boolean(pendingInfo?.type === 'SAAS' || String(invoiceId).startsWith('SAAS') || String(orderInfo || '').includes('HD-SAAS')) ? (
-              <Link
-                to="/invoices/saas"
-                className="w-full sm:flex-1 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all text-center flex items-center justify-center gap-1.5 btn-press"
-              >
-                <FileCheck className="w-4 h-4" />
-                <span>Về Hóa Đơn Nộp Tiền (Admin)</span>
-              </Link>
-            ) : (
-              <Link
-                to="/"
-                className="w-full sm:flex-1 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all text-center flex items-center justify-center gap-1.5 btn-press"
-              >
-                <Home className="w-4 h-4" />
-                <span>Về Trang Cổng Khách Thuê</span>
-              </Link>
-            )}
+            <Link
+              to="/"
+              className="w-full sm:flex-1 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all text-center flex items-center justify-center gap-1.5 btn-press"
+            >
+              <Home className="w-4 h-4" />
+              <span>Về Trang Cổng Khách Thuê</span>
+            </Link>
           </div>
         </div>
       </div>

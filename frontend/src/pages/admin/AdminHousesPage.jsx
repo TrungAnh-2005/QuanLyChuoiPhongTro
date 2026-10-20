@@ -513,7 +513,7 @@ export default function AdminHousesPage() {
             return (
               <div
                 key={group.key}
-                className="bento-card overflow-hidden transition-all duration-300 border border-slate-200/80 hover:border-indigo-200"
+                className="bento-card overflow-hidden transition-all duration-300 border border-slate-200/80"
               >
                 {/* Landlord Header (Clickable Accordion Row) */}
                 <div

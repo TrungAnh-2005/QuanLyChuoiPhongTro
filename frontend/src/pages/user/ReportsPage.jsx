@@ -24,8 +24,8 @@ import {
   LineChart,
   Line
 } from 'recharts';
-import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useData } from '@/contexts/DataContext';
 
 const yearlyData = [
   { month: 'Tháng 1', revenue: 42.0, cost: 8.5, profit: 33.5 },

@@ -22,13 +22,14 @@ import {
   ExternalLink,
   Check
 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
-import PaymentModal from '../components/payment/PaymentModal';
-import Modal from '../components/common/Modal';
-import BuySaasPackageModal from '../components/staff/BuySaasPackageModal';
-import TrialExpiryBanner from '../components/common/TrialExpiryBanner';
-import { getTrialStatus } from '../utils/packagePermissions';
+import { useAuth } from '@/contexts/AuthContext';
+import { useData } from '@/contexts/DataContext';
+import PaymentModal from '@/components/payment/PaymentModal';
+import Modal from '@/components/common/Modal';
+import BuySaasPackageModal from '@/components/staff/BuySaasPackageModal';
+import TrialExpiryBanner from '@/components/common/TrialExpiryBanner';
+import { getTrialStatus } from '@/utils/packagePermissions';
+import TenantInvoicesPage from '@/pages/tenants/TenantInvoicesPage';
 
 const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
 
@@ -37,6 +38,10 @@ export default function InvoicesPage({ forcedTab }) {
   const { invoices, payInvoice, tenants, saasInvoices = [], paySaasInvoice, resetSaasInvoiceStatus, createSaasInvoice, updateLandlordPackage, landlords = [] } = useData();
   const role = user?.role || 'ADMIN';
   const isTenant = role === 'TENANT';
+
+  if (isTenant) {
+    return <TenantInvoicesPage />;
+  }
 
   // State tách 2 loại hóa đơn cho Chủ trọ
   const [invoiceTab, setInvoiceTab] = useState(forcedTab || 'TENANT_INVOICES');

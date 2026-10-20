@@ -20,9 +20,10 @@ import {
   Armchair,
   Trash2
 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
-import Modal from '../components/common/Modal';
+import { useAuth } from '@/contexts/AuthContext';
+import { useData } from '@/contexts/DataContext';
+import Modal from '@/components/common/Modal';
+import TenantMaintenancePage from '@/pages/tenants/TenantMaintenancePage';
 
 const CATEGORIES = [
   { id: 'ELECTRICITY', label: 'Hệ thống Điện (Đèn, điều hòa, quạt, ổ cắm)', icon: Zap, color: 'text-amber-600 bg-amber-50 border-amber-200' },
@@ -37,6 +38,10 @@ export default function MaintenancePage() {
   const { tickets, createTicket, updateTicketStatus, tenants, addMaintenanceFeeToInvoice, rooms = [] } = useData();
   const role = user?.role || 'ADMIN';
   const isTenant = role === 'TENANT';
+
+  if (isTenant) {
+    return <TenantMaintenancePage />;
+  }
   const isStaff = role === 'STAFF';
   const isAdmin = role === 'ADMIN';
 
