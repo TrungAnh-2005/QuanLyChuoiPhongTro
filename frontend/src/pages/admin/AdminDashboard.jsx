@@ -166,25 +166,59 @@ export default function AdminDashboard() {
       ? (totalSaasRevenue > 0 ? (totalSaasRevenue / 1000000).toFixed(1) + 'M ₫' : '0 ₫')
       : (totalSaasRevenue > 0 ? (totalSaasRevenue / 1000000).toFixed(1) + 'M ₫' : '4.99M ₫');
 
-    // 4. Dữ liệu biểu đồ cước SaaS
-    const saasRevenueChartData = [
-      { month: 'T1', revenue: 9980000, target: 8000000 },
-      { month: 'T2', revenue: 14970000, target: 12000000 },
-      { month: 'T3', revenue: 19960000, target: 16000000 },
-      { month: 'T4', revenue: 21950000, target: 18000000 },
-      { month: 'T5', revenue: 26940000, target: 22000000 },
-      { month: 'T6', revenue: 29930000, target: 25000000 },
-      { month: 'T7', revenue: 32920000, target: 28000000 },
-      { month: 'T8', revenue: 37910000, target: 32000000 },
-      { month: 'T9', revenue: 42900000, target: 36000000 },
-    ];
+    // 4. Dữ liệu biểu đồ cước SaaS (Đồng bộ theo doanh thu thực tế & trạng thái Reset về 0)
+    const saasRevenueChartData = (isZeroSandbox || totalSaasRevenue === 0)
+      ? [
+          { month: 'T1', revenue: 0, target: 0 },
+          { month: 'T2', revenue: 0, target: 0 },
+          { month: 'T3', revenue: 0, target: 0 },
+          { month: 'T4', revenue: 0, target: 0 },
+          { month: 'T5', revenue: 0, target: 0 },
+          { month: 'T6', revenue: 0, target: 0 },
+          { month: 'T7', revenue: 0, target: 0 },
+          { month: 'T8', revenue: 0, target: 0 },
+          { month: 'T9', revenue: totalSaasRevenue, target: 0 },
+        ]
+      : [
+          { month: 'T1', revenue: 9980000, target: 8000000 },
+          { month: 'T2', revenue: 14970000, target: 12000000 },
+          { month: 'T3', revenue: 19960000, target: 16000000 },
+          { month: 'T4', revenue: 21950000, target: 18000000 },
+          { month: 'T5', revenue: 26940000, target: 22000000 },
+          { month: 'T6', revenue: 29930000, target: 25000000 },
+          { month: 'T7', revenue: 32920000, target: 28000000 },
+          { month: 'T8', revenue: 37910000, target: 32000000 },
+          { month: 'T9', revenue: totalSaasRevenue > 0 ? totalSaasRevenue : 42900000, target: 36000000 },
+        ];
 
-    // 5. Cơ cấu phân bổ gói cước bản quyền thực tế của hệ thống
-    const packageDistributionData = [
-      { name: 'Chuyên Nghiệp (PRO)', value: 2, color: '#2563eb' },
-      { name: 'Cơ Bản (BASIC)', value: 1, color: '#06b6d4' },
-      { name: 'Doanh Nghiệp (VIP)', value: 1, color: '#8b5cf6' },
-    ];
+    // 5. Cơ cấu phân bổ gói cước bản quyền (Tính động theo danh sách landlords thực tế)
+    const packageDistributionData = (() => {
+      if (!landlords || landlords.length === 0) {
+        return [
+          { name: 'Chuyên Nghiệp (PRO)', value: 0, color: '#6366f1' },
+          { name: 'Cơ Bản (BASIC)', value: 0, color: '#06b6d4' },
+          { name: 'Doanh Nghiệp (VIP)', value: 0, color: '#8b5cf6' },
+        ];
+      }
+      let pro = 0;
+      let basic = 0;
+      let vip = 0;
+      landlords.forEach((l) => {
+        const pkg = (l.packageCode || '').toUpperCase();
+        if (pkg.includes('VIP') || pkg.includes('ENTERPRISE') || pkg.includes('UNLIMITED')) {
+          vip++;
+        } else if (pkg.includes('BASIC') || pkg.includes('TRIAL') || pkg.includes('NONE')) {
+          basic++;
+        } else {
+          pro++;
+        }
+      });
+      return [
+        { name: 'Chuyên Nghiệp (PRO)', value: pro, color: '#6366f1' },
+        { name: 'Cơ Bản (BASIC)', value: basic, color: '#06b6d4' },
+        { name: 'Doanh Nghiệp (VIP)', value: vip, color: '#8b5cf6' },
+      ];
+    })();
     const totalPackages = packageDistributionData.reduce((sum, item) => sum + item.value, 0);
 
     return (

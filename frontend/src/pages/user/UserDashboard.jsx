@@ -180,17 +180,56 @@ export default function UserDashboard() {
     return t.status === 'OPEN' || t.status === 'PENDING';
   }).length;
 
+  const staffPaidInvoices = invoices.filter((i) => {
+    if (role === 'STAFF') {
+      if (staffHouseCodes.length === 0) return false;
+      const matchHouse = i.houseCode && staffHouseCodes.includes(i.houseCode);
+      const invRoom = (rooms || []).find((r) => r.number === i.room);
+      const matchRoom = invRoom && staffHouseCodes.includes(invRoom.houseCode);
+      if (!matchHouse && !matchRoom) return false;
+    }
+    return i.status === 'PAID';
+  });
+  const monthlyPaidRevenue = staffPaidInvoices.reduce((s, i) => s + (i.total || 0), 0);
+
+  const staffActiveTenants = tenants.filter((t) => {
+    if (t.status !== 'ACTIVE') return false;
+    const tRoom = t.room || (t.rooms && t.rooms[0]);
+    if (!tRoom) return false;
+    if (t.houseCode && staffHouseCodes.includes(t.houseCode)) return true;
+    const roomObj = (rooms || []).find((r) => r.number === tRoom);
+    return roomObj && staffHouseCodes.includes(roomObj.houseCode);
+  });
+  const activeTenantsCount = isZeroSandbox
+    ? staffActiveTenants.length
+    : (staffActiveTenants.length || (scopedRooms.some((r) => r.status === 'OCCUPIED') ? occupiedCount : 0));
+
+  const staffChartRevenueData = useMemo(() => {
+    if (isZeroSandbox || monthlyPaidRevenue === 0) {
+      return [
+        { month: 'T1', revenue: 0, target: 0 },
+        { month: 'T2', revenue: 0, target: 0 },
+        { month: 'T3', revenue: 0, target: 0 },
+        { month: 'T4', revenue: 0, target: 0 },
+        { month: 'T5', revenue: 0, target: 0 },
+        { month: 'T6', revenue: 0, target: 0 },
+        { month: 'T7', revenue: 0, target: 0 },
+        { month: 'T8', revenue: 0, target: 0 },
+        { month: 'T9', revenue: monthlyPaidRevenue, target: totalRooms * 3000000 },
+      ];
+    }
+    return revenueData;
+  }, [isZeroSandbox, monthlyPaidRevenue, totalRooms]);
+
   return (
     <div className="space-y-6 page-enter">
-      {/* Header Bento Banner with Ambient Backdrop Glow */}
-      <div className="bento-card p-6 sm:p-7 relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-5 bg-gradient-to-r from-white via-indigo-50/30 to-purple-50/20">
-        <div className="absolute -right-16 -top-16 w-80 h-80 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none animate-float-slow" />
-        <div className="absolute -left-16 -bottom-16 w-64 h-64 bg-purple-500/15 rounded-full blur-3xl pointer-events-none animate-float-reverse" />
+      {/* Header Bento Banner */}
+      <div className="bento-card p-6 sm:p-7 bg-white border border-slate-200/90 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-5">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="status-pill status-pill-indigo">
               <Sparkles className="w-3 h-3 text-indigo-600" />
-              <span>Cơ Sở Vận Hành Chi Nhánh</span>
+              <span>{staffManageableHouses.length > 1 ? 'Chuỗi Cơ Sở Vận Hành' : 'Cơ Sở Vận Hành Chi Nhánh'}</span>
             </span>
             <span className="status-pill status-pill-success">
               <span className="pulse-dot-green shrink-0" />
@@ -198,10 +237,14 @@ export default function UserDashboard() {
             </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-            {`Tổng Quan Vận Hành: ${user?.houseName || 'Cơ Sở 1 - Cầu Giấy'}`}
+            {staffManageableHouses.length > 1
+              ? `Tổng Quan Chuỗi: ${user?.fullName || 'Lê Thị Thu Ngân'} (${staffManageableHouses.length} Cơ Sở)`
+              : `Tổng Quan Vận Hành: ${staffManageableHouses[0]?.name || user?.houseName || 'Cơ Sở 1 - Cầu Giấy'}`}
           </h1>
           <p className="text-slate-500 text-xs sm:text-sm">
-            {`Quản lý trực tiếp chi nhánh ${user?.houseCode || 'CS-01'} • Cán bộ phụ trách: ${user?.fullName || 'Lê Thị Thu Ngân'}`}
+            {staffManageableHouses.length > 1
+              ? `Quản lý vận hành ${staffManageableHouses.map((h) => h.code).join(', ')} • Quy mô: ${totalRooms} phòng • Phụ trách: ${user?.fullName || 'Lê Thị Thu Ngân'}`
+              : `Quản lý trực tiếp chi nhánh ${staffManageableHouses[0]?.code || user?.houseCode || 'CS-01'} • Cán bộ phụ trách: ${user?.fullName || 'Lê Thị Thu Ngân'}`}
           </p>
         </div>
 
@@ -255,15 +298,15 @@ export default function UserDashboard() {
           </div>
           <div className="flex items-baseline justify-between">
             <span className="text-3xl font-black text-slate-900 tracking-tight">
-              {isZeroSandbox
-                ? tenants.filter((t) => t.status === 'ACTIVE' && (t.room || (t.rooms && t.rooms.length > 0))).length
-                : (tenants.filter((t) => t.status === 'ACTIVE').length || 4)}
+              {activeTenantsCount}
             </span>
             <span className="text-xs font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-lg border border-purple-200">
-              1 khách - 1 phòng
+              {activeTenantsCount > 0 ? `${activeTenantsCount} khách – ${occupiedCount} phòng` : 'Chưa có khách'}
             </span>
           </div>
-          <p className="text-[11px] text-slate-400">Đã xác thực CCCD & ký hợp đồng số</p>
+          <p className="text-[11px] text-slate-400">
+            {activeTenantsCount > 0 ? 'Đã xác thực CCCD & ký hợp đồng số' : 'Chưa có hợp đồng thuê hoạt động'}
+          </p>
         </div>
 
         {/* Card 3: Doanh thu tháng */}
@@ -277,17 +320,23 @@ export default function UserDashboard() {
           <div className="flex items-baseline justify-between">
             <span className="text-3xl font-black text-slate-900 font-mono tracking-tight">
               {isZeroSandbox
-                ? (invoices.filter((i) => i.status === 'PAID').reduce((s, i) => s + (i.total || 0), 0) > 0
-                  ? (invoices.filter((i) => i.status === 'PAID').reduce((s, i) => s + (i.total || 0), 0) / 1000000).toFixed(1) + 'M'
-                  : '0 ₫')
-                : '62.4M'}
+                ? (monthlyPaidRevenue > 0 ? (monthlyPaidRevenue / 1000000).toFixed(1) + 'M' : '0 ₫')
+                : (monthlyPaidRevenue > 0 ? (monthlyPaidRevenue / 1000000).toFixed(1) + 'M' : '62.4M')}
             </span>
-            <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1">
-              <ArrowUpRight className="w-3.5 h-3.5" />
-              <span>+6.8% MoM</span>
-            </span>
+            {monthlyPaidRevenue > 0 || !isZeroSandbox ? (
+              <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1">
+                <ArrowUpRight className="w-3.5 h-3.5" />
+                <span>+6.8% MoM</span>
+              </span>
+            ) : (
+              <span className="text-xs font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200">
+                0% MoM
+              </span>
+            )}
           </div>
-          <p className="text-[11px] text-slate-400">Vượt mục tiêu tháng 6.4M</p>
+          <p className="text-[11px] text-slate-400">
+            {monthlyPaidRevenue > 0 || !isZeroSandbox ? 'Vượt mục tiêu tháng 6.4M' : 'Chưa có hóa đơn thực thu'}
+          </p>
         </div>
 
         {/* Card 4: Hóa đơn chờ thu */}
@@ -334,7 +383,7 @@ export default function UserDashboard() {
 
           <div className="h-72 w-full pt-2">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={revenueData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <AreaChart data={staffChartRevenueData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="revGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />

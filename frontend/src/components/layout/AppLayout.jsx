@@ -153,7 +153,7 @@ export default function AppLayout() {
         </main>
 
         {/* Mobile Bottom Navigation Bar (Chỉ hiển thị trên di động) */}
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-xl border-t border-slate-200/90 shadow-2xl safe-area-bottom">
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/90 backdrop-blur-xl border-t border-slate-200/80 shadow-lg safe-area-bottom">
           <div className="grid grid-cols-5 h-16 items-center px-1">
             {bottomNavItems.map((item) => {
               const Icon = item.icon;
@@ -168,18 +168,18 @@ export default function AppLayout() {
                   to={item.path}
                   className={`flex flex-col items-center justify-center py-1 transition-all ${
                     isActive
-                      ? 'text-purple-600 font-bold scale-105'
+                      ? 'text-indigo-600 font-extrabold scale-105'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
                   <div
-                    className={`p-1 rounded-xl transition-colors ${
-                      isActive ? 'bg-purple-100 text-purple-700' : ''
+                    className={`p-1.5 rounded-xl transition-colors ${
+                      isActive ? 'bg-indigo-50 text-indigo-600 ring-1 ring-indigo-500/10' : ''
                     }`}
                   >
                     <Icon className="w-5 h-5" />
                   </div>
-                  <span className="text-[10px] mt-0.5 tracking-tight truncate max-w-[64px]">
+                  <span className="text-[10px] mt-0.5 tracking-tight truncate max-w-[64px] font-semibold">
                     {item.name}
                   </span>
                 </Link>
@@ -189,12 +189,12 @@ export default function AppLayout() {
             {/* Nút Mở Menu Toàn Diện */}
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="flex flex-col items-center justify-center py-1 text-slate-500 hover:text-purple-600 transition-all"
+              className="flex flex-col items-center justify-center py-1 text-slate-500 hover:text-indigo-600 transition-all cursor-pointer"
             >
-              <div className="p-1 rounded-xl text-slate-600 hover:bg-slate-100">
+              <div className="p-1.5 rounded-xl text-slate-600 hover:bg-slate-100">
                 <Menu className="w-5 h-5" />
               </div>
-              <span className="text-[10px] mt-0.5 tracking-tight">Thêm</span>
+              <span className="text-[10px] mt-0.5 tracking-tight font-semibold">Thêm</span>
             </button>
           </div>
         </nav>

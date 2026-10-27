@@ -72,18 +72,23 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
   }, [role]);
 
   const sidebarContent = (
-    <div className="flex flex-col h-full bg-white text-slate-700">
+    <div className="flex flex-col h-full bg-white/95 backdrop-blur-md text-slate-700">
       {/* Brand Logo & Close Button */}
-      <div className="p-4 sm:p-5 flex items-center justify-between border-b border-slate-100 bg-white">
+      <div className="p-4 sm:p-5 flex items-center justify-between border-b border-slate-100/90 bg-white/80">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-600/20 font-black text-lg shrink-0">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-600/25 font-black text-lg shrink-0 transition-transform duration-200 hover:scale-105">
             <Building2 className="w-5 h-5 text-white" />
           </div>
           <div>
-            <div className="font-extrabold text-slate-800 tracking-tight leading-none text-sm">
-              TRỌ VIỆT SAAS
+            <div className="flex items-center gap-1.5">
+              <span className="font-extrabold text-slate-900 tracking-tight leading-none text-sm">
+                TRỌ VIỆT SAAS
+              </span>
+              <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600 border border-indigo-100">
+                PRO
+              </span>
             </div>
-            <div className="text-[11px] text-slate-400 font-normal mt-1 tracking-normal">
+            <div className="text-[11px] text-slate-400 font-medium mt-1 tracking-normal">
               Quản lý vận hành tập trung
             </div>
           </div>
@@ -92,7 +97,7 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
         {/* Close button for mobile drawer */}
         <button
           onClick={onClose}
-          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 lg:hidden transition-colors"
+          className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 lg:hidden transition-colors cursor-pointer"
           title="Đóng menu"
         >
           <X className="w-5 h-5" />
@@ -101,12 +106,15 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
 
       {/* Nav List */}
       <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-        <div className="px-3 py-2 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-          {role === 'ADMIN'
-            ? 'PHÂN HỆ QUẢN TRỊ HỆ THỐNG'
-            : role === 'STAFF'
-            ? 'VẬN HÀNH CƠ SỞ CHUỖI'
-            : 'CỔNG CƯ DÂN TRỰC TUYẾN'}
+        <div className="px-3.5 py-2 text-[10.5px] font-extrabold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+          <span>
+            {role === 'ADMIN'
+              ? 'HẠ TẦNG QUẢN TRỊ SAAS'
+              : role === 'STAFF'
+              ? 'VẬN HÀNH CƠ SỞ CHUỖI'
+              : 'CỔNG CƯ DÂN TRỰC TUYẾN'}
+          </span>
+          <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
         </div>
 
         {navItems.map((item) => {
@@ -118,19 +126,27 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
               end={item.path === '/'}
               onClick={onClose}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3.5 py-2.5 rounded-2xl font-bold text-xs transition-all duration-150 ${
+                `group flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 btn-press-ghost ${
                   isActive
-                    ? 'bg-purple-50 text-purple-700 border border-purple-100/80 shadow-xs'
-                    : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/70'
+                    ? 'bg-gradient-to-r from-indigo-50/90 to-purple-50/60 text-indigo-700 border border-indigo-200/70 shadow-xs font-extrabold translate-x-0.5'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`
               }
             >
-              <Icon className="w-4 h-4 shrink-0" />
-              <span className="truncate">{item.name}</span>
-              {item.path === '/admin/houses' && role === 'ADMIN' && pendingHousesCount > 0 && (
-                <span className="ml-auto px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white animate-pulse">
-                  {pendingHousesCount}
-                </span>
+              {({ isActive }) => (
+                <>
+                  <div className={`p-1 rounded-lg transition-colors ${
+                    isActive ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-400 group-hover:text-indigo-600'
+                  }`}>
+                    <Icon className="w-4 h-4 shrink-0" />
+                  </div>
+                  <span className="truncate flex-1">{item.name}</span>
+                  {item.path === '/admin/houses' && role === 'ADMIN' && pendingHousesCount > 0 && (
+                    <span className="ml-auto px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white animate-pulse shadow-xs">
+                      {pendingHousesCount}
+                    </span>
+                  )}
+                </>
               )}
             </NavLink>
           );
@@ -138,14 +154,18 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
       </nav>
 
       {/* Footer System Status */}
-      <div className="p-3 border-t border-slate-100 bg-white">
-        <div className="bg-emerald-50/80 border border-emerald-100/80 rounded-2xl p-3 text-xs">
-          <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            Hệ thống ổn định
+      <div className="p-3 border-t border-slate-100/90 bg-white/60">
+        <div className="bg-gradient-to-r from-emerald-50/90 to-teal-50/80 border border-emerald-200/70 rounded-2xl p-3 text-xs shadow-2xs">
+          <div className="flex items-center gap-2 text-emerald-800 font-extrabold text-xs">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+            </span>
+            <span>Hệ thống trực tuyến</span>
           </div>
-          <div className="text-[11px] text-emerald-600 mt-0.5 pl-4">
-            10 Microservices · 99,9% trực tuyến
+          <div className="text-[11px] text-emerald-700/80 mt-1 pl-4 font-medium flex items-center justify-between">
+            <span>10 Microservices</span>
+            <span className="font-bold text-emerald-800">99.9% Uptime</span>
           </div>
         </div>
       </div>
