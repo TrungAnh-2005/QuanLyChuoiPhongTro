@@ -48,6 +48,8 @@ export default function TenantsPage() {
     resetTenantPassword,
     rooms = [],
     roomMembers = [],
+    contracts = [],
+
     updateTemporaryResidence,
     updateResidentCccd,
     landlords = [],
@@ -57,7 +59,7 @@ export default function TenantsPage() {
   } = useData();
   const [pwdResetToast, setPwdResetToast] = useState(null);
   const [payingSaasInvoice, setPayingSaasInvoice] = useState(null);
-  const { user } = useAuth();
+  const { user, tenantRooms = {} } = useAuth();
   const isStaffOrAdmin = user?.role === 'ADMIN' || user?.role === 'STAFF';
 
   // Xác định gói cước của Chủ trọ hiện tại
@@ -616,44 +618,106 @@ export default function TenantsPage() {
     }));
   };
 
+  const isSameRoom = (a, b) => {
+    if (!a || !b) return false;
+    const cleanA = String(a).replace(/^P\.?/i, '').trim().toLowerCase();
+    const cleanB = String(b).replace(/^P\.?/i, '').trim().toLowerCase();
+    return cleanA === cleanB;
+  };
+
+  const getTenantActiveInfo = (t) => {
+    const tName = (t.fullName || '').toLowerCase().trim();
+
+    // Kiểm tra xem session có phân bổ phòng không (bao gồm cả fallback từ localStorage)
+    let storedRoomsMap = {};
+    try {
+      const s = localStorage.getItem('rental_tenant_rooms');
+      if (s) storedRoomsMap = JSON.parse(s);
+    } catch {}
+
+    const resolvedMap = { ...storedRoomsMap, ...tenantRooms };
+    const sessionRooms = resolvedMap[t.fullName] !== undefined
+      ? resolvedMap[t.fullName]
+      : (resolvedMap[t.phone] !== undefined
+          ? resolvedMap[t.phone]
+          : (t.email?.includes('an.nguyen') || t.fullName?.toLowerCase().includes('an') ? resolvedMap['tenant1'] || resolvedMap['Nguyễn Văn An'] : null));
+    
+    // Nếu session explicitly đặt rỗng [] -> khách đã trả phòng / chưa thuê phòng nào!
+    const isSessionEmpty = Array.isArray(sessionRooms) && sessionRooms.length === 0;
+
+    // Tìm hợp đồng ACTIVE khớp với khách thuê
+    const activeContract = isSessionEmpty ? null : (contracts || []).find(
+      (c) =>
+        c.status === 'ACTIVE' &&
+        ((c.tenantName && (c.tenantName.toLowerCase().includes(tName) || tName.includes(c.tenantName.toLowerCase()))) ||
+         (c.tenantPhone && c.tenantPhone === t.phone))
+    );
+
+    const roomsFromState = t.rooms && t.rooms.length > 0 ? t.rooms : (t.room ? [t.room] : []);
+    const rawRooms = isSessionEmpty ? [] : (sessionRooms ? (Array.isArray(sessionRooms) ? sessionRooms : [sessionRooms]) : roomsFromState);
+
+    // Khách chỉ thực sự ĐANG THUÊ nếu:
+    // 1. Không bị session đặt về []
+    // 2. status trong t là ACTIVE
+    // 3. Có phòng trong rawRooms
+    // 4. Có hợp đồng ACTIVE hợp lệ và khớp với phòng đang ở
+    const isActuallyActive = !isSessionEmpty && t.status === 'ACTIVE' && rawRooms.length > 0 && Boolean(activeContract);
+
+    const activeRooms = isActuallyActive ? rawRooms : [];
+    const pastRoom = !isActuallyActive ? (t.previousRoom || (roomsFromState.length > 0 ? roomsFromState[0] : null)) : null;
+
+    return {
+      isActuallyActive,
+      activeRooms,
+      roomCount: activeRooms.length,
+      pastRoom,
+      activeContract
+    };
+  };
+
   // Lấy tập hợp khách thuộc phạm vi cơ sở (Tenant Scoping & Multi-tenancy Isolation)
   // Tuyệt đối không hiển thị khách tự do chưa thuê bất kỳ phòng nào trong danh bạ quản lý của Staff
   const scopedTenants = useMemo(() => {
     return (tenants || []).filter((t) => {
+      const info = getTenantActiveInfo(t);
+
       // 1. Nếu là Staff: chỉ quản lý khách thuộc các cơ sở do Staff này phụ trách
       if (user?.role === 'STAFF') {
         if (staffHouseCodes.length === 0) return false;
         const matchHouse =
           staffHouseCodes.includes(t.houseCode) ||
-          staffHouseCodes.some((c) => t.house && t.house.includes(c));
+          staffHouseCodes.some((c) => t.house && t.house.includes(c)) ||
+          (info.activeContract && staffHouseCodes.includes(info.activeContract.houseCode)) ||
+          (info.pastRoom && (rooms || []).some((r) => isSameRoom(r.number, info.pastRoom) && staffHouseCodes.includes(r.houseCode))) ||
+          (t.room && (rooms || []).some((r) => isSameRoom(r.number, t.room) && staffHouseCodes.includes(r.houseCode)));
         if (!matchHouse) return false;
       }
 
-      // 2. Chỉ hiển thị khách ĐANG THUÊ hoặc ĐÃ TỪNG THUÊ tại cơ sở này
-      const tenantRoomsList = t.rooms && t.rooms.length > 0 ? t.rooms : (t.room ? [t.room] : []);
-      const hasRoom = tenantRoomsList.length > 0;
-      const isPastTenant = t.status === 'INACTIVE' && (t.daysSinceLeave || 0) > 0;
+      // 2. Chỉ hiển thị khách ĐANG THUÊ hoặc ĐÃ TỪNG THUÊ tại cơ sở này (Đã rời / Đã trả phòng)
+      const hasRoom = info.activeRooms.length > 0 && info.isActuallyActive;
+      const isPastTenant = !info.isActuallyActive && (t.status === 'INACTIVE' || Boolean(info.pastRoom || t.leaveDate));
 
-      // Khách vãng lai / chưa có phòng (WAITING_ROOM) không thuộc cơ sở nào -> không cho Staff xem
       return hasRoom || isPastTenant;
     });
-  }, [tenants, staffHouseCodes, user]);
+  }, [tenants, staffHouseCodes, user, contracts, rooms, tenantRooms]);
 
   const filteredTenants = useMemo(() => {
     return scopedTenants.filter((t) => {
+      const info = getTenantActiveInfo(t);
       const matchesSearch =
         (t.fullName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (t.cccd || '').includes(searchTerm) ||
         (t.phone || '').includes(searchTerm) ||
         (t.room && t.room.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (t.rooms && t.rooms.some((r) => r.toLowerCase().includes(searchTerm.toLowerCase())));
+        (t.rooms && t.rooms.some((r) => r.toLowerCase().includes(searchTerm.toLowerCase()))) ||
+        (info.pastRoom && String(info.pastRoom).toLowerCase().includes(searchTerm.toLowerCase()));
 
       if (statusFilter === 'ALL') return matchesSearch;
-      if (statusFilter === 'ACTIVE') return matchesSearch && t.status === 'ACTIVE';
-      if (statusFilter === 'INACTIVE') return matchesSearch && t.status === 'INACTIVE';
+      if (statusFilter === 'ACTIVE') return matchesSearch && info.isActuallyActive;
+      if (statusFilter === 'INACTIVE') return matchesSearch && !info.isActuallyActive;
       return matchesSearch;
     });
-  }, [scopedTenants, searchTerm, statusFilter]);
+  }, [scopedTenants, searchTerm, statusFilter, contracts, tenantRooms]);
 
   const handleCreateTenant = (e) => {
     e.preventDefault();
@@ -897,7 +961,7 @@ export default function TenantsPage() {
                 : 'text-slate-600 hover:text-emerald-700'
             }`}
           >
-            Đang thuê ({scopedTenants.filter((t) => t.status === 'ACTIVE').length})
+            Đang thuê ({scopedTenants.filter((t) => getTenantActiveInfo(t).isActuallyActive).length})
           </button>
           <button
             onClick={() => setStatusFilter('INACTIVE')}
@@ -907,7 +971,7 @@ export default function TenantsPage() {
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Đã trả phòng ({scopedTenants.filter((t) => t.status === 'INACTIVE').length})
+            Đã trả phòng ({scopedTenants.filter((t) => !getTenantActiveInfo(t).isActuallyActive).length})
           </button>
         </div>
       </div>
@@ -937,11 +1001,11 @@ export default function TenantsPage() {
                 </tr>
               ) : (
                 filteredTenants.map((t) => {
-                  const tenantRoomsList = t.rooms && t.rooms.length > 0
-                    ? t.rooms
-                    : (t.room ? [t.room] : []);
-                  const roomCount = tenantRoomsList.length;
-                  const canDelete = t.status === 'INACTIVE' && (t.daysSinceLeave || 0) >= 30;
+                  const info = getTenantActiveInfo(t);
+                  const isActuallyActive = info.isActuallyActive;
+                  const tenantRoomsList = info.activeRooms;
+                  const roomCount = info.roomCount;
+                  const canDelete = !isActuallyActive;
 
                   return (
                     <tr
@@ -965,7 +1029,7 @@ export default function TenantsPage() {
                       
                       {/* Phòng đang thuê (hỗ trợ nhiều phòng) */}
                       <td className="py-3 px-4">
-                        {roomCount > 0 ? (
+                        {isActuallyActive && roomCount > 0 ? (
                           <div className="flex flex-wrap items-center gap-1.5">
                             {tenantRoomsList.map((rm) => (
                               <span
@@ -981,16 +1045,31 @@ export default function TenantsPage() {
                               </span>
                             )}
                           </div>
+                        ) : info.pastRoom ? (
+                          <span className="font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 text-xs inline-flex items-center gap-1">
+                            <span>{info.pastRoom}</span>
+                            <span className="text-[10px] text-slate-400 font-normal">(Đã trả)</span>
+                          </span>
                         ) : (
                           <span className="text-slate-400 italic text-[11px]">
-                            Chưa có phòng
+                            Đã trả phòng
                           </span>
                         )}
                       </td>
 
                       {/* Hạn hợp đồng */}
                       <td className="py-3 px-4 text-slate-600">
-                        {t.contractStart ? (
+                        {info.activeContract ? (
+                          <div>
+                            <div>
+                              <span className="text-[11px] text-slate-500">Từ:</span>{' '}
+                              <strong>{info.activeContract.startDate}</strong>
+                            </div>
+                            <div className="text-[11px] text-slate-400">
+                              Đến: {info.activeContract.endDate || 'Chưa xác định'}
+                            </div>
+                          </div>
+                        ) : t.contractStart && isActuallyActive ? (
                           <div>
                             <div>
                               <span className="text-[11px] text-slate-500">Từ:</span>{' '}
@@ -1000,6 +1079,10 @@ export default function TenantsPage() {
                               Đến: {t.contractEnd || 'Chưa xác định'}
                             </div>
                           </div>
+                        ) : !isActuallyActive && (t.contractStart || info.pastRoom) ? (
+                          <span className="text-slate-500 font-medium text-xs bg-slate-100 px-2 py-0.5 rounded-md">
+                            Đã thanh lý
+                          </span>
                         ) : (
                           <span className="text-slate-400 italic text-[11px]">
                             Chưa có hợp đồng
@@ -1009,18 +1092,14 @@ export default function TenantsPage() {
 
                       {/* Trạng thái */}
                       <td className="py-3 px-4 text-center">
-                        {t.status === 'ACTIVE' && roomCount > 0 ? (
+                        {isActuallyActive ? (
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs inline-flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                             <span>Đang Thuê</span>
                           </span>
-                        ) : t.status === 'INACTIVE' ? (
+                        ) : (
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 inline-flex items-center gap-1">
                             <span>Đã rời ({t.daysSinceLeave || 0} ngày)</span>
-                          </span>
-                        ) : (
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 inline-flex items-center gap-1">
-                            <span>Chờ nhận phòng</span>
                           </span>
                         )}
                       </td>
@@ -1065,25 +1144,18 @@ export default function TenantsPage() {
                                   2. Nếu khách không thuê phòng (roomCount === 0) nhưng < 30 ngày: KHÔNG hiện nút xóa -> badge đếm ngược "🔒 Đợi X ngày hiện nút xóa".
                                   3. Chỉ khi roomCount === 0 VÀ ngày rời phòng >= 30 ngày (1 tháng): MỚI HIỆN NÚT XÓA ĐỎ NỔI BẬT!
                               */}
-                              {roomCount > 0 ? (
+                              {isActuallyActive ? (
                                 <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 font-bold whitespace-nowrap">
                                   Đang thuê
-                                </span>
-                              ) : (t.daysSinceLeave || 0) < 30 ? (
-                                <span
-                                  className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 font-semibold whitespace-nowrap"
-                                  title={`Số ngày phòng về 0: ${t.daysSinceLeave || 0}/30 ngày. Đủ 1 tháng (30 ngày) mới hiện nút xóa.`}
-                                >
-                                  🔒 Đợi {30 - (t.daysSinceLeave || 0)} ngày hiện nút xóa
                                 </span>
                               ) : (
                                 <button
                                   onClick={() => setConfirmDeleteTenant(t)}
-                                  title={`Đủ điều kiện xóa: Khách không còn thuê phòng trong 1 tháng (${t.daysSinceLeave} ngày >= 30 ngày)`}
+                                  title="Khách đã trả phòng. Bấm để xóa vĩnh viễn hồ sơ khách thuê."
                                   className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 border border-rose-300 rounded-lg text-xs font-bold transition-all btn-press cursor-pointer flex items-center gap-1 shadow-2xs"
                                 >
                                   <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                                  <span>Xóa</span>
+                                  <span>Xóa hồ sơ</span>
                                 </button>
                               )}
                             </>

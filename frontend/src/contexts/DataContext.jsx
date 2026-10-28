@@ -1161,18 +1161,62 @@ export const DataProvider = ({ children }) => {
       list = isZeroSandbox ? ZERO_SANDBOX_TENANTS : DEFAULT_TENANTS;
     }
 
-    // Tự động đồng bộ khách thuê đã được duyệt đơn (rental_room_requests)
+    // Tự động đồng bộ khách thuê từ rental_room_requests và rental_contracts
     try {
       const sReqs = localStorage.getItem('rental_room_requests');
       const pReqs = sReqs ? JSON.parse(sReqs) : null;
+      const sContracts = localStorage.getItem('rental_contracts');
+      const pContracts = sContracts ? JSON.parse(sContracts) : null;
+
       if (Array.isArray(pReqs)) {
         pReqs.forEach((req) => {
-          if (req.status === 'APPROVED' && req.targetRoom && req.tenant) {
-            // Khách mới (Nam): Không tự động gán vào P.103 nếu chưa có HĐ & đã đóng cọc
+          if (!req.tenant) return;
+          const reqNorm = req.tenant.toLowerCase();
+          const targetRoom = req.targetRoom || req.room;
+
+          // 1. Nếu đơn là CHECKOUT hoặc RETURN đã được APPROVED / SETTLED -> Khách ĐÃ TRẢ PHÒNG!
+          if (req.type === 'CHECKOUT' || req.type === 'RETURN') {
+            if (req.status === 'APPROVED' || req.status === 'CHECKOUT_SETTLED' || req.settledAt) {
+              list = list.map((t) => {
+                const tNorm = (t.fullName || '').toLowerCase();
+                const isMatch = tNorm.includes(reqNorm) || reqNorm.includes(tNorm) ||
+                  (reqNorm.includes('an') && tNorm.includes('an')) ||
+                  (reqNorm.includes('nam') && tNorm.includes('nam')) ||
+                  (reqNorm.includes('cường') && tNorm.includes('cường'));
+                if (!isMatch) return t;
+
+                const remainingRooms = (t.rooms || (t.room ? [t.room] : [])).filter(
+                  (r) => !isSameRoom(r, targetRoom)
+                );
+                const isZero = remainingRooms.length === 0;
+                return {
+                  ...t,
+                  rooms: remainingRooms,
+                  room: isZero ? null : remainingRooms[0],
+                  status: isZero ? 'INACTIVE' : t.status,
+                  previousRoom: isZero ? (targetRoom || t.room || t.previousRoom) : t.previousRoom,
+                  leaveDate: req.settledAt || req.date || new Date().toLocaleDateString('vi-VN'),
+                  daysSinceLeave: isZero ? 0 : t.daysSinceLeave
+                };
+              });
+              return;
+            }
+          }
+
+          // 2. Nếu đơn là RENT / NEW_RENT / HOLD:
+          // CHỈ gán phòng ACTIVE nếu khách đã thực sự có hợp đồng ACTIVE hoặc đã nộp cọc / ký điện tử!
+          if ((req.type === 'RENT' || req.type === 'NEW_RENT' || req.type === 'HOLD') && req.status === 'APPROVED' && targetRoom) {
+            const hasActiveContract = Array.isArray(pContracts) && pContracts.some(
+              (c) => c.status === 'ACTIVE' && isSameRoom(c.roomNumber, targetRoom) &&
+                     ((c.tenantName && c.tenantName.toLowerCase().includes(reqNorm)) || (c.tenantPhone && c.tenantPhone === req.phone))
+            );
+            if (!hasActiveContract && !req.depositPaid) {
+              return;
+            }
             if (req.tenant.toLowerCase().includes('nam') && (req.type === 'ROOMMATE' || !req.depositPaid)) {
               return;
             }
-            const reqNorm = req.tenant.toLowerCase();
+
             let matched = false;
             list = list.map((t) => {
               const tNorm = (t.fullName || '').toLowerCase();
@@ -1180,8 +1224,8 @@ export const DataProvider = ({ children }) => {
                 matched = true;
                 return {
                   ...t,
-                  room: req.targetRoom,
-                  rooms: [req.targetRoom],
+                  room: targetRoom,
+                  rooms: [targetRoom],
                   houseCode: req.houseCode || 'CS-01',
                   house: req.house || (req.houseCode === 'CS-02' ? 'Nhà Trọ Bách Khoa - Cơ Sở 2' : 'Nhà Trọ Cầu Giấy - Cơ Sở 1'),
                   status: 'ACTIVE',
@@ -1190,16 +1234,16 @@ export const DataProvider = ({ children }) => {
               }
               return t;
             });
-            if (!matched) {
+            if (!matched && hasActiveContract) {
               list.push({
                 id: req.id || Date.now(),
                 fullName: req.tenant,
                 phone: req.phone || '0966.123.456',
                 email: req.email || 'tenant@rental.vn',
-                cccd: '036207078901',
+                cccd: req.identityCard || '036207078901',
                 hometown: 'Việt Nam',
-                room: req.targetRoom,
-                rooms: [req.targetRoom],
+                room: targetRoom,
+                rooms: [targetRoom],
                 houseCode: req.houseCode || 'CS-01',
                 house: req.house || (req.houseCode === 'CS-02' ? 'Nhà Trọ Bách Khoa - Cơ Sở 2' : 'Nhà Trọ Cầu Giấy - Cơ Sở 1'),
                 contractStart: req.date || new Date().toLocaleDateString('vi-VN'),
@@ -2607,23 +2651,42 @@ export const DataProvider = ({ children }) => {
     const targetTenant = tenants.find((t) => t.id === tenantId);
     if (!targetTenant) return { success: false, message: 'Không tìm thấy hồ sơ khách thuê.' };
 
-    const activeRoomsCount = (targetTenant.rooms || (targetTenant.room ? [targetTenant.room] : [])).length;
-    if (activeRoomsCount > 0 || targetTenant.status === 'ACTIVE') {
+    // Kiểm tra hợp đồng ACTIVE thực tế
+    const tName = (targetTenant.fullName || '').toLowerCase().trim();
+    const hasActiveContract = (contracts || []).some(
+      (c) =>
+        c.status === 'ACTIVE' &&
+        ((c.tenantName && (c.tenantName.toLowerCase().includes(tName) || tName.includes(c.tenantName.toLowerCase()))) ||
+         (c.tenantPhone && c.tenantPhone === targetTenant.phone))
+    );
+
+    // Kiểm tra xem khách có phòng trong session / tenantRooms không
+    let sessionRooms = null;
+    try {
+      const s = localStorage.getItem('rental_tenant_rooms');
+      if (s) {
+        const m = JSON.parse(s);
+        sessionRooms = m[targetTenant.fullName] !== undefined ? m[targetTenant.fullName] : m[targetTenant.phone];
+      }
+    } catch {}
+
+    const isExplicitlyZero = Array.isArray(sessionRooms) && sessionRooms.length === 0;
+
+    if (!isExplicitlyZero && hasActiveContract) {
       return {
         success: false,
-        message: `Không thể xóa! Khách thuê vẫn đang đứng tên thuê ${activeRoomsCount} phòng. Cần làm thủ tục trả hết phòng trước.`
+        message: `Không thể xóa! Khách thuê vẫn đang có hợp đồng thuê hoạt động. Cần làm thủ tục trả hết phòng trước.`
       };
     }
 
-    const daysSince = targetTenant.daysSinceLeave || 0;
-    if (daysSince < 30) {
-      return {
-        success: false,
-        message: `Chưa đủ 1 tháng kể từ ngày phòng chuyển về con số 0 (Mới rời phòng ${daysSince}/30 ngày). Cần tối thiểu 30 ngày để quyết toán công nợ và lưu sổ sách kế toán.`
-      };
-    }
+    setTenants((prev) => {
+      const next = prev.filter((t) => t.id !== tenantId);
+      try {
+        localStorage.setItem('rental_tenants', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
 
-    setTenants((prev) => prev.filter((t) => t.id !== tenantId));
     return {
       success: true,
       message: `Đã xóa vĩnh viễn tài khoản và hồ sơ của khách thuê "${targetTenant.fullName}".`
@@ -3794,6 +3857,35 @@ export const DataProvider = ({ children }) => {
         if (uNameKey) auth.updateTenantRoom(uNameKey, [], 'SET');
       }
     } catch {}
+
+    // 4.1. Cập nhật hồ sơ tenants: gỡ phòng giữ chỗ và chuyển trạng thái
+    setTenants((prev) => {
+      const next = prev.map((t) => {
+        const tNorm = (t.fullName || '').toLowerCase().trim();
+        const isMatch = (uName && (tNorm.includes(uName) || uName.includes(tNorm))) ||
+                        (uPhone && t.phone === uPhone) ||
+                        (uUsername === 'tenant1' && tNorm.includes('an')) ||
+                        (uUsername === 'tenant2' && tNorm.includes('cường')) ||
+                        (uUsername === 'tenant_new' && tNorm.includes('nam'));
+        if (isMatch) {
+          const remainingRooms = (t.rooms || (t.room ? [t.room] : [])).filter(rn => !isSameRoom(rn, roomNumber));
+          const isZero = remainingRooms.length === 0;
+          return {
+            ...t,
+            rooms: remainingRooms,
+            room: isZero ? null : remainingRooms[0],
+            status: isZero ? 'INACTIVE' : t.status,
+            previousRoom: isZero ? (roomNumber || t.room) : t.previousRoom,
+            daysSinceLeave: isZero ? 0 : t.daysSinceLeave
+          };
+        }
+        return t;
+      });
+      try {
+        localStorage.setItem('rental_tenants', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
 
     // 5. Bắn thông báo và ghi nhật ký kiểm toán cho Chủ trọ ngay lập tức không cần duyệt
     addAuditLog({
@@ -4979,19 +5071,30 @@ export const DataProvider = ({ children }) => {
     // 4. Cập nhật hồ sơ khách thuê thành INACTIVE và gỡ phòng
     setTenants((prev) => {
       const next = prev.map((t) => {
-        const tNorm = (t.fullName || '').toLowerCase();
-        const reqNorm = (target.tenantName || '').toLowerCase();
-        const isMatch = tNorm.includes(reqNorm) || reqNorm.includes(tNorm) || (reqNorm.includes('nam') && tNorm.includes('nam'));
+        const tNorm = (t.fullName || '').toLowerCase().trim();
+        const reqNorm = (target.tenantName || '').toLowerCase().trim();
+        const isMatch = (reqNorm && (tNorm.includes(reqNorm) || reqNorm.includes(tNorm))) ||
+                        (t.room && isSameRoom(t.room, target.roomNumber)) ||
+                        (t.rooms && t.rooms.some(r => isSameRoom(r, target.roomNumber))) ||
+                        (reqNorm.includes('an') && tNorm.includes('an')) ||
+                        (reqNorm.includes('nam') && tNorm.includes('nam')) ||
+                        (reqNorm.includes('cường') && tNorm.includes('cường'));
         if (!isMatch) return t;
+        const remainingRooms = (t.rooms || (t.room ? [t.room] : [])).filter(r => !isSameRoom(r, target.roomNumber));
+        const isZero = remainingRooms.length === 0;
         return {
           ...t,
-          room: null,
-          rooms: [],
-          status: 'INACTIVE',
-          daysSinceLeave: 0
+          room: isZero ? null : remainingRooms[0],
+          rooms: remainingRooms,
+          status: isZero ? 'INACTIVE' : t.status,
+          previousRoom: target.roomNumber,
+          leaveDate: new Date().toLocaleDateString('vi-VN'),
+          daysSinceLeave: isZero ? 0 : t.daysSinceLeave
         };
       });
-      localStorage.setItem('rental_tenants', JSON.stringify(next));
+      try {
+        localStorage.setItem('rental_tenants', JSON.stringify(next));
+      } catch {}
       return next;
     });
 
@@ -5000,15 +5103,27 @@ export const DataProvider = ({ children }) => {
       updateTenantRoom(target.tenantName, target.roomNumber, 'REMOVE');
     }
 
-    // Cập nhật đơn trong roomRequests thành APPROVED sau khi nghiệm thu
+    // Cập nhật đơn trong roomRequests: đánh dấu CHECKOUT thành APPROVED và lưu trữ các đơn RENT cũ
     setRoomRequests((prev) => {
       const next = prev.map((r) => {
-        if (r.id === settlementId || (r.targetRoom === target.roomNumber && r.type === 'CHECKOUT' && r.status !== 'APPROVED')) {
+        const isThisCheckout = r.id === settlementId || (isSameRoom(r.targetRoom || r.currentRoom, target.roomNumber) && r.type === 'CHECKOUT');
+        if (isThisCheckout) {
           return {
             ...r,
             status: 'APPROVED',
-            approvedAt: new Date().toLocaleDateString('vi-VN'),
-            adminNote: `Đã nghiệm thu thiết bị và quyết toán hoàn cọc: ${finalRefund.toLocaleString('vi-VN')} đ.`
+            settledAt: new Date().toLocaleDateString('vi-VN'),
+            note: 'Đã hoàn tất nghiệm thu & thanh lý cọc'
+          };
+        }
+        // Lưu trữ các đơn RENT / NEW_RENT cũ của khách này đối với phòng này để không tự kích hoạt lại
+        const isOldRent = (r.type === 'RENT' || r.type === 'NEW_RENT' || r.type === 'HOLD') &&
+                          isSameRoom(r.targetRoom, target.roomNumber) &&
+                          (r.tenant || '').toLowerCase().includes((target.tenantName || '').toLowerCase());
+        if (isOldRent) {
+          return {
+            ...r,
+            status: 'SETTLED',
+            note: 'Đã hoàn tất trả phòng & thanh lý cọc'
           };
         }
         return r;
