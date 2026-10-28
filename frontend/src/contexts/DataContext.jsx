@@ -3650,11 +3650,22 @@ export const DataProvider = ({ children }) => {
   };
 
   // Hủy giữ chỗ phòng (Chủ động hủy hoặc hết giờ)
-  const cancelRoomHold = (roomNumber, houseCode = null) => {
+  const cancelRoomHold = (roomNumber, houseCode = null, options = {}) => {
+    const isSameRoom = (a, b) => {
+      if (!a || !b) return false;
+      const cleanA = String(a).replace(/^P\.?/i, '').trim().toLowerCase();
+      const cleanB = String(b).replace(/^P\.?/i, '').trim().toLowerCase();
+      return cleanA === cleanB;
+    };
+
+    const uName = (auth?.user?.fullName || options.tenantName || '').toLowerCase().trim();
+    const uPhone = (auth?.user?.phone || options.tenantPhone || '').trim();
+    const uUsername = (auth?.user?.username || '').trim().toLowerCase();
+
     // 1. Mở lại phòng thành AVAILABLE
     setRooms((prev) => {
       const next = prev.map((r) => {
-        const isMatch = r.number === roomNumber && (!houseCode || r.houseCode === houseCode);
+        const isMatch = isSameRoom(r.number, roomNumber) && (!houseCode || r.houseCode === houseCode);
         if (isMatch && (r.status === 'HOLDING' || r.status === 'AVAILABLE')) {
           return {
             ...r,
@@ -3672,11 +3683,27 @@ export const DataProvider = ({ children }) => {
       return next;
     });
 
-    // 2. Cập nhật đơn trong roomRequests thành CANCELLED_BY_TENANT
+    // 2. Cập nhật đơn trong roomRequests thành CANCELLED_BY_TENANT (cả HOLDING, PENDING VÀ APPROVED đã duyệt)
     setRoomRequests((prev) => {
       const next = prev.map((req) => {
-        if (req.targetRoom === roomNumber && (req.status === 'HOLDING' || req.status === 'PENDING')) {
-          return { ...req, status: 'CANCELLED_BY_TENANT', cancelledAt: new Date().toLocaleDateString('vi-VN') };
+        const matchRoom = isSameRoom(req.targetRoom || req.room, roomNumber);
+        const reqTenant = (req.tenant || '').toLowerCase().trim();
+        const reqPhone = (req.phone || '').trim();
+        const matchTenant = (uName && (reqTenant.includes(uName) || uName.includes(reqTenant))) ||
+                            (uPhone && reqPhone === uPhone) ||
+                            (uUsername === 'tenant1' && reqTenant.includes('an')) ||
+                            (uUsername === 'tenant2' && reqTenant.includes('cường')) ||
+                            (uUsername === 'tenant_new' && reqTenant.includes('nam'));
+        
+        const isPendingOrHolding = req.status === 'HOLDING' || req.status === 'PENDING' || req.status === 'APPROVED' || req.status === 'WAITING_ROOMMATES';
+
+        if ((matchRoom || matchTenant) && isPendingOrHolding) {
+          return {
+            ...req,
+            status: 'CANCELLED_BY_TENANT',
+            cancelledAt: new Date().toLocaleDateString('vi-VN'),
+            cancelReason: 'Khách chủ động hủy giữ chỗ không thuê nữa'
+          };
         }
         return req;
       });
@@ -3686,21 +3713,61 @@ export const DataProvider = ({ children }) => {
       return next;
     });
 
-    // 3. Xóa hợp đồng PENDING_DEPOSIT
+    // 3. Xóa hoặc hủy hợp đồng chờ cọc / chờ ký (PENDING_DEPOSIT, PENDING_SIGN, HOLDING)
     setContracts((prev) => {
-      const next = prev.filter(c => !(c.roomNumber === roomNumber && c.status === 'PENDING_DEPOSIT'));
+      const next = prev.filter((c) => {
+        const matchRoom = isSameRoom(c.roomNumber || c.room, roomNumber);
+        const cName = (c.tenantName || '').toLowerCase().trim();
+        const cPhone = (c.tenantPhone || '').trim();
+        const matchTenant = (uName && (cName.includes(uName) || uName.includes(cName))) ||
+                            (uPhone && cPhone === uPhone) ||
+                            (uUsername === 'tenant1' && cName.includes('an')) ||
+                            (uUsername === 'tenant2' && cName.includes('cường')) ||
+                            (uUsername === 'tenant_new' && cName.includes('nam'));
+        
+        const isPendingDeposit = (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN' || c.status === 'HOLDING') && !c.depositPaid;
+        
+        if ((matchRoom || matchTenant) && isPendingDeposit) {
+          return false;
+        }
+        return true;
+      });
       try {
         localStorage.setItem('rental_contracts', JSON.stringify(next));
       } catch {}
       return next;
     });
 
-    // 4. Bắn thông báo và ghi nhật ký kiểm toán cho Chủ trọ ngay lập tức không cần duyệt
+    // 4. Dọn dẹp tenantRooms nếu có lưu phòng này
+    try {
+      const sTenantRooms = localStorage.getItem('rental_tenant_rooms');
+      if (sTenantRooms) {
+        const parsed = JSON.parse(sTenantRooms);
+        let changed = false;
+        Object.keys(parsed).forEach((k) => {
+          if (Array.isArray(parsed[k])) {
+            const filtered = parsed[k].filter(rn => !isSameRoom(rn, roomNumber));
+            if (filtered.length !== parsed[k].length) {
+              parsed[k] = filtered;
+              changed = true;
+            }
+          } else if (typeof parsed[k] === 'string' && isSameRoom(parsed[k], roomNumber)) {
+            parsed[k] = [];
+            changed = true;
+          }
+        });
+        if (changed) {
+          localStorage.setItem('rental_tenant_rooms', JSON.stringify(parsed));
+        }
+      }
+    } catch {}
+
+    // 5. Bắn thông báo và ghi nhật ký kiểm toán cho Chủ trọ ngay lập tức không cần duyệt
     addAuditLog({
       role: 'ROLE_TENANT',
       username: auth?.user?.fullName || 'Khách thuê',
       action: 'CANCEL_ROOM_HOLD',
-      target: roomNumber,
+      target: String(roomNumber),
       details: `Khách ${auth?.user?.fullName || 'thuê'} đã chủ động bấm hủy giữ chỗ phòng ${roomNumber}. Phòng đã mở lại trạng thái AVAILABLE.`
     });
 

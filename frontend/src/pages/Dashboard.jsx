@@ -330,13 +330,17 @@ export default function Dashboard() {
   const handleCancelHoldRoom = (roomNum, houseCode) => {
     if (window.confirm(`Bạn có chắc chắn muốn hủy giữ chỗ phòng ${roomNum}? Phòng sẽ được tự động mở lại trên sàn cho khách khác thuê.`)) {
       if (cancelRoomHold) {
-        cancelRoomHold(roomNum, houseCode);
+        cancelRoomHold(roomNum, houseCode, {
+          tenantName: user?.fullName || myContract?.tenantName,
+          tenantPhone: user?.phone || myContract?.tenantPhone,
+          contractId: myContract?.id
+        });
       }
       setPaySuccessToast(`Đã hủy giữ chỗ phòng ${roomNum}. Phòng đã được mở lại cho người khác thuê.`);
       setTimeout(() => {
         setPaySuccessToast(null);
         navigate('/rooms');
-      }, 1000);
+      }, 500);
     }
   };
 
@@ -780,6 +784,7 @@ export default function Dashboard() {
   if (isTenant && isContractPending && myContract) {
     const depositAmount = myContract.depositAmount || 2800000;
     const targetRoomNum = myContract.roomNumber || 'P.102';
+    const targetHouseCode = myContract.houseCode || hasApprovedRentalRequest?.houseCode || 'CS-01';
     const targetHouseName = myContract.houseName || 'Nhà Trọ Bách Khoa - Cơ Sở 2';
     const bankAccount = sepayConfig.accountNumber || '35825112005';
     const bankName = sepayConfig.bank || 'MBBank';
