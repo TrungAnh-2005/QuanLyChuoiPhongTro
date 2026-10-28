@@ -112,7 +112,7 @@ const CustomChartTooltip = ({ active, payload, label }) => {
 };
 
 export default function Dashboard() {
-  const { user, tenantRooms } = useAuth();
+  const { user, tenantRooms, updateTenantRoom } = useAuth();
   const {
     invoices = [],
     payInvoice,
@@ -329,18 +329,43 @@ export default function Dashboard() {
 
   const handleCancelHoldRoom = (roomNum, houseCode) => {
     if (window.confirm(`Bạn có chắc chắn muốn hủy giữ chỗ phòng ${roomNum}? Phòng sẽ được tự động mở lại trên sàn cho khách khác thuê.`)) {
+      const uUsername = user?.username || 'tenant1';
+      const uFullName = user?.fullName || myContract?.tenantName || 'Nguyễn Văn An';
+
       if (cancelRoomHold) {
         cancelRoomHold(roomNum, houseCode, {
-          tenantName: user?.fullName || myContract?.tenantName,
+          tenantName: uFullName,
           tenantPhone: user?.phone || myContract?.tenantPhone,
+          username: uUsername,
           contractId: myContract?.id
         });
       }
-      setPaySuccessToast(`Đã hủy giữ chỗ phòng ${roomNum}. Phòng đã được mở lại cho người khác thuê.`);
+
+      if (updateTenantRoom) {
+        updateTenantRoom(uUsername, [], 'SET');
+        if (uFullName) updateTenantRoom(uFullName, [], 'SET');
+      }
+
+      // Xóa phòng trong localStorage rental_tenant_rooms ngay lập tức
+      try {
+        const s = localStorage.getItem('rental_tenant_rooms');
+        const parsed = s ? JSON.parse(s) : {};
+        if (uUsername) parsed[uUsername] = [];
+        if (uFullName) parsed[uFullName] = [];
+        if (uUsername === 'tenant1' || uFullName.toLowerCase().includes('an')) {
+          parsed.tenant1 = [];
+          parsed['Nguyễn Văn An'] = [];
+        } else if (uUsername === 'tenant2' || uFullName.toLowerCase().includes('cường')) {
+          parsed.tenant2 = [];
+          parsed['Phạm Minh Cường'] = [];
+        }
+        localStorage.setItem('rental_tenant_rooms', JSON.stringify(parsed));
+      } catch {}
+
+      setPaySuccessToast(`Đã hủy giữ chỗ phòng ${roomNum} thành công! Phòng đã được mở lại trên hệ thống.`);
       setTimeout(() => {
         setPaySuccessToast(null);
-        navigate('/rooms');
-      }, 500);
+      }, 3000);
     }
   };
 

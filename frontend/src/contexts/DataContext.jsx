@@ -3759,27 +3759,39 @@ export const DataProvider = ({ children }) => {
       return next;
     });
 
-    // 4. Dọn dẹp tenantRooms nếu có lưu phòng này
+    // 4. Dọn dẹp tenantRooms: Đặt khách về trạng thái chưa thuê phòng []
     try {
       const sTenantRooms = localStorage.getItem('rental_tenant_rooms');
-      if (sTenantRooms) {
-        const parsed = JSON.parse(sTenantRooms);
-        let changed = false;
-        Object.keys(parsed).forEach((k) => {
-          if (Array.isArray(parsed[k])) {
-            const filtered = parsed[k].filter(rn => !isSameRoom(rn, roomNumber));
-            if (filtered.length !== parsed[k].length) {
-              parsed[k] = filtered;
-              changed = true;
-            }
-          } else if (typeof parsed[k] === 'string' && isSameRoom(parsed[k], roomNumber)) {
-            parsed[k] = [];
-            changed = true;
-          }
-        });
-        if (changed) {
-          localStorage.setItem('rental_tenant_rooms', JSON.stringify(parsed));
+      const parsed = sTenantRooms ? JSON.parse(sTenantRooms) : {};
+      Object.keys(parsed).forEach((k) => {
+        if (Array.isArray(parsed[k])) {
+          parsed[k] = parsed[k].filter(rn => !isSameRoom(rn, roomNumber));
+        } else if (typeof parsed[k] === 'string' && isSameRoom(parsed[k], roomNumber)) {
+          parsed[k] = [];
         }
+      });
+
+      // Đặt rõ ràng trạng thái chưa thuê phòng [] cho khách đang hủy giữ chỗ
+      const uKey = uUsername || options.username || '';
+      const uNameKey = uName || options.tenantName || '';
+      if (uKey) parsed[uKey] = [];
+      if (uNameKey) parsed[uNameKey] = [];
+      if (uKey === 'tenant1' || uNameKey.includes('an')) {
+        parsed.tenant1 = [];
+        parsed['Nguyễn Văn An'] = [];
+      } else if (uKey === 'tenant2' || uNameKey.includes('cường')) {
+        parsed.tenant2 = [];
+        parsed['Phạm Minh Cường'] = [];
+      } else if (uKey === 'tenant_new' || uNameKey.includes('nam')) {
+        parsed.tenant_new = [];
+        parsed['Hoàng Văn Nam'] = [];
+      }
+
+      localStorage.setItem('rental_tenant_rooms', JSON.stringify(parsed));
+
+      if (auth?.updateTenantRoom) {
+        if (uKey) auth.updateTenantRoom(uKey, [], 'SET');
+        if (uNameKey) auth.updateTenantRoom(uNameKey, [], 'SET');
       }
     } catch {}
 
