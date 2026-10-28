@@ -118,8 +118,13 @@ export default function MaintenancePage() {
   const handleCreateTicket = (e) => {
     e.preventDefault();
     if (!newTicket.issue) return;
+    const targetRoomName = isTenant ? (newTicket.room || myRentedRooms[0] || 'Khu vực chung') : newTicket.room;
+    const targetRoomObj = (rooms || []).find((r) => r.number === targetRoomName);
+    const resolvedHouseCode = targetRoomObj?.houseCode || (staffHouseCodes[0] || null);
+
     createTicket({
-      room: isTenant ? (newTicket.room || myRentedRooms[0] || 'Khu vực chung') : newTicket.room,
+      room: targetRoomName,
+      houseCode: resolvedHouseCode,
       category: newTicket.category,
       issue: newTicket.issue,
       tenant: isTenant ? (user?.fullName || 'Khách thuê') : newTicket.tenant,

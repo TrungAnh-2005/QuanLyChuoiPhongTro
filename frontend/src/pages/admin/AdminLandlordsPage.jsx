@@ -475,30 +475,58 @@ export default function AdminLandlordsPage() {
 
                     <td className="py-4 px-5 text-right">
                       <div className="flex items-center justify-end gap-1.5">
-                        {p.kycStatus !== 'VERIFIED' && (
+                        {p.kycStatus === 'PENDING' && (
+                          <>
+                            <button
+                              onClick={() => {
+                                verifyLandlordKyc(p.id, 'VERIFIED');
+                                showToast(`Đã xác minh KYC thành công cho chủ trọ ${p.landlordName || p.fullName}!`);
+                              }}
+                              className="btn-press px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                            >
+                              Duyệt KYC
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                const reason = window.prompt('Nhập lý do từ chối hồ sơ KYC:');
+                                if (reason !== null) {
+                                  verifyLandlordKyc(p.id, 'REJECTED', reason || 'Ảnh CCCD mờ hoặc thông tin không trùng khớp');
+                                  showToast(`Đã từ chối hồ sơ KYC của ${p.landlordName || p.fullName}!`, 'WARNING');
+                                }
+                              }}
+                              className="btn-press px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition cursor-pointer"
+                            >
+                              Từ chối
+                            </button>
+                          </>
+                        )}
+
+                        {p.kycStatus === 'VERIFIED' && (
                           <button
                             onClick={() => {
-                              verifyLandlordKyc(p.id, 'VERIFIED');
-                              showToast(`Đã xác minh KYC thành công cho chủ trọ ${p.landlordName || p.fullName}!`);
+                              const reason = window.prompt('Nhập lý do thu hồi xác minh hồ sơ KYC này:');
+                              if (reason !== null) {
+                                verifyLandlordKyc(p.id, 'REJECTED', reason || 'Thu hồi xác minh do thông tin cần kiểm tra lại');
+                                showToast(`Đã thu hồi xác minh của ${p.landlordName || p.fullName}!`, 'WARNING');
+                              }
                             }}
-                            className="btn-press px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                            className="btn-press px-2.5 py-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg text-[11px] font-semibold transition cursor-pointer"
+                            title="Hủy/Thu hồi xác minh khi cần thiết"
                           >
-                            Duyệt KYC
+                            Thu hồi
                           </button>
                         )}
 
-                        {p.kycStatus !== 'REJECTED' && (
+                        {p.kycStatus === 'REJECTED' && (
                           <button
                             onClick={() => {
-                              const reason = window.prompt('Nhập lý do từ chối hồ sơ KYC:');
-                              if (reason !== null) {
-                                verifyLandlordKyc(p.id, 'REJECTED', reason || 'Ảnh CCCD mờ hoặc thông tin không trùng khớp');
-                                showToast(`Đã từ chối hồ sơ KYC của ${p.landlordName || p.fullName}!`, 'WARNING');
-                              }
+                              verifyLandlordKyc(p.id, 'VERIFIED');
+                              showToast(`Đã duyệt lại KYC thành công cho chủ trọ ${p.landlordName || p.fullName}!`);
                             }}
-                            className="btn-press px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition cursor-pointer"
+                            className="btn-press px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition cursor-pointer"
                           >
-                            Từ chối
+                            Duyệt lại
                           </button>
                         )}
                       </div>

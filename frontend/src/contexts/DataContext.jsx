@@ -26,11 +26,11 @@ const DEFAULT_INVOICES = [
 ];
 
 const DEFAULT_TICKETS = [
-  { id: 1, room: 'P.102', issue: 'Hỏng vòi sen nhà tắm bị rò rỉ nước', tenant: 'Trần Thị Bình', date: '20/09/2026', priority: 'HIGH', status: 'IN_PROGRESS' },
-  { id: 2, room: 'P.202', issue: 'Điều hòa không lạnh, có tiếng kêu to', tenant: 'Vũ Hoàng Dũng', date: '21/09/2026', priority: 'HIGH', status: 'PENDING' },
-  { id: 3, room: 'P.301', issue: 'Bóng đèn tuýp ban công bị cháy', tenant: 'Đỗ Thị Mai', date: '18/09/2026', priority: 'LOW', status: 'RESOLVED' },
-  { id: 4, room: 'P.101', issue: 'Cửa sổ ban công bị kẹt khóa', tenant: 'Nguyễn Văn An', date: '15/09/2026', priority: 'MEDIUM', status: 'RESOLVED' },
-  { id: 5, room: 'P.103', issue: 'Áp lực nước vòi sen yếu vào giờ cao điểm', tenant: 'Phạm Minh Cường', date: '22/09/2026', priority: 'LOW', status: 'IN_PROGRESS' },
+  { id: 1, room: 'P.102', houseCode: 'CS-01', category: 'WATER', issue: 'Hỏng vòi sen nhà tắm bị rò rỉ nước', tenant: 'Trần Thị Bình', date: '20/09/2026', priority: 'HIGH', status: 'IN_PROGRESS' },
+  { id: 2, room: 'P.202', houseCode: 'CS-02', category: 'ELECTRICITY', issue: 'Điều hòa không lạnh, có tiếng kêu to', tenant: 'Vũ Hoàng Dũng', date: '21/09/2026', priority: 'HIGH', status: 'PENDING' },
+  { id: 3, room: 'P.301', houseCode: 'CS-01', category: 'ELECTRICITY', issue: 'Bóng đèn tuýp ban công bị cháy', tenant: 'Đỗ Thị Mai', date: '18/09/2026', priority: 'LOW', status: 'RESOLVED' },
+  { id: 4, room: 'P.101', houseCode: 'CS-01', category: 'FURNITURE', issue: 'Cửa sổ ban công bị kẹt khóa', tenant: 'Nguyễn Văn An', date: '15/09/2026', priority: 'MEDIUM', status: 'RESOLVED' },
+  { id: 5, room: 'P.103', houseCode: 'CS-01', category: 'WATER', issue: 'Áp lực nước vòi sen yếu vào giờ cao điểm', tenant: 'Phạm Minh Cường', date: '22/09/2026', priority: 'LOW', status: 'IN_PROGRESS' },
 ];
 
 const ZERO_SANDBOX_TENANTS = [
@@ -2730,6 +2730,9 @@ export const DataProvider = ({ children }) => {
     const newEntry = {
       id: Date.now(),
       room: ticketData.room || 'P.101',
+      houseCode: ticketData.houseCode || null,
+      category: ticketData.category || 'OTHER',
+      imageUrl: ticketData.imageUrl || null,
       issue: ticketData.issue,
       tenant: ticketData.tenant || 'Nguyễn Văn Khách Thuê',
       date: 'Hôm nay',
@@ -4544,6 +4547,14 @@ export const DataProvider = ({ children }) => {
     });
   };
 
+  const deleteHouseServiceConfig = (configId) => {
+    setHouseServiceConfigs((prev) => {
+      const updated = prev.filter((c) => c.id !== configId);
+      localStorage.setItem('rental_house_service_configs', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   // 8. Đăng ký & Duyệt bạn ở ghép (UC-T07 & UC-S02B - roommate_requests)
   const [roommateRequestsV2, setRoommateRequestsV2] = useState(() => {
     try {
@@ -4940,19 +4951,50 @@ export const DataProvider = ({ children }) => {
   });
 
   const verifyLandlordKyc = (profileId, isApproved, rejectionReason = '') => {
+    const isVerified = isApproved === true || isApproved === 'VERIFIED';
+    let targetProfile = null;
+
     setLandlordProfiles((prev) => {
-      const updated = prev.map((p) =>
-        p.id === profileId
-          ? {
-              ...p,
-              kycStatus: isApproved ? 'VERIFIED' : 'REJECTED',
-              rejectionReason: isApproved ? null : rejectionReason,
-              verifiedAt: new Date().toLocaleString('vi-VN'),
-              verifiedBy: 1
-            }
-          : p
-      );
+      const updated = prev.map((p) => {
+        if (p.id === profileId) {
+          targetProfile = p;
+          return {
+            ...p,
+            kycStatus: isVerified ? 'VERIFIED' : 'REJECTED',
+            rejectionReason: isVerified ? null : rejectionReason,
+            verifiedAt: new Date().toLocaleString('vi-VN'),
+            verifiedBy: 1
+          };
+        }
+        return p;
+      });
       localStorage.setItem('rental_landlord_profiles', JSON.stringify(updated));
+      return updated;
+    });
+
+    // Đồng bộ trạng thái KYC và tài khoản sang bảng landlords
+    setLandlords((prev) => {
+      const updated = prev.map((l) => {
+        const isMatch =
+          (targetProfile && (l.id === targetProfile.landlordId || l.username === targetProfile.username)) ||
+          (profileId === 1 && (l.username === 'staff' || l.id === 1)) ||
+          (profileId === 2 && (l.username === 'staff2' || l.id === 2));
+
+        if (isMatch) {
+          return {
+            ...l,
+            kycStatus: isVerified ? 'VERIFIED' : 'REJECTED',
+            kycRejectionReason: isVerified ? null : rejectionReason,
+            // Nếu bị thu hồi hoặc từ chối KYC, đánh dấu trạng thái bị hạn chế / khóa
+            status: isVerified ? 'ACTIVE' : 'LOCKED'
+          };
+        }
+        return l;
+      });
+      localStorage.setItem('rental_landlords', JSON.stringify(updated));
+      try {
+        window.dispatchEvent(new Event('storage'));
+      } catch {}
       return updated;
     });
 
@@ -5121,6 +5163,7 @@ export const DataProvider = ({ children }) => {
         houseServiceConfigs,
         updateHouseServiceConfig,
         addHouseServiceConfig,
+        deleteHouseServiceConfig,
         roommateRequestsV2,
         submitRoommateRequest,
         reviewRoommateRequest,

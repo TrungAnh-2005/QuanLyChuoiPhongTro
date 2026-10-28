@@ -1,3 +1,9 @@
+export function parseFloorNum(floorVal) {
+  if (!floorVal) return 0;
+  const match = String(floorVal).match(/\d+/);
+  return match ? parseInt(match[0], 10) : 0;
+}
+
 export function normalizeHouseCode(code) {
   if (!code) return '';
   const c = String(code).trim().toUpperCase();
@@ -57,6 +63,11 @@ export function healBoardingHousesList(list) {
   const codeRenames = {};
 
   const healed = list.map((h) => {
+    // Đảm bảo CS-01 chuẩn 4 tầng
+    if ((h.code === 'CS-01' || (h.name && h.name.includes('Cầu Giấy'))) && h.floors === 5) {
+      h = { ...h, floors: 4, totalFloors: 4 };
+      changed = true;
+    }
     const isCustom = (typeof h.id === 'number' && h.id > 1000) || h.createdAtMs || (h.createdAt && !h.features);
     let code = (h.code || '').trim().toUpperCase();
     const u = (h.createdBy || h.managerUsername || '').toLowerCase();
@@ -151,7 +162,7 @@ export const ALL_ROOMS = [
   { id: 109, number: 'P.303', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 3', price: 3900000, area: 28, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Ban công'] },
   { id: 110, number: 'P.401', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 4', price: 3800000, area: 27, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
   { id: 111, number: 'P.402', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 4', price: 3800000, area: 27, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
-  { id: 112, number: 'P.501', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 5', price: 4200000, area: 32, occupants: 2, maxOccupants: 3, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Sân phơi riêng'] },
+  { id: 112, number: 'P.403', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 4', price: 3800000, area: 28, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Ban công'] },
 
   // =========================================================================
   // CƠ SỞ 2: NHÀ TRỌ BÁCH KHOA (CS-02) - 4 TẦNG, ĐÚNG 8 PHÒNG
