@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Building2,
+  Layers,
   Home,
   Users,
   DollarSign,
@@ -24,7 +25,8 @@ import {
   Sparkles,
   ChevronRight,
   BarChart3,
-  Plus
+  Plus,
+  PieChart as PieChartIcon
 } from 'lucide-react';
 import {
   AreaChart,

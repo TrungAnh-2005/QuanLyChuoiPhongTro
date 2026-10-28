@@ -32,7 +32,8 @@ import {
   Home,
   Phone,
   Wrench,
-  BarChart3
+  BarChart3,
+  PieChart as PieChartIcon
 } from 'lucide-react';
 import {
   AreaChart,
@@ -49,6 +50,30 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { useData } from '@/contexts/DataContext';
 import Modal from '@/components/common/Modal';
+
+// Custom Bento Tooltip for AreaChart
+const CustomChartTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    const rev = payload[0]?.value || 0;
+    const tgt = payload[1]?.value || 0;
+    return (
+      <div className="bg-slate-900/95 text-white p-3.5 rounded-2xl shadow-2xl border border-slate-700/80 backdrop-blur-xl text-xs space-y-1.5 min-w-[160px]">
+        <div className="font-bold text-slate-300 border-b border-slate-800 pb-1">
+          {label ? `Tháng ${label.replace('T', '')}` : 'Dòng tiền'}
+        </div>
+        <div className="flex items-center justify-between gap-3 text-indigo-400 font-semibold font-mono">
+          <span>Thực thu:</span>
+          <span>{Number(rev).toLocaleString('vi-VN')} đ</span>
+        </div>
+        <div className="flex items-center justify-between gap-3 text-slate-400 font-medium font-mono text-[11px]">
+          <span>Mục tiêu:</span>
+          <span>{Number(tgt).toLocaleString('vi-VN')} đ</span>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
 
 export default function AdminDashboard() {
   const { user } = useAuth();
