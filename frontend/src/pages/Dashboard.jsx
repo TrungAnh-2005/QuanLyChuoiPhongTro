@@ -445,6 +445,24 @@ export default function Dashboard() {
     return found?.room || found?.rooms?.[0] || null;
   }, [isTenant, user, tenants, tenantRooms, isContractPending, contracts]);
 
+  // Kiểm tra khách đã có đơn trả phòng đang chờ BQL duyệt chưa (Chống spam)
+  const hasPendingCheckoutRequest = useMemo(() => {
+    if (!isTenant) return false;
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    const uPhone = (user?.phone || '').trim();
+    const myCleanRoom = String(myRoomNumber || '').replace(/^P\.?/i, '').trim();
+    return (roomRequests || []).some((r) => {
+      if (r.type !== 'CHECKOUT') return false;
+      if (r.status !== 'PENDING' && r.status !== 'WAITING_ROOMMATES') return false;
+      const rTenant = (r.tenant || '').toLowerCase().trim();
+      const rPhone = (r.phone || '').trim();
+      const rRoomClean = String(r.targetRoom || r.currentRoom || '').replace(/^P\.?/i, '').trim();
+      const matchTenant = (uName && (rTenant.includes(uName) || uName.includes(rTenant))) || (uPhone && rPhone === uPhone);
+      const matchRoom = myCleanRoom && rRoomClean && myCleanRoom === rRoomClean;
+      return matchTenant || matchRoom;
+    });
+  }, [isTenant, user, roomRequests, myRoomNumber]);
+
   // Tự động mở modal trả phòng hoặc rời phòng khi có action từ URL
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -1693,36 +1711,42 @@ export default function Dashboard() {
                 <span>Rời Phòng (Dọn Ra Ngoài)</span>
               </button>
 
-              {/* Nút 2: Trả Toàn Bộ Phòng (HĐ) - Nút mờ khi còn nợ tiền phòng/hóa đơn */}
+              {/* Nút 2: Trả Toàn Bộ Phòng (HĐ) - Nút mờ khi còn nợ tiền phòng HOẶC khi đã gửi đơn đang chờ BQL duyệt */}
               {isRepresentative && (
                 <button
                   type="button"
-                  disabled={hasUnpaidBillsForCheckout}
+                  disabled={hasUnpaidBillsForCheckout || hasPendingCheckoutRequest}
                   onClick={() => {
-                    if (hasUnpaidBillsForCheckout) return;
+                    if (hasUnpaidBillsForCheckout || hasPendingCheckoutRequest) return;
                     setCheckoutModal(myRoomNumber);
                     setAgreedForfeitDeposit(false);
                     setCheckoutReason('');
                     setCheckoutSuccess(false);
                   }}
                   className={`btn-press px-4 py-2.5 font-bold rounded-2xl text-xs border transition-all flex items-center gap-2 shadow-xs ${
-                    hasUnpaidBillsForCheckout
-                      ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
+                    hasUnpaidBillsForCheckout || hasPendingCheckoutRequest
+                      ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60 pointer-events-none'
                       : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200/80 cursor-pointer'
                   }`}
                   title={
-                    hasUnpaidBillsForCheckout
+                    hasPendingCheckoutRequest
+                      ? 'Đơn trả phòng của bạn đang chờ Ban Quản Lý phê duyệt & nghiệm thu. Nút đã bị khóa để tránh gửi trùng lặp!'
+                      : hasUnpaidBillsForCheckout
                       ? 'Nút trả phòng đang bị mờ do phòng còn hóa đơn chưa thanh toán. Vui lòng thanh toán hết tiền phòng/điện nước để mở khóa!'
                       : 'Báo trả toàn bộ phòng & Quyết toán hoàn cọc (Chỉ Người đại diện ký HĐ mới có quyền)'
                   }
                 >
                   <LogOut className="w-4 h-4 text-rose-600" />
-                  <span>Trả Toàn Bộ Phòng (HĐ)</span>
-                  {hasUnpaidBillsForCheckout && (
+                  <span>{hasPendingCheckoutRequest ? 'Đang Chờ Duyệt Trả Phòng' : 'Trả Toàn Bộ Phòng (HĐ)'}</span>
+                  {hasPendingCheckoutRequest ? (
+                    <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded-md font-extrabold flex items-center gap-1">
+                      <span>⏳</span> Chờ BQL duyệt
+                    </span>
+                  ) : hasUnpaidBillsForCheckout ? (
                     <span className="text-[10px] bg-rose-200 text-rose-800 px-1.5 py-0.5 rounded-md font-extrabold">
                       Khóa do còn nợ
                     </span>
-                  )}
+                  ) : null}
                 </button>
               )}
             </div>

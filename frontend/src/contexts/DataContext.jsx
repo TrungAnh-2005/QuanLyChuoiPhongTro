@@ -2304,7 +2304,28 @@ export const DataProvider = ({ children }) => {
     refundQrCode = null,
     isContractExpired = false
   }) => {
-    const targetRoomObj = (rooms || []).find((r) => r.number === room);
+    const cleanRoom = String(room || '').replace(/^P\.?/i, '').trim();
+
+    // Chống spam: Nếu đã có đơn CHECKOUT đang chờ BQL duyệt cho phòng hoặc khách này -> từ chối gửi thêm
+    const isExisting = (roomRequests || []).some((r) => {
+      if (r.type !== 'CHECKOUT') return false;
+      if (r.status !== 'PENDING' && r.status !== 'WAITING_ROOMMATES') return false;
+      const rRoomClean = String(r.targetRoom || r.currentRoom || '').replace(/^P\.?/i, '').trim();
+      const rTenant = (r.tenant || '').toLowerCase().trim();
+      const rPhone = (r.phone || '').trim();
+      const matchRoom = rRoomClean && cleanRoom && rRoomClean === cleanRoom;
+      const matchTenant = (tenantName && rTenant.includes(tenantName.toLowerCase())) || (phone && rPhone === phone);
+      return matchRoom || matchTenant;
+    });
+
+    if (isExisting) {
+      return {
+        error: true,
+        message: 'Bạn đã gửi đơn trả phòng và đang chờ Ban Quản Lý phê duyệt & nghiệm thu. Không thể gửi thêm yêu cầu trùng lặp!'
+      };
+    }
+
+    const targetRoomObj = (rooms || []).find((r) => String(r.number).replace(/^P\.?/i, '').trim() === cleanRoom);
     const occupants = targetRoomObj ? targetRoomObj.occupants : 1;
     const hasMultiplePeople = occupants > 1;
 

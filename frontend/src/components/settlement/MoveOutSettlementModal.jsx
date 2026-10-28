@@ -158,6 +158,19 @@ export default function MoveOutSettlementModal({ isOpen, onClose, settlement, ro
     });
   };
 
+  // Quét tiền phòng chưa trả để cấn trừ vào cọc (Hook phải đặt trước điều kiện return)
+  const unpaidRentInvoices = useMemo(() => {
+    if (!settlement?.roomNumber) return [];
+    const cleanNum = String(settlement.roomNumber).replace(/^P\.?/i, '').trim();
+    return (invoices || []).filter(
+      (inv) => String(inv.room || '').replace(/^P\.?/i, '').trim() === cleanNum && inv.status !== 'PAID'
+    );
+  }, [invoices, settlement]);
+
+  const unpaidRentFee = useMemo(() => {
+    return unpaidRentInvoices.reduce((sum, inv) => sum + (inv.total || inv.amount || 0), 0);
+  }, [unpaidRentInvoices]);
+
   if (!isOpen) return null;
 
   const originalDeposit = settlement?.originalDeposit || contract?.deposit || 3000000;
@@ -165,16 +178,6 @@ export default function MoveOutSettlementModal({ isOpen, onClose, settlement, ro
   const effectiveDeposit = isEarlyTermination ? 0 : originalDeposit;
   const damageFee = Number(formData.damageFee) || 0;
   const unpaidUtilitiesFee = Number(formData.unpaidUtilitiesFee) || 0;
-
-  // Quét tiền phòng chưa trả để cấn trừ vào cọc
-  const unpaidRentInvoices = useMemo(() => {
-    return (invoices || []).filter(
-      (inv) => inv.room === settlement?.roomNumber && inv.status !== 'PAID'
-    );
-  }, [invoices, settlement]);
-  const unpaidRentFee = useMemo(() => {
-    return unpaidRentInvoices.reduce((sum, inv) => sum + (inv.total || inv.amount || 0), 0);
-  }, [unpaidRentInvoices]);
 
   // Tiền cọc thực trả lại cho khách (Cấn trừ tiền phòng nợ + điện nước + đồ đạc hư hỏng)
   const calculatedRefund = isEarlyTermination
@@ -234,7 +237,7 @@ export default function MoveOutSettlementModal({ isOpen, onClose, settlement, ro
   const formatVND = (num) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(num || 0);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
       <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-slate-100 animate-scale-up">
         {/* Header */}
         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 px-6 py-4 text-white flex justify-between items-center shrink-0">

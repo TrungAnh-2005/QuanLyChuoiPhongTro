@@ -1047,6 +1047,24 @@ export default function RoomsPage() {
   // Phòng đại diện chính (hoặc phòng đầu tiên)
   const userRoom = myRentedRooms[0] || null;
 
+  // Kiểm tra khách đã có đơn trả phòng đang chờ BQL duyệt chưa (Chống spam)
+  const hasPendingCheckoutRequest = useMemo(() => {
+    if (!isTenant) return false;
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    const uPhone = (user?.phone || '').trim();
+    const cleanUserRoom = String(userRoom || '').replace(/^P\.?/i, '').trim();
+    return (roomRequests || []).some((r) => {
+      if (r.type !== 'CHECKOUT') return false;
+      if (r.status !== 'PENDING' && r.status !== 'WAITING_ROOMMATES') return false;
+      const rTenant = (r.tenant || '').toLowerCase().trim();
+      const rPhone = (r.phone || '').trim();
+      const rRoomClean = String(r.targetRoom || r.currentRoom || '').replace(/^P\.?/i, '').trim();
+      const matchTenant = (uName && (rTenant.includes(uName) || uName.includes(rTenant))) || (uPhone && rPhone === uPhone);
+      const matchRoom = cleanUserRoom && rRoomClean && cleanUserRoom === rRoomClean;
+      return matchTenant || matchRoom;
+    });
+  }, [isTenant, user, roomRequests, userRoom]);
+
   // Checkout modal states (Trả phòng trước hạn - Mất cọc)
   const [checkoutModal, setCheckoutModal] = useState(null);
 
@@ -3470,15 +3488,22 @@ export default function RoomsPage() {
                         <span>🚪 Rời Phòng Này</span>
                       </button>
                       <button
+                        disabled={hasPendingCheckoutRequest}
                         onClick={() => {
+                          if (hasPendingCheckoutRequest) return;
                           setCheckoutModal(selectedRoomDetails.number);
                           setAgreedForfeitDeposit(false);
                           setCheckoutReason('');
                           setCheckoutSuccess(false);
                         }}
-                        className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all btn-press flex items-center gap-1 cursor-pointer"
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all btn-press flex items-center gap-1 ${
+                          hasPendingCheckoutRequest
+                            ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60 pointer-events-none'
+                            : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer'
+                        }`}
+                        title={hasPendingCheckoutRequest ? 'Đơn trả phòng của bạn đang chờ Ban Quản Lý phê duyệt & nghiệm thu.' : 'Báo trả phòng'}
                       >
-                        <span>📤 Yêu Cầu Trả Phòng Này</span>
+                        <span>{hasPendingCheckoutRequest ? '⏳ Đang Chờ Duyệt Trả Phòng' : '📤 Yêu Cầu Trả Phòng Này'}</span>
                       </button>
                     </div>
                   ) : selectedRoomDetails.status === 'HOLDING' ? (
@@ -4409,16 +4434,20 @@ export default function RoomsPage() {
                           {req.type === 'CHECKOUT' ? (
                             <button
                               onClick={() => {
+                                const cleanReqRoom = String(req.targetRoom || req.room || '').replace(/^P\.?/i, '').trim();
                                 const activeContract = (contracts || []).find(
-                                  (c) => c.roomNumber === req.targetRoom && c.status === 'ACTIVE'
-                                ) || (contracts || []).find((c) => c.roomNumber === req.targetRoom);
+                                  (c) => String(c.roomNumber || c.room || '').replace(/^P\.?/i, '').trim() === cleanReqRoom && c.status === 'ACTIVE'
+                                ) || (contracts || []).find(
+                                  (c) => String(c.roomNumber || c.room || '').replace(/^P\.?/i, '').trim() === cleanReqRoom
+                                );
                                 const tenantObj = (tenants || []).find((t) =>
                                   (t.fullName || '').toLowerCase().includes((req.tenant || '').toLowerCase())
                                 );
+                                setShowRequestsManager(false);
                                 setActiveSettlementModal({
                                   id: req.id,
                                   requestId: req.id,
-                                  roomNumber: req.targetRoom,
+                                  roomNumber: req.targetRoom || req.room || '102',
                                   tenantName: req.tenant,
                                   contractId: activeContract?.id || 1,
                                   originalDeposit: activeContract?.depositAmount || tenantObj?.deposit || 3500000,
@@ -5604,10 +5633,22 @@ export default function RoomsPage() {
       {/* UC-S07: Modal Nghiệm Thu Tài Sản & Quyết Toán Hoàn Cọc */}
       <MoveOutSettlementModal
         isOpen={!!activeSettlementModal}
-        onClose={() => setActiveSettlementModal(null)}
+        onClose={() => {
+          setActiveSettlementModal(null);
+          setShowRequestsManager(true);
+        }}
         settlement={activeSettlementModal}
-        room={rooms.find((r) => r.number === activeSettlementModal?.roomNumber)}
-        contract={contracts.find((c) => c.id === activeSettlementModal?.contractId)}
+        room={rooms.find((r) => {
+          const rClean = String(r.number || '').replace(/^P\.?/i, '').trim();
+          const targetClean = String(activeSettlementModal?.roomNumber || '').replace(/^P\.?/i, '').trim();
+          return rClean === targetClean;
+        })}
+        contract={contracts.find((c) => {
+          if (c.id === activeSettlementModal?.contractId) return true;
+          const cClean = String(c.roomNumber || c.room || '').replace(/^P\.?/i, '').trim();
+          const targetClean = String(activeSettlementModal?.roomNumber || '').replace(/^P\.?/i, '').trim();
+          return cClean === targetClean;
+        })}
       />
 
       {/* Modal Cảnh Báo Vượt Hạn Mức Gói Cước SaaS */}
