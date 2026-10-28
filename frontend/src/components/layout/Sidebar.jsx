@@ -40,9 +40,13 @@ const staffNavItems = [
   { name: 'Báo Cáo Doanh Thu Cơ Sở', path: '/reports', icon: BarChart3 },
 ];
 
-const tenantNavItems = [
+const getTenantNavItems = (isAssociatedWithLandlord = false) => [
   { name: 'Cổng Khách Thuê & Hợp Đồng', path: '/', icon: LayoutDashboard },
-  { name: 'Phòng Thuộc Chuỗi Chủ Trọ', path: '/rooms', icon: Building2 },
+  {
+    name: isAssociatedWithLandlord ? 'Phòng Thuộc Chuỗi Chủ Trọ' : 'Khám Phá Phòng Trọ',
+    path: '/rooms',
+    icon: Building2
+  },
   { name: 'Chỉ Số Điện Nước (Đối Soát)', path: '/meters', icon: Zap },
   { name: 'Hóa Đơn & Tiền Phòng', path: '/invoices', icon: Receipt },
   { name: 'Báo Hỏng & Sửa Chữa', path: '/maintenance', icon: Wrench },
@@ -52,9 +56,48 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
   const { user } = useAuth();
   const role = user?.role || 'ADMIN';
 
+  // Kiểm tra khách đã thuê phòng hoặc đang ở chế độ cọc với chủ trọ chưa
+  const isAssociatedWithLandlord = React.useMemo(() => {
+    if (role !== 'TENANT' || !user) return false;
+    if (user.status === 'WAITING_ROOM') return false;
+
+    // 1. Kiểm tra phòng đang thuê trực tiếp từ user
+    if (user.room || (user.rooms && user.rooms.length > 0)) return true;
+
+    // 2. Kiểm tra tenantRooms từ localStorage
+    try {
+      const s = localStorage.getItem('rental_tenant_rooms');
+      if (s) {
+        const parsed = JSON.parse(s);
+        const myRooms = parsed[user.username] || (user.fullName ? parsed[user.fullName] : null);
+        if (Array.isArray(myRooms) && myRooms.length > 0) return true;
+        if (typeof myRooms === 'string' && myRooms.trim()) return true;
+      }
+    } catch {}
+
+    // 3. Kiểm tra đơn cọc / holding hoặc hợp đồng pending deposit
+    try {
+      const sReq = localStorage.getItem('rental_room_requests');
+      if (sReq) {
+        const reqs = JSON.parse(sReq);
+        const uName = (user.fullName || '').toLowerCase().trim();
+        const uPhone = (user.phone || '').trim();
+        const hasDeposit = reqs.some((r) => {
+          const isDep = r.status === 'APPROVED' || r.status === 'HOLDING';
+          const rTenant = (r.tenant || '').toLowerCase().trim();
+          const rPhone = (r.phone || '').trim();
+          return isDep && ((uName && rTenant.includes(uName)) || (uPhone && rPhone === uPhone));
+        });
+        if (hasDeposit) return true;
+      }
+    } catch {}
+
+    return false;
+  }, [role, user]);
+
   const navItems =
     role === 'TENANT'
-      ? tenantNavItems
+      ? getTenantNavItems(isAssociatedWithLandlord)
       : role === 'STAFF'
       ? staffNavItems
       : adminNavItems;

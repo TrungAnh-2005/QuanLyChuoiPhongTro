@@ -214,59 +214,123 @@ export default function RoomsPage() {
     return hKey === lKey;
   }, [getLandlordKeyFromHouse]);
 
-  // Xác định Chủ trọ mà khách thuê đang liên kết (Đang thuê, giữ chỗ, hoặc có đơn thuê đã duyệt)
+  // Xác định Chủ trọ mà khách thuê đang liên kết:
+  // CHỈ KHI NÀO khách ở 1 trong 2 chế độ:
+  //   1. ĐANG THUÊ PHÒNG (Có phòng đang thuê hợp lệ & Hợp đồng thuê ACTIVE)
+  //   2. ĐANG Ở CHẾ ĐỘ NỘP TIỀN CỌC (Đơn thuê đã được duyệt APPROVED/HOLDING chờ nộp cọc, hoặc Hợp đồng PENDING_DEPOSIT / PENDING_SIGN)
+  // Nếu chưa ở 1 trong 2 chế độ trên -> return null (Hệ thống mở toàn bộ cơ sở của TẤT CẢ các chủ trọ để khách tự do tra cứu & đăng ký)
   const tenantAssociatedLandlordKey = useMemo(() => {
-    if (!isTenant) return null;
+    if (!isTenant || !user) return null;
 
     const uName = (user?.fullName || '').toLowerCase().trim();
     const uPhone = (user?.phone || '').trim();
+    const uUsername = (user?.username || '').trim().toLowerCase();
 
-    // 1. Kiểm tra phòng đang thuê trực tiếp từ user / tenantRooms
-    const uRoom = user?.room || (user?.rooms && user.rooms[0]) || (tenantRooms && Object.values(tenantRooms).flat()[0]);
-    if (uRoom) {
-      const matchR = (rooms || []).find((r) => r.number === uRoom);
-      if (matchR?.houseCode) {
-        const h = storedBoardingHouses.find((h) => h.code === matchR.houseCode);
-        if (h) return getLandlordKeyFromHouse(h);
+    // -------------------------------------------------------------
+    // CHẾ ĐỘ 1: ĐANG THUÊ PHÒNG (ACTIVE LEASE)
+    // -------------------------------------------------------------
+    // Lấy danh sách phòng của CHÍNH khách này (không lấy của người khác)
+    const myDirectRooms = (user?.rooms && Array.isArray(user.rooms) && user.rooms.length > 0)
+      ? user.rooms.filter(Boolean)
+      : (user?.room ? [user.room] : []);
+
+    const myStoredRooms = tenantRooms
+      ? (tenantRooms[uUsername] ?? (uName ? tenantRooms[uName] : []))
+      : [];
+    const myNormStoredRooms = Array.isArray(myStoredRooms)
+      ? myStoredRooms.filter(Boolean)
+      : (myStoredRooms ? [myStoredRooms] : []);
+
+    const myCurrentRooms = myDirectRooms.length > 0 ? myDirectRooms : myNormStoredRooms;
+
+    // Kiểm tra xem khách có thực sự đang thuê phòng không:
+    // Phải có phòng, không ở trạng thái WAITING_ROOM (chưa thuê)
+    if (myCurrentRooms.length > 0 && user?.status !== 'WAITING_ROOM') {
+      const activeRoomNumber = myCurrentRooms[0];
+      const matchR = (rooms || []).find((r) => r.number === activeRoomNumber);
+
+      // Kiểm tra hợp đồng ACTIVE của chính khách này
+      const hasActiveContract = (contracts || []).some((c) => {
+        if (c.status !== 'ACTIVE') return false;
+        const matchRoom = c.roomNumber === activeRoomNumber || c.room === activeRoomNumber;
+        const cName = (c.tenantName || '').toLowerCase().trim();
+        const cPhone = (c.tenantPhone || '').trim();
+        const matchTenant = (uName && (cName.includes(uName) || uName.includes(cName))) ||
+                            (uPhone && cPhone === uPhone) ||
+                            (uUsername === 'tenant1' && cName.includes('an')) ||
+                            (uUsername === 'tenant2' && cName.includes('cường'));
+        return matchRoom && matchTenant;
+      });
+
+      // Nếu có hợp đồng ACTIVE hoặc phòng đó có trạng thái OCCUPIED
+      if (hasActiveContract || (matchR && matchR.status === 'OCCUPIED')) {
+        const targetHouseCode = matchR?.houseCode || user?.houseCode;
+        if (targetHouseCode) {
+          const h = storedBoardingHouses.find((h) => h.code === targetHouseCode);
+          if (h) return getLandlordKeyFromHouse(h);
+        }
       }
     }
 
-    // 2. Kiểm tra hợp đồng (ACTIVE, PENDING_DEPOSIT, PENDING_SIGN)
-    const matchContract = (contracts || []).find((c) => {
+    // -------------------------------------------------------------
+    // CHẾ ĐỘ 2: ĐANG Ở CHẾ ĐỘ NỘP TIỀN CỌC (PENDING DEPOSIT / HOLDING)
+    // -------------------------------------------------------------
+    // 2.1. Hợp đồng ở trạng thái PENDING_DEPOSIT hoặc PENDING_SIGN (đang chờ nộp cọc hoặc đã duyệt chờ cọc)
+    const matchDepositContract = (contracts || []).find((c) => {
+      const isDepositState = (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN') && !c.depositPaid;
+      if (!isDepositState) return false;
       const cName = (c.tenantName || '').toLowerCase().trim();
       const cPhone = (c.tenantPhone || '').trim();
       return (
         (uName && (cName.includes(uName) || uName.includes(cName))) ||
         (uPhone && cPhone === uPhone) ||
-        (user?.username === 'tenant' && cName.includes('an')) ||
-        (user?.username === 'tenant2' && cName.includes('cường'))
+        (uUsername === 'tenant1' && cName.includes('an')) ||
+        (uUsername === 'tenant2' && cName.includes('cường'))
       );
     });
-    if (matchContract?.houseCode) {
-      const h = storedBoardingHouses.find((h) => h.code === matchContract.houseCode);
+    if (matchDepositContract?.houseCode) {
+      const h = storedBoardingHouses.find((h) => h.code === matchDepositContract.houseCode);
       if (h) return getLandlordKeyFromHouse(h);
     }
 
-    // 3. Kiểm tra đơn thuê phòng (được duyệt hoặc đang xử lý)
-    const matchReq = (roomRequests || []).find((req) => {
+    // 2.2. Đơn thuê phòng đã được chủ trọ DUYỆT (APPROVED hoặc HOLDING) để chuyển sang nộp cọc
+    // (Đơn mới chỉ PENDING hoặc WAITING_ROOMMATES thì CHƯA được nộp cọc nên chưa tính)
+    const matchDepositReq = (roomRequests || []).find((req) => {
+      const reqStatus = (req.status || '').toUpperCase();
+      const isDepositReady = reqStatus === 'APPROVED' || reqStatus === 'HOLDING';
+      if (!isDepositReady) return false;
+
       const reqTenant = (req.tenant || '').toLowerCase().trim();
+      const reqPhone = (req.phone || '').trim();
       const matchT = (reqTenant && uName && (reqTenant.includes(uName) || uName.includes(reqTenant))) ||
-                     (uPhone && req.phone === uPhone) ||
-                     (user?.username === 'tenant' || user?.username === 'tenant1');
-      return matchT && (req.status === 'APPROVED' || req.status === 'HOLDING' || req.status === 'PENDING' || req.status === 'WAITING_ROOMMATES');
+                     (uPhone && reqPhone === uPhone) ||
+                     (uUsername === 'tenant1' && reqTenant.includes('an')) ||
+                     (uUsername === 'tenant2' && reqTenant.includes('cường'));
+      return matchT;
     });
-    if (matchReq?.houseCode) {
-      const h = storedBoardingHouses.find((h) => h.code === matchReq.houseCode);
+    if (matchDepositReq) {
+      const targetHouseCode = matchDepositReq.houseCode ||
+        (rooms || []).find((r) => r.number === (matchDepositReq.targetRoom || matchDepositReq.room))?.houseCode;
+      if (targetHouseCode) {
+        const h = storedBoardingHouses.find((h) => h.code === targetHouseCode);
+        if (h) return getLandlordKeyFromHouse(h);
+      }
+    }
+
+    // 2.3. Phòng trong danh sách rooms có trạng thái HOLDING khớp với khách này và còn hạn
+    const matchHeldRoom = (rooms || []).find((r) => {
+      if (r.status !== 'HOLDING') return false;
+      const holdingBy = (r.holdingBy || '').toLowerCase().trim();
+      const holdingPhone = (r.holdingPhone || '').trim();
+      return (uName && holdingBy.includes(uName)) || (uPhone && holdingPhone === uPhone);
+    });
+    if (matchHeldRoom?.houseCode) {
+      const h = storedBoardingHouses.find((h) => h.code === matchHeldRoom.houseCode);
       if (h) return getLandlordKeyFromHouse(h);
     }
 
-    // 4. Mặc định theo tài khoản mẫu:
-    // Khách 1 (Nguyễn Văn An) & Khách 2 (Phạm Minh Cường) -> Thuộc chuỗi Lê Thị Thu Ngân (CS-01)
-    if (user?.username === 'tenant' || user?.username === 'tenant1' || user?.username === 'tenant2' || uName.includes('an') || uName.includes('cường')) {
-      return 'staff'; // Lê Thị Thu Ngân
-    }
-
-    return null; // Khách mới vãng lai (như Hoàng Văn Nam khi chưa gửi đơn)
+    // Chưa ở chế độ nộp tiền cọc và chưa thuê phòng -> Không liên kết riêng với chủ trọ nào
+    return null;
   }, [isTenant, user, tenantRooms, rooms, contracts, roomRequests, storedBoardingHouses, getLandlordKeyFromHouse]);
 
   const tenantAssociatedLandlordName = useMemo(() => {
