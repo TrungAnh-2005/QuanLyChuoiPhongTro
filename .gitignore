@@ -1,30 +1,23 @@
-# Compiled class file
+# ==========================================
+# 1. Dependency & Build Outputs (Khối lượng lớn, không commit)
+# ==========================================
+# Frontend (Node / Vite)
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Backend (Java / Maven / Gradle)
+target/
 *.class
-
-# Log file
-*.log
-
-# BlueJ files
-*.ctxt
-
-# Mobile Tools for Java (J2ME)
-.mtj.tmp/
-
-# Package Files #
 *.jar
 *.war
-*.nar
 *.ear
 *.zip
 *.tar.gz
 *.rar
-
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
-hs_err_pid*
-replay_pid*
-
-# Maven
-target/
+build/
+.gradle/
 pom.xml.tag
 pom.xml.releaseBackup
 pom.xml.versionsBackup
@@ -35,11 +28,24 @@ buildNumber.properties
 .mvn/timing.properties
 .mvn/wrapper/maven-wrapper.jar
 
-# Gradle
-.gradle
-build/
+# ==========================================
+# 2. Database & Docker Volume Data (Dữ liệu cục bộ)
+# ==========================================
+docker/mysql/data/
+docker/rabbitmq/data/
+docker/**/data/
 
-# IDE Files
+# ==========================================
+# 3. Environment & Secrets (Bảo mật tài khoản/API Key)
+# ==========================================
+.env
+.env.*
+!.env.example
+*.env.local
+
+# ==========================================
+# 4. IDEs & Editors (Cấu hình riêng của máy cá nhân)
+# ==========================================
 .idea/
 *.iml
 *.iws
@@ -48,31 +54,41 @@ build/
 .settings/
 .project
 .classpath
+.ctxt
+.mtj.tmp/
 
-# OS Files
+# ==========================================
+# 5. Hệ thống AI Agent & Skills cá nhân (Chỉ giấu riêng bộ pp-kit)
+# ==========================================
+.agents/plugins/
+.agents/mcp_config.json
+.gemini/
+skill-pp-kit/
+ui-ux-skill/
+start-trycloudflare.ps1
+
+# ==========================================
+# 6. Chat History, Screen Recordings & Test Artifacts
+# ==========================================
+chat_assets/
+TONG_HOP_CHAT_*.md
+.playwright-mcp/
+test-results/
+docs/test-results/
+
+# ==========================================
+# 7. OS & Crash Logs
+# ==========================================
 .DS_Store
 Thumbs.db
+*.log
+hs_err_pid*
+replay_pid*
 
-# Node / Frontend
-node_modules/
-dist/
-dist-ssr/
-*.local
-
-# Environment & Docker
-.env
-.env.*
-!.env.example
-*.env.local
-docker/mysql/data/
-docker/rabbitmq/data/
-# Chat exports & assets
-chat_assets/
-TONG_HOP_CHAT_XOA_FILE_TRONG_DOCS_07_08_10_2026.md
-
-docs
-tests
-.agents
-node_modules
-skill-pp-kit
-.playwright-mcp
+# ==========================================
+# 8. Thư mục kiểm thử & tài liệu nội bộ
+# (Bỏ dấu # nếu bạn KHÔNG muốn đưa docs/tests lên git)
+# ==========================================
+docs/
+tests/
+    

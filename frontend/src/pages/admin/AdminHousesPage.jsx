@@ -49,7 +49,7 @@ export default function AdminHousesPage() {
         managerUsername: 'staff',
         createdBy: 'staff',
         managerPhone: '0912.888.666',
-        floors: 5,
+        floors: 4,
         totalRooms: 12,
         status: 'ACTIVE'
       },
@@ -350,14 +350,6 @@ export default function AdminHousesPage() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="status-pill status-pill-indigo text-[11px] font-bold">
-              Phân Hệ Quản Trị & Xét Duyệt Cơ Sở Toàn Sàn
-            </span>
-            <span className="status-pill status-pill-emerald text-[11px] font-bold">
-              Thẩm Quyền Quản Trị Viên (ADMIN)
-            </span>
-          </div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
             <Building2 className="w-7 h-7 text-indigo-600" />
             <span>Quản Trị Cơ Sở Theo Chủ Trọ</span>

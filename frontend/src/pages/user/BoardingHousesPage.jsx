@@ -59,7 +59,7 @@ const initialHouses = [
     managerUsername: 'staff',
     createdBy: 'staff',
     managerPhone: '0912.888.666',
-    floors: 5,
+    floors: 4,
     totalRooms: 12,
     occupiedRooms: 9,
     availableRooms: 2,
@@ -110,6 +110,7 @@ export default function BoardingHousesPage() {
     tenants = [],
     invoices = [],
     landlords = [],
+    landlordProfiles = [],
     createSaasInvoice,
     paySaasInvoice,
     updateLandlordPackage,
@@ -571,6 +572,33 @@ export default function BoardingHousesPage() {
 
   const handleCreate = async (e) => {
     e.preventDefault();
+
+    // Ràng buộc nghiệp vụ SaaS: Kiểm tra thẩm định pháp lý KYC CCCD
+    if (isStaff) {
+      const myProfile = (landlordProfiles || []).find(
+        (p) =>
+          p.username === user?.username ||
+          (user?.username === 'staff' && p.id === 1) ||
+          (user?.username === 'staff2' && p.id === 2)
+      );
+      const myAccount = (landlords || []).find(
+        (l) =>
+          l.username === user?.username ||
+          (user?.username === 'staff' && l.id === 1) ||
+          (user?.username === 'staff2' && l.id === 2)
+      );
+      if (myProfile?.kycStatus === 'REJECTED' || myAccount?.status === 'LOCKED') {
+        alert(
+          `🚫 THAO TÁC BỊ CHẶN DO VI PHẠM ĐỊNH DANH (KYC)!\n\n` +
+          `Hồ sơ Căn Cước Công Dân của bạn đang ở trạng thái BỊ TỪ CHỐI / THU HỒI.\n` +
+          `• Lý do: ${myProfile?.rejectionReason || myAccount?.kycRejectionReason || 'Thông tin cần đối soát lại với căn cước công dân gốc'}\n\n` +
+          `Theo quy định pháp lý nền tảng SaaS, bạn không thể tạo thêm cơ sở trọ mới cho đến khi hoàn tất định danh KYC.`
+        );
+        setShowModal(false);
+        return;
+      }
+    }
+
     const cleanName = (newHouse.name || '').trim();
     const cleanAddress = (newHouse.address || '').trim();
     if (!cleanName || !cleanAddress) return;

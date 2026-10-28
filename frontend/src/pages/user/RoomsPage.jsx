@@ -54,7 +54,7 @@ import TrialExpiryBanner from '@/components/common/TrialExpiryBanner';
 import { getTrialStatus } from '@/utils/packagePermissions';
 import TenantRoomsPage from '@/pages/tenants/TenantRoomsPage';
 
-import { ALL_ROOMS, HOUSES_LIST, getRoomImage, isDuplicateRoom, isSameHouse, normalizeRoomNumber, normalizeHouseCode, healBoardingHousesList } from '@/data/roomsData';
+import { ALL_ROOMS, HOUSES_LIST, getRoomImage, isDuplicateRoom, isSameHouse, normalizeRoomNumber, normalizeHouseCode, healBoardingHousesList, parseFloorNum } from '@/data/roomsData';
 export { ALL_ROOMS, HOUSES_LIST };
 
 export const ROOM_IMAGE_PRESETS = [
@@ -164,7 +164,8 @@ export default function RoomsPage() {
         name: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
         managerUsername: 'staff',
         createdBy: 'staff',
-        status: 'ACTIVE'
+        status: 'ACTIVE',
+        floors: 4
       },
       {
         id: 2,
@@ -172,7 +173,8 @@ export default function RoomsPage() {
         name: 'Nhà Trọ Bách Khoa - Cơ Sở 2',
         managerUsername: 'staff2',
         createdBy: 'staff2',
-        status: 'ACTIVE'
+        status: 'ACTIVE',
+        floors: 4
       },
       {
         id: 3,
@@ -180,7 +182,8 @@ export default function RoomsPage() {
         name: 'Nhà Trọ Đống Đa - Cơ Sở 3',
         managerUsername: 'admin',
         createdBy: 'admin',
-        status: 'ACTIVE'
+        status: 'ACTIVE',
+        floors: 6
       }
     ];
   });
@@ -198,6 +201,87 @@ export default function RoomsPage() {
     window.addEventListener('storage', handleSyncHouses);
     return () => window.removeEventListener('storage', handleSyncHouses);
   }, []);
+
+  const getLandlordKeyFromHouse = useCallback((h) => {
+    if (!h) return null;
+    const code = (h.code || '').toUpperCase();
+    const c = (h.createdBy || '').toLowerCase();
+    const mU = (h.managerUsername || '').toLowerCase();
+    const m = (h.manager || '').toLowerCase();
+    if (c === 'staff' || c === 'staff1' || mU === 'staff' || m.includes('ngân') || code === 'CS-01' || code.startsWith('S1-')) return 'staff';
+    if (c === 'staff2' || mU === 'staff2' || m.includes('táo') || code === 'CS-02' || code.startsWith('S2-')) return 'staff2';
+    if (c === 'admin' || mU === 'admin' || m.includes('hùng') || code === 'CS-03' || code.startsWith('S3-')) return 'admin';
+    return c || mU || 'other';
+  }, []);
+
+  const isHouseOfLandlord = useCallback((h, lKey) => {
+    if (!lKey) return true;
+    const hKey = getLandlordKeyFromHouse(h);
+    return hKey === lKey;
+  }, [getLandlordKeyFromHouse]);
+
+  // Xác định Chủ trọ mà khách thuê đang liên kết (Đang thuê, giữ chỗ, hoặc có đơn thuê đã duyệt)
+  const tenantAssociatedLandlordKey = useMemo(() => {
+    if (!isTenant) return null;
+
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    const uPhone = (user?.phone || '').trim();
+
+    // 1. Kiểm tra phòng đang thuê trực tiếp từ user / tenantRooms
+    const uRoom = user?.room || (user?.rooms && user.rooms[0]) || (tenantRooms && Object.values(tenantRooms).flat()[0]);
+    if (uRoom) {
+      const matchR = (rooms || []).find((r) => r.number === uRoom);
+      if (matchR?.houseCode) {
+        const h = storedBoardingHouses.find((h) => h.code === matchR.houseCode);
+        if (h) return getLandlordKeyFromHouse(h);
+      }
+    }
+
+    // 2. Kiểm tra hợp đồng (ACTIVE, PENDING_DEPOSIT, PENDING_SIGN)
+    const matchContract = (contracts || []).find((c) => {
+      const cName = (c.tenantName || '').toLowerCase().trim();
+      const cPhone = (c.tenantPhone || '').trim();
+      return (
+        (uName && (cName.includes(uName) || uName.includes(cName))) ||
+        (uPhone && cPhone === uPhone) ||
+        (user?.username === 'tenant' && cName.includes('an')) ||
+        (user?.username === 'tenant2' && cName.includes('cường'))
+      );
+    });
+    if (matchContract?.houseCode) {
+      const h = storedBoardingHouses.find((h) => h.code === matchContract.houseCode);
+      if (h) return getLandlordKeyFromHouse(h);
+    }
+
+    // 3. Kiểm tra đơn thuê phòng (được duyệt hoặc đang xử lý)
+    const matchReq = (roomRequests || []).find((req) => {
+      const reqTenant = (req.tenant || '').toLowerCase().trim();
+      const matchT = (reqTenant && uName && (reqTenant.includes(uName) || uName.includes(reqTenant))) ||
+                     (uPhone && req.phone === uPhone) ||
+                     (user?.username === 'tenant' || user?.username === 'tenant1');
+      return matchT && (req.status === 'APPROVED' || req.status === 'HOLDING' || req.status === 'PENDING' || req.status === 'WAITING_ROOMMATES');
+    });
+    if (matchReq?.houseCode) {
+      const h = storedBoardingHouses.find((h) => h.code === matchReq.houseCode);
+      if (h) return getLandlordKeyFromHouse(h);
+    }
+
+    // 4. Mặc định theo tài khoản mẫu:
+    // Khách 1 (Nguyễn Văn An) & Khách 2 (Phạm Minh Cường) -> Thuộc chuỗi Lê Thị Thu Ngân (CS-01)
+    if (user?.username === 'tenant' || user?.username === 'tenant1' || user?.username === 'tenant2' || uName.includes('an') || uName.includes('cường')) {
+      return 'staff'; // Lê Thị Thu Ngân
+    }
+
+    return null; // Khách mới vãng lai (như Hoàng Văn Nam khi chưa gửi đơn)
+  }, [isTenant, user, tenantRooms, rooms, contracts, roomRequests, storedBoardingHouses, getLandlordKeyFromHouse]);
+
+  const tenantAssociatedLandlordName = useMemo(() => {
+    if (!tenantAssociatedLandlordKey) return 'Chủ trọ uy tín';
+    if (tenantAssociatedLandlordKey === 'staff') return 'Lê Thị Thu Ngân';
+    if (tenantAssociatedLandlordKey === 'staff2') return 'Đàm Văn Táo';
+    if (tenantAssociatedLandlordKey === 'admin') return 'Phạm Quốc Hùng';
+    return 'Chủ trọ của bạn';
+  }, [tenantAssociatedLandlordKey]);
 
   // Lọc cơ sở mà người dùng hiện tại có quyền xem
   const visibleHousesForUser = useMemo(() => {
@@ -225,15 +309,14 @@ export default function RoomsPage() {
         return false;
       });
     } else if (isTenant) {
-      if (tenantRooms && Object.values(tenantRooms).flat().length > 0) {
-        const myActiveRoom = rooms.find((r) => (user?.rooms || []).includes(r.number) || r.number === user?.room);
-        if (myActiveRoom?.houseCode) {
-          list = storedBoardingHouses.filter((h) => h.code === myActiveRoom.houseCode);
-        } else {
-          list = storedBoardingHouses.filter((h) => h.status !== 'PENDING_APPROVAL');
-        }
+      if (tenantAssociatedLandlordKey) {
+        // Cư dân đã liên kết / giữ chỗ / được duyệt tại chuỗi trọ của một chủ:
+        // CHỈ XEM CÁC CƠ SỞ THUỘC CHỦ TRỌ NÀY (VD: Lê Thị Thu Ngân), TUYỆT ĐỐI KHÔNG HIỆN CHỦ KHÁC (Đàm Văn Táo)
+        list = storedBoardingHouses.filter(
+          (h) => h.status !== 'PENDING_APPROVAL' && isHouseOfLandlord(h, tenantAssociatedLandlordKey)
+        );
       } else {
-        // Khách mới hoặc chưa thuê phòng: Chỉ thấy các cơ sở đã được phê duyệt (status !== 'PENDING_APPROVAL')
+        // Khách mới hoặc chưa thuê phòng: Xem tất cả các cơ sở đã được phê duyệt
         list = storedBoardingHouses.filter((h) => h.status !== 'PENDING_APPROVAL');
       }
     }
@@ -246,7 +329,14 @@ export default function RoomsPage() {
       if (cmp !== 0) return cmp;
       return String(a.code || '').localeCompare(String(b.code || ''), undefined, { numeric: true, sensitivity: 'base' });
     });
-  }, [storedBoardingHouses, user, isTenant, tenantRooms, rooms]);
+  }, [storedBoardingHouses, user, isTenant, tenantRooms, rooms, tenantAssociatedLandlordKey, isHouseOfLandlord]);
+
+  // Tổng số phòng thuộc chuỗi của Chủ trọ mà khách thuê đang liên kết
+  const tenantChainRoomsCount = useMemo(() => {
+    if (!isTenant || !tenantAssociatedLandlordKey) return rooms.length;
+    const myLandlordHouseCodes = visibleHousesForUser.map((h) => h.code);
+    return rooms.filter((r) => myLandlordHouseCodes.includes(r.houseCode)).length;
+  }, [isTenant, tenantAssociatedLandlordKey, visibleHousesForUser, rooms]);
 
   // Danh sách cơ sở đã được Quản trị viên phê duyệt (ACTIVE) để cho phép tạo phòng
   const approvedHousesForUser = useMemo(() => {
@@ -636,6 +726,13 @@ export default function RoomsPage() {
       alert(`⚠️ Không thể lưu: Phòng "${editRoomForm.number}" đã tồn tại trong cơ sở này!\n\nTrong cùng một cơ sở nhà trọ, các phòng phải có số / tên khác nhau để tránh nhầm lẫn khi quản lý.`);
       return;
     }
+
+    const maxFloors = parseInt(String(targetHouseForEdit?.floors || targetHouseForEdit?.totalFloors || maxFloorsForEdit || 4).replace(/\D/g, ''), 10) || 4;
+    const enteredFloor = parseFloorNum(editRoomForm.floor);
+    if (maxFloors > 0 && enteredFloor > maxFloors) {
+      alert(`⚠️ Không thể lưu: Cơ sở "${targetHouseForEdit?.name || editTargetHouse}" chỉ có ${maxFloors} tầng!\n\nBạn không thể đặt phòng ở tầng ${enteredFloor}. Vui lòng chọn tầng từ 1 đến ${maxFloors}.`);
+      return;
+    }
     const resolvedHouseName = getHouseName(editTargetHouse, editRoomForm.house);
     updateRoom(editingRoomModal.id, {
       number: editRoomForm.number,
@@ -912,6 +1009,30 @@ export default function RoomsPage() {
       }
     }
   }, [searchParams, myRentedRoom, isRepresentative]);
+
+  // Tự động mở modal xét duyệt đơn (showRequestsManager) khi click thông báo từ Navbar hoặc có action=review-requests
+  useEffect(() => {
+    const handleOpenRequests = (e) => {
+      setShowRequestsManager(true);
+      if (e && e.detail && e.detail.filter) {
+        setRequestFilter(e.detail.filter);
+      }
+    };
+
+    window.addEventListener('rental:open-requests-manager', handleOpenRequests);
+
+    const action = searchParams.get('action');
+    if (action === 'review-requests' || action === 'requests') {
+      setShowRequestsManager(true);
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('action');
+      setSearchParams(nextParams, { replace: true });
+    }
+
+    return () => {
+      window.removeEventListener('rental:open-requests-manager', handleOpenRequests);
+    };
+  }, [searchParams, setSearchParams]);
   const [checkoutReason, setCheckoutReason] = useState('');
   const [agreedForfeitDeposit, setAgreedForfeitDeposit] = useState(false);
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
@@ -1251,6 +1372,38 @@ export default function RoomsPage() {
     isDuplicateRoom(rooms, editRoomForm.number, editTargetHouse, editingRoomModal.id)
   );
 
+  // Xác định cơ sở và số tầng tối đa khi Thêm Phòng Mới
+  const targetHouseForAdd = useMemo(() => {
+    return storedBoardingHouses.find((h) => h.code === addRoomTargetHouse) ||
+           approvedHousesForUser.find((h) => h.code === addRoomTargetHouse) ||
+           null;
+  }, [storedBoardingHouses, approvedHousesForUser, addRoomTargetHouse]);
+
+  const maxFloorsForAdd = useMemo(() => {
+    if (!targetHouseForAdd) return 4;
+    const fl = parseInt(String(targetHouseForAdd.floors || targetHouseForAdd.totalFloors || 4).replace(/\D/g, ''), 10);
+    return fl > 0 ? fl : 4;
+  }, [targetHouseForAdd]);
+
+  const enteredNewRoomFloorNum = parseFloorNum(newRoom.floor);
+  const isAddRoomFloorExceeded = Boolean(maxFloorsForAdd > 0 && enteredNewRoomFloorNum > maxFloorsForAdd);
+
+  // Xác định cơ sở và số tầng tối đa khi Sửa Phòng
+  const targetHouseForEdit = useMemo(() => {
+    return storedBoardingHouses.find((h) => h.code === editTargetHouse) ||
+           visibleHousesForUser.find((h) => h.code === editTargetHouse) ||
+           null;
+  }, [storedBoardingHouses, visibleHousesForUser, editTargetHouse]);
+
+  const maxFloorsForEdit = useMemo(() => {
+    if (!targetHouseForEdit) return 4;
+    const fl = parseInt(String(targetHouseForEdit.floors || targetHouseForEdit.totalFloors || 4).replace(/\D/g, ''), 10);
+    return fl > 0 ? fl : 4;
+  }, [targetHouseForEdit]);
+
+  const enteredEditFloorNum = parseFloorNum(editRoomForm.floor);
+  const isEditRoomFloorExceeded = Boolean(maxFloorsForEdit > 0 && enteredEditFloorNum > maxFloorsForEdit);
+
   // Keep state perfectly synchronized with URL query parameter & tenant active facility
   useEffect(() => {
     const currentParam = searchParams.get('house') || 'ALL';
@@ -1305,25 +1458,13 @@ export default function RoomsPage() {
       }
 
       if (isTenant) {
-        // Kiểm tra xem khách có đang trong thời gian chờ duyệt trả phòng không
-        const hasPendingCheckout = (roomRequests || []).some(
-          (req) =>
-            req.type === 'CHECKOUT' &&
-            (req.status === 'PENDING' || req.status === 'WAITING_ROOMMATES' || req.status === 'ROOMMATES_APPROVED') &&
-            ((req.tenant && user?.fullName && req.tenant.toLowerCase().includes(user.fullName.toLowerCase())) ||
-             (req.targetRoom && (req.targetRoom === myRentedRoom || req.targetRoom === user?.room)))
-        );
-
-        if (myRentedRoom || hasPendingCheckout) {
-          // Khách đang thuê hoặc đang chờ duyệt trả phòng:
-          // CHỈ ĐƯỢC XEM CÁC PHÒNG THUỘC CÙNG CHỦ TRỌ / CÙNG CƠ SỞ ĐANG THUÊ
-          const myHouseCode = myRentedRoomObj?.houseCode || user?.houseCode || 'CS-01';
-          if (r.houseCode !== myHouseCode) {
+        if (tenantAssociatedLandlordKey) {
+          // Khách đã được duyệt giữ chỗ / đang thuê tại chuỗi trọ của một chủ:
+          // CHỈ ĐƯỢC XEM CÁC PHÒNG THUỘC CÁC CƠ SỞ CỦA CHỦ TRỌ NÀY
+          const allowedHouseCodes = visibleHousesForUser.map((h) => h.code);
+          if (!allowedHouseCodes.includes(r.houseCode)) {
             return false;
           }
-        } else {
-          // Khách mới hoặc đã trả phòng thành công:
-          // XEM ĐƯỢC TẤT CẢ CÁC PHÒNG CỦA MỌI CHỦ TRỌ TRÊN TOÀN SÀN
         }
       }
 
@@ -1347,7 +1488,7 @@ export default function RoomsPage() {
 
       return matchHouse && matchStatus && matchSearch;
     });
-  }, [rooms, isTenant, myRentedRoom, myRentedRoomObj, selectedHouse, filterStatus, searchTerm, user, visibleHousesForUser, storedBoardingHouses]);
+  }, [rooms, isTenant, myRentedRoom, myRentedRoomObj, selectedHouse, filterStatus, searchTerm, user, visibleHousesForUser, storedBoardingHouses, tenantAssociatedLandlordKey]);
 
   const handleUpdateStatus = (id, newStatus) => {
     const targetRoom = rooms.find(r => r.id === id);
@@ -1470,6 +1611,13 @@ export default function RoomsPage() {
       return;
     }
 
+    const houseMaxFloors = parseInt(String(targetRecord?.floors || targetRecord?.totalFloors || maxFloorsForAdd || 4).replace(/\D/g, ''), 10) || 4;
+    const newFloorNum = parseFloorNum(newRoom.floor);
+    if (houseMaxFloors > 0 && newFloorNum > houseMaxFloors) {
+      alert(`⚠️ Không thể tạo phòng: Cơ sở "${targetRecord?.name || targetHouseCode}" chỉ có ${houseMaxFloors} tầng!\n\nBạn không thể tạo phòng ở tầng ${newFloorNum}. Vui lòng chọn tầng từ 1 đến ${houseMaxFloors}.`);
+      return;
+    }
+
     // Kiểm tra giới hạn số phòng của gói cước (tính theo chủ trọ hiện tại)
     if (myRoomsCount >= maxRoomsAllowed) {
       setShowModal(false);
@@ -1564,8 +1712,8 @@ export default function RoomsPage() {
                   : tenantLocation && !tenantViewAllFlat
                   ? `Các Cơ Sở Nhà Trọ Tại ${tenantLocation}`
                   : tenantViewAllFlat
-                  ? 'Toàn Bộ Phòng Đang Mở Cho Thuê'
-                  : 'Tìm Trọ Theo Địa Chỉ & Cơ Sở')
+                  ? (tenantAssociatedLandlordKey ? `Toàn Bộ Phòng Thuộc Chuỗi: ${tenantAssociatedLandlordName}` : 'Toàn Bộ Phòng Đang Mở Cho Thuê')
+                  : (tenantAssociatedLandlordKey ? `Chuỗi Cơ Sở Của Chủ Trọ: ${tenantAssociatedLandlordName}` : 'Tìm Trọ Theo Địa Chỉ & Cơ Sở'))
               : selectedHouse === 'ALL'
               ? `Toàn Bộ Phòng Thuộc Chuỗi (${staffManageableRooms.length} Phòng)`
               : `Danh Sách Phòng: ${currentHouseInfo.name}`}
@@ -1577,8 +1725,8 @@ export default function RoomsPage() {
                   : tenantLocation && !tenantViewAllFlat
                   ? `Chọn cơ sở bạn muốn xem để khám phá các phòng trống, tiện ích và giá niêm yết.`
                   : tenantViewAllFlat
-                  ? `Đang hiển thị toàn bộ phòng của tất cả các cơ sở trên toàn sàn.`
-                  : 'Chọn địa chỉ hoặc khu vực bạn muốn tìm phòng để xem các cơ sở của từng chủ trọ uy tín.')
+                  ? (tenantAssociatedLandlordKey ? `Đang hiển thị toàn bộ phòng thuộc chuỗi các cơ sở của Chủ trọ ${tenantAssociatedLandlordName}.` : `Đang hiển thị toàn bộ phòng của tất cả các cơ sở trên toàn sàn.`)
+                  : (tenantAssociatedLandlordKey ? `Danh sách các cơ sở trực thuộc chuỗi của Chủ trọ ${tenantAssociatedLandlordName}. Bạn có thể xem phòng, xin đổi phòng hoặc thuê thêm phòng.` : 'Chọn địa chỉ hoặc khu vực bạn muốn tìm phòng để xem các cơ sở của từng chủ trọ uy tín.'))
               : `Tổng số: ${filteredRooms.length} phòng | Trống: ${filteredRooms.filter((r) => r.status === 'AVAILABLE').length} | Giữ chỗ: ${filteredRooms.filter((r) => r.status === 'HOLDING').length} | Đang thuê: ${filteredRooms.filter((r) => r.status === 'OCCUPIED').length} | Bảo trì: ${filteredRooms.filter((r) => r.status === 'MAINTENANCE').length} | Tạm khóa: ${filteredRooms.filter((r) => r.status === 'LOCKED').length}`}
           </p>
         </div>
@@ -1796,7 +1944,7 @@ export default function RoomsPage() {
                   className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-purple-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
                   title="Xem toàn bộ phòng của tất cả cơ sở dạng lưới phẳng"
                 >
-                  <span>🏢 Xem nhanh tất cả phòng ({rooms.length})</span>
+                  <span>🏢 Xem nhanh tất cả phòng ({isTenant && tenantAssociatedLandlordKey ? tenantChainRoomsCount : rooms.length})</span>
                 </button>
               )}
             </div>
@@ -2682,8 +2830,15 @@ export default function RoomsPage() {
             {approvedHousesForUser.length > 0 ? (
               <select
                 value={addRoomTargetHouse}
-                onChange={(e) => setNewRoom({ ...newRoom, houseCode: e.target.value })}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-semibold focus:outline-none focus:bg-white focus:border-purple-500"
+                onChange={(e) => {
+                  const chosenCode = e.target.value;
+                  const targetH = storedBoardingHouses.find((h) => h.code === chosenCode) || approvedHousesForUser.find((h) => h.code === chosenCode);
+                  const targetMax = parseInt(String(targetH?.floors || targetH?.totalFloors || 4).replace(/\D/g, ''), 10) || 4;
+                  const currentFl = parseFloorNum(newRoom.floor);
+                  const nextFloor = (targetMax > 0 && currentFl > targetMax) ? 'Tầng 1' : (newRoom.floor || 'Tầng 1');
+                  setNewRoom({ ...newRoom, houseCode: chosenCode, floor: nextFloor });
+                }}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-semibold focus:outline-none focus:bg-white focus:border-purple-500 cursor-pointer"
               >
                 {approvedHousesForUser.map((h) => (
                   <option key={h.code} value={h.code}>
@@ -2713,13 +2868,35 @@ export default function RoomsPage() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Tầng</label>
-              <input
-                type="text"
-                value={newRoom.floor}
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-bold text-slate-700">Tầng</label>
+                {maxFloorsForAdd > 0 && (
+                  <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">
+                    Tối đa {maxFloorsForAdd} tầng
+                  </span>
+                )}
+              </div>
+              <select
+                value={newRoom.floor || 'Tầng 1'}
                 onChange={(e) => setNewRoom({ ...newRoom, floor: e.target.value })}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-purple-500"
-              />
+                className={`w-full border rounded-xl px-3 py-2 text-xs font-bold focus:outline-none cursor-pointer ${
+                  isAddRoomFloorExceeded
+                    ? 'bg-rose-50 border-rose-400 text-rose-900 focus:bg-white focus:border-rose-500'
+                    : 'bg-slate-50 border-slate-200 text-slate-900 focus:bg-white focus:border-purple-500'
+                }`}
+              >
+                {Array.from({ length: maxFloorsForAdd }, (_, i) => i + 1).map((fNum) => (
+                  <option key={fNum} value={`Tầng ${fNum}`}>
+                    Tầng {fNum}
+                  </option>
+                ))}
+              </select>
+              {isAddRoomFloorExceeded && (
+                <div className="mt-1.5 p-2 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-1.5 text-[11px] text-rose-700 font-semibold">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  <span>Cơ sở này chỉ có {maxFloorsForAdd} tầng. Không thể thêm phòng tầng {enteredNewRoomFloorNum}!</span>
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Giá thuê (VNĐ)</label>
@@ -2815,9 +2992,9 @@ export default function RoomsPage() {
             </button>
             <button
               type="submit"
-              disabled={visibleHousesForUser.length === 0 || isNewRoomDuplicate}
+              disabled={visibleHousesForUser.length === 0 || isNewRoomDuplicate || isAddRoomFloorExceeded}
               className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all ${
-                visibleHousesForUser.length === 0 || isNewRoomDuplicate
+                visibleHousesForUser.length === 0 || isNewRoomDuplicate || isAddRoomFloorExceeded
                   ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                   : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-md shadow-purple-600/25 btn-press cursor-pointer'
               }`}
@@ -5008,15 +5185,35 @@ export default function RoomsPage() {
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Tầng *</label>
-                  <input
-                    type="text"
-                    required
-                    value={editRoomForm.floor}
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-bold text-slate-700">Tầng *</label>
+                    {maxFloorsForEdit > 0 && (
+                      <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded-full">
+                        Tối đa {maxFloorsForEdit} tầng
+                      </span>
+                    )}
+                  </div>
+                  <select
+                    value={editRoomForm.floor || 'Tầng 1'}
                     onChange={(e) => setEditRoomForm({ ...editRoomForm, floor: e.target.value })}
-                    placeholder="Ví dụ: Tầng 1"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs focus:outline-none focus:bg-white focus:border-purple-500"
-                  />
+                    className={`w-full px-3 py-2 border rounded-xl font-bold text-xs focus:outline-none cursor-pointer ${
+                      isEditRoomFloorExceeded
+                        ? 'bg-rose-50 border-rose-400 text-rose-900 focus:bg-white focus:border-rose-500'
+                        : 'bg-slate-50 border-slate-200 text-slate-800 focus:bg-white focus:border-purple-500'
+                    }`}
+                  >
+                    {Array.from({ length: maxFloorsForEdit }, (_, i) => i + 1).map((fNum) => (
+                      <option key={fNum} value={`Tầng ${fNum}`}>
+                        Tầng {fNum}
+                      </option>
+                    ))}
+                  </select>
+                  {isEditRoomFloorExceeded && (
+                    <div className="mt-1.5 p-2 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-1.5 text-[11px] text-rose-700 font-semibold">
+                      <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                      <span>Cơ sở này chỉ có {maxFloorsForEdit} tầng. Vui lòng chọn từ tầng 1 đến {maxFloorsForEdit}!</span>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Diện tích (m²) *</label>
@@ -5201,9 +5398,9 @@ export default function RoomsPage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={isEditRoomDuplicate}
+                    disabled={isEditRoomDuplicate || isEditRoomFloorExceeded}
                     className={`px-5 py-2 font-bold rounded-xl shadow-md transition-all ${
-                      isEditRoomDuplicate
+                      isEditRoomDuplicate || isEditRoomFloorExceeded
                         ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                         : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-purple-600/25 cursor-pointer btn-press'
                     }`}

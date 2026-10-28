@@ -303,7 +303,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
         desc,
         time: req.date || 'Hôm nay',
         defaultRead: false,
-        link: '/rooms'
+        link: '/rooms?action=review-requests'
       });
     });
 
@@ -996,6 +996,19 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
                       onClick={() => {
                         markSingleAsRead(notif.id);
                         setShowDropdown(false);
+                        const isReqNotif =
+                          (notif.link && notif.link.includes('action=review-requests')) ||
+                          String(notif.id).includes('-req-') ||
+                          (notif.title && (
+                            notif.title.includes('thuê') ||
+                            notif.title.includes('đăng ký') ||
+                            notif.title.includes('gia hạn') ||
+                            notif.title.includes('trả phòng') ||
+                            notif.title.includes('ở ghép')
+                          ));
+                        if (isReqNotif) {
+                          window.dispatchEvent(new CustomEvent('rental:open-requests-manager', { detail: { notif } }));
+                        }
                       }}
                       className={`p-3 sm:p-3.5 flex items-start gap-2.5 sm:gap-3 transition-colors hover:bg-slate-50 block ${
                         !notif.read ? 'bg-purple-50/40' : ''

@@ -3,6 +3,7 @@ import { Outlet, Navigate, useLocation, Link, NavLink } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Navbar from './Navbar';
 import { useAuth } from '../../contexts/AuthContext';
+import { useData } from '../../contexts/DataContext';
 import {
   ShieldAlert,
   ArrowLeft,
@@ -12,11 +13,14 @@ import {
   Zap,
   Users,
   Layers,
-  Menu
+  Menu,
+  AlertTriangle,
+  FileCheck2
 } from 'lucide-react';
 
 export default function AppLayout() {
   const { user } = useAuth();
+  const { landlordProfiles = [], landlords = [] } = useData() || {};
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -26,6 +30,28 @@ export default function AppLayout() {
 
   const role = user.role || 'ADMIN';
   const path = location.pathname;
+
+  // Kiểm tra hồ sơ KYC nếu user là ROLE_STAFF (Chủ trọ)
+  const currentStaffProfile = role === 'STAFF'
+    ? landlordProfiles.find(
+        (p) =>
+          p.username === user.username ||
+          (user.username === 'staff' && p.id === 1) ||
+          (user.username === 'staff2' && p.id === 2)
+      )
+    : null;
+
+  const currentLandlordAccount = role === 'STAFF'
+    ? landlords.find(
+        (l) =>
+          l.username === user.username ||
+          (user.username === 'staff' && l.id === 1) ||
+          (user.username === 'staff2' && l.id === 2)
+      )
+    : null;
+
+  const isKycRejected = currentStaffProfile?.kycStatus === 'REJECTED' || currentLandlordAccount?.status === 'LOCKED';
+  const rejectionReason = currentStaffProfile?.rejectionReason || currentLandlordAccount?.kycRejectionReason || 'Thông tin cần đối soát lại với căn cước công dân gốc';
 
   // Check RBAC permissions theo chuẩn SRS-RENTAL-2026-V1.0
   const isTenantRestricted =
@@ -146,7 +172,44 @@ export default function AppLayout() {
               </Link>
             </div>
           ) : (
-            <div key={path} className="page-enter">
+            <div key={path} className="page-enter space-y-4">
+              {/* BANNER CẢNH BÁO KYC BỊ THU HỒI / TỪ CHỐI */}
+              {role === 'STAFF' && isKycRejected && (
+                <div className="bg-gradient-to-r from-rose-500/10 via-rose-50 to-amber-50 border-2 border-rose-300 rounded-2xl p-4 sm:p-5 shadow-sm text-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in duration-300">
+                  <div className="flex items-start gap-3.5">
+                    <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-rose-600/30">
+                      <AlertTriangle className="w-5 h-5 animate-bounce" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-md bg-rose-600 text-white text-[11px] font-black uppercase tracking-wider">
+                          Đình Chỉ Tạm Thời
+                        </span>
+                        <h4 className="font-extrabold text-slate-900 text-sm sm:text-base">
+                          Hồ Sơ Định Danh KYC (CCCD) Bị Thu Hồi / Từ Chối
+                        </h4>
+                      </div>
+                      <p className="text-xs text-rose-800 mt-1 leading-relaxed">
+                        Lý do từ Quản trị viên: <strong className="text-rose-950 font-bold underline">{rejectionReason}</strong>.
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Tài khoản của bạn tạm thời bị khóa tính năng mở rộng cơ sở mới và xuất hợp đồng phòng mới theo quy chuẩn an toàn pháp lý.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+                    <button
+                      onClick={() => alert(`📌 Vui lòng liên hệ Admin qua hotline 0912.888.666 hoặc gửi lại ảnh chụp 2 mặt CCCD rõ nét để được phê duyệt lại.`)}
+                      className="w-full sm:w-auto px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm shadow-rose-600/20 flex items-center justify-center gap-1.5 cursor-pointer btn-press"
+                    >
+                      <FileCheck2 className="w-4 h-4" />
+                      <span>Gửi Khiếu Nại / Bổ Sung CCCD</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <Outlet />
             </div>
           )}

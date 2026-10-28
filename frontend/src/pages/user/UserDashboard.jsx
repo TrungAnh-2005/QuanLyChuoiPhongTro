@@ -177,7 +177,7 @@ export default function UserDashboard() {
       const ticketHouse = t.houseCode || (rooms || []).find((r) => r.number === t.room)?.houseCode || (t.room?.startsWith('P.') ? 'CS-01' : null);
       if (!ticketHouse || !staffHouseCodes.includes(ticketHouse)) return false;
     }
-    return t.status === 'OPEN' || t.status === 'PENDING';
+    return t.status !== 'RESOLVED' && t.status !== 'CLOSED';
   }).length;
 
   const staffPaidInvoices = invoices.filter((i) => {
@@ -529,7 +529,10 @@ export default function UserDashboard() {
           </h3>
 
           <div className="space-y-2.5 text-xs">
-            <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-2xl flex items-center justify-between">
+            <Link
+              to="/meters"
+              className="p-3 bg-amber-50/70 hover:bg-amber-100/80 border border-amber-200/80 rounded-2xl flex items-center justify-between transition-colors cursor-pointer block"
+            >
               <div className="flex items-center gap-2.5">
                 <Clock className="w-4 h-4 text-amber-600 shrink-0" />
                 <span className="text-amber-900 font-semibold">Hóa đơn chờ chốt Đ/N</span>
@@ -537,9 +540,12 @@ export default function UserDashboard() {
               <span className="font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-lg font-mono">
                 {pendingMeterCount} phòng
               </span>
-            </div>
+            </Link>
 
-            <div className="p-3 bg-rose-50/70 border border-rose-200/80 rounded-2xl flex items-center justify-between">
+            <Link
+              to="/invoices"
+              className="p-3 bg-rose-50/70 hover:bg-rose-100/80 border border-rose-200/80 rounded-2xl flex items-center justify-between transition-colors cursor-pointer block"
+            >
               <div className="flex items-center gap-2.5">
                 <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
                 <span className="text-rose-900 font-semibold">Hóa đơn quá hạn / chưa thu</span>
@@ -547,17 +553,22 @@ export default function UserDashboard() {
               <span className="font-bold text-rose-800 bg-rose-100 px-2 py-0.5 rounded-lg font-mono">
                 {unpaidCount} hóa đơn
               </span>
-            </div>
+            </Link>
 
-            <div className="p-3 bg-indigo-50/70 border border-indigo-200/80 rounded-2xl flex items-center justify-between">
+            <Link
+              to="/maintenance"
+              className="p-3 bg-indigo-50/70 hover:bg-indigo-100/80 border border-indigo-200/80 rounded-2xl flex items-center justify-between transition-colors cursor-pointer block group"
+            >
               <div className="flex items-center gap-2.5">
-                <Wrench className="w-4 h-4 text-indigo-600 shrink-0" />
-                <span className="text-indigo-900 font-semibold">Yêu cầu bảo trì đang mở</span>
+                <Wrench className="w-4 h-4 text-indigo-600 shrink-0 group-hover:rotate-12 transition-transform" />
+                <span className="text-indigo-900 font-semibold group-hover:underline">Yêu cầu bảo trì đang mở</span>
               </div>
-              <span className="font-bold text-indigo-800 bg-indigo-100 px-2 py-0.5 rounded-lg font-mono">
-                {openTicketsCount || 2} sự cố
+              <span className={`font-bold px-2 py-0.5 rounded-lg font-mono ${
+                openTicketsCount > 0 ? 'text-indigo-800 bg-indigo-100' : 'text-slate-600 bg-slate-100'
+              }`}>
+                {openTicketsCount} sự cố
               </span>
-            </div>
+            </Link>
           </div>
         </div>
       </div>
