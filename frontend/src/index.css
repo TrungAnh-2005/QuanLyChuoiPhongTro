@@ -28,6 +28,29 @@
 
   * {
     font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Triệt tiêu viền outline xấu của browser và hiện tượng out nét khi click / focus vào div và các phần tử */
+  div, section, article, aside, main, header, nav {
+    outline: none;
+  }
+
+  div:focus,
+  div:focus-visible,
+  div:focus-within {
+    outline: none !important;
+  }
+
+  button:focus,
+  a:focus {
+    outline: none;
+  }
+
+  :focus-visible {
+    outline: 2px solid rgba(99, 102, 241, 0.4);
+    outline-offset: 2px;
   }
 
   body {
@@ -166,18 +189,25 @@
   border: 1px solid rgba(226, 232, 240, 0.85);
   border-radius: 1.5rem;
   box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.03), 0 1px 3px rgba(15, 23, 42, 0.02);
-  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1),
-              box-shadow 0.32s cubic-bezier(0.16, 1, 0.3, 1),
-              border-color 0.25s ease;
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.2s ease;
   position: relative;
   overflow: hidden;
+  outline: none;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
-.bento-card:hover {
-  transform: translateY(-3px) scale(1.003);
+.bento-card:hover,
+.bento-card:focus,
+.bento-card:focus-within {
+  transform: translateY(-3px);
   border-color: rgba(99, 102, 241, 0.35);
   box-shadow: 0 20px 40px -12px rgba(99, 102, 241, 0.12),
               0 0 0 1px rgba(99, 102, 241, 0.15);
+  outline: none;
 }
 
 .bento-card-dark {
@@ -188,18 +218,25 @@
   border-radius: 1.75rem;
   box-shadow: 0 16px 36px -6px rgba(0, 0, 0, 0.3);
   color: #fff;
-  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1),
-              box-shadow 0.32s cubic-bezier(0.16, 1, 0.3, 1),
-              border-color 0.25s ease;
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.2s ease;
   position: relative;
   overflow: hidden;
+  outline: none;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
-.bento-card-dark:hover {
+.bento-card-dark:hover,
+.bento-card-dark:focus,
+.bento-card-dark:focus-within {
   transform: translateY(-2.5px);
   border-color: rgba(129, 140, 248, 0.5);
   box-shadow: 0 24px 50px -10px rgba(99, 102, 241, 0.3),
               0 0 0 1px rgba(129, 140, 248, 0.25);
+  outline: none;
 }
 
 /* Shimmer beam effect */
@@ -370,23 +407,37 @@
   transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
               box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1),
               border-color 0.2s ease;
+  outline: none;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
-.card-elevated:hover {
+.card-elevated:hover,
+.card-elevated:focus,
+.card-elevated:focus-within {
   transform: translateY(-2px);
   border-color: rgba(99, 102, 241, 0.28);
   box-shadow: 0 12px 30px -6px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(99, 102, 241, 0.08);
+  outline: none;
 }
 
 .card-interactive {
   transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
               box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1),
               border-color 0.2s ease;
+  outline: none;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
-.card-interactive:hover {
+.card-interactive:hover,
+.card-interactive:focus,
+.card-interactive:focus-within {
   transform: translateY(-2px);
   box-shadow: 0 12px 28px -6px rgba(15, 23, 42, 0.08);
+  outline: none;
 }
 
 /* Text Gradients */
