@@ -22,13 +22,13 @@ import {
   ExternalLink,
   Check
 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
-import PaymentModal from '../components/payment/PaymentModal';
-import Modal from '../components/common/Modal';
-import BuySaasPackageModal from '../components/staff/BuySaasPackageModal';
-import TrialExpiryBanner from '../components/common/TrialExpiryBanner';
-import { getTrialStatus } from '../utils/packagePermissions';
+import { useAuth } from '../../contexts/AuthContext';
+import { useData } from '../../contexts/DataContext';
+import PaymentModal from '../../components/payment/PaymentModal';
+import Modal from '../../components/common/Modal';
+import BuySaasPackageModal from '../../components/staff/BuySaasPackageModal';
+import TrialExpiryBanner from '../../components/common/TrialExpiryBanner';
+import { getTrialStatus } from '../../utils/packagePermissions';
 
 const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
 

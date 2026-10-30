@@ -22,8 +22,8 @@ import {
   ShieldCheck,
   ArrowLeftRight
 } from 'lucide-react';
-import { ocrIdCard, classifyCccdImage, validateCccdMatch } from '../../../services/aiService';
-import { checkKycTrialAbuse, registerKycTrial } from '../../../utils/packagePermissions';
+import { ocrIdCard, classifyCccdImage, validateCccdMatch } from '../../services/aiService';
+import { checkKycTrialAbuse, registerKycTrial } from '../../utils/packagePermissions';
 
 const SAMPLE_LANDLORDS = [
   {

@@ -51,7 +51,7 @@ import {
   simulateSePayWebhookPayload,
   syncBankAccountsFromSePay,
   SEPAY_PORTAL_URL
-} from '../services/sepayService';
+} from '../../services/sepayService';
 import {
   AreaChart,
   Area,
@@ -64,13 +64,13 @@ import {
   Tooltip,
   ResponsiveContainer
 } from 'recharts';
-import { useAuth } from '../contexts/AuthContext';
-import { getRoomImage } from '../data/roomsData';
-import { useData } from '../contexts/DataContext';
-import Modal from '../components/common/Modal';
-import ResidentContractModal from '../components/tenant/ResidentContractModal';
-import RoommateRequestModal from '../components/tenant/RoommateRequestModal';
-import PaymentModal from '../components/payment/PaymentModal';
+import { useAuth } from '../../contexts/AuthContext';
+import { getRoomImage } from '../../data/roomsData';
+import { useData } from '../../contexts/DataContext';
+import Modal from '../../components/common/Modal';
+import ResidentContractModal from '../../components/tenant/ResidentContractModal';
+import RoommateRequestModal from '../../components/tenant/RoommateRequestModal';
+import PaymentModal from '../../components/payment/PaymentModal';
 
 const revenueData = [
   { month: 'T1', revenue: 42000000, target: 40000000 },
@@ -3150,9 +3150,8 @@ export default function Dashboard() {
     ? staffActiveTenants.length
     : (staffActiveTenants.length || (scopedRooms.some((r) => r.status === 'OCCUPIED') ? occupiedCount : 0));
 
-  const staffChartRevenueData = useMemo(() => {
-    if (isZeroSandbox || monthlyPaidRevenue === 0) {
-      return [
+  const staffChartRevenueData = (isZeroSandbox || monthlyPaidRevenue === 0)
+    ? [
         { month: 'T1', revenue: 0, target: 0 },
         { month: 'T2', revenue: 0, target: 0 },
         { month: 'T3', revenue: 0, target: 0 },
@@ -3162,10 +3161,8 @@ export default function Dashboard() {
         { month: 'T7', revenue: 0, target: 0 },
         { month: 'T8', revenue: 0, target: 0 },
         { month: 'T9', revenue: monthlyPaidRevenue, target: totalRooms * 3000000 },
-      ];
-    }
-    return revenueData;
-  }, [isZeroSandbox, monthlyPaidRevenue, totalRooms]);
+      ]
+    : revenueData;
 
   const openTicketsCount = tickets.filter((t) => {
     if (role === 'STAFF') {

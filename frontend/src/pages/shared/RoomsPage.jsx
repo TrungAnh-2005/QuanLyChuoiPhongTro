@@ -43,17 +43,17 @@ import {
   Camera,
   MapPin
 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
-import Modal from '../components/common/Modal';
-import ResidentContractModal from '../components/tenant/ResidentContractModal';
-import RoommateRequestModal from '../components/tenant/RoommateRequestModal';
-import TenantMoveOutNoticeModal from '../components/settlement/TenantMoveOutNoticeModal';
-import MoveOutSettlementModal from '../components/settlement/MoveOutSettlementModal';
-import TrialExpiryBanner from '../components/common/TrialExpiryBanner';
-import { getTrialStatus } from '../utils/packagePermissions';
+import { useAuth } from '../../contexts/AuthContext';
+import { useData } from '../../contexts/DataContext';
+import Modal from '../../components/common/Modal';
+import ResidentContractModal from '../../components/tenant/ResidentContractModal';
+import RoommateRequestModal from '../../components/tenant/RoommateRequestModal';
+import TenantMoveOutNoticeModal from '../../components/settlement/TenantMoveOutNoticeModal';
+import MoveOutSettlementModal from '../../components/settlement/MoveOutSettlementModal';
+import TrialExpiryBanner from '../../components/common/TrialExpiryBanner';
+import { getTrialStatus } from '../../utils/packagePermissions';
 
-import { ALL_ROOMS, HOUSES_LIST, getRoomImage, isDuplicateRoom, isSameHouse, normalizeRoomNumber, normalizeHouseCode, healBoardingHousesList, parseFloorNum } from '../data/roomsData';
+import { ALL_ROOMS, HOUSES_LIST, getRoomImage, isDuplicateRoom, isSameHouse, normalizeRoomNumber, normalizeHouseCode, healBoardingHousesList, parseFloorNum } from '../../data/roomsData';
 export { ALL_ROOMS, HOUSES_LIST };
 
 export const ROOM_IMAGE_PRESETS = [

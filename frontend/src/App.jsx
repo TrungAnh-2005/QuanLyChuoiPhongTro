@@ -3,17 +3,26 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
 import AppLayout from './components/layout/AppLayout';
-import LoginPage from './pages/LoginPage';
-import Dashboard from './pages/Dashboard';
-import BoardingHousesPage from './pages/BoardingHousesPage';
-import RoomsPage from './pages/RoomsPage';
-import TenantsPage from './pages/TenantsPage';
-import MetersPage from './pages/MetersPage';
-import InvoicesPage from './pages/InvoicesPage';
-import MaintenancePage from './pages/MaintenancePage';
-import ReportsPage from './pages/ReportsPage';
-import VNPayReturnPage from './pages/VNPayReturnPage';
-import MoMoReturnPage from './pages/MoMoReturnPage';
+// Auth
+import LoginPage from './pages/auth/LoginPage';
+
+// Shared (dùng chung nhiều vai trò, phân nhánh theo role bên trong)
+import Dashboard from './pages/shared/Dashboard';
+import RoomsPage from './pages/shared/RoomsPage';
+import MetersPage from './pages/shared/MetersPage';
+import InvoicesPage from './pages/shared/InvoicesPage';
+import MaintenancePage from './pages/shared/MaintenancePage';
+import ReportsPage from './pages/shared/ReportsPage';
+
+// Staff (Quản lý / Chủ trọ)
+import BoardingHousesPage from './pages/staff/BoardingHousesPage';
+import TenantsPage from './pages/staff/TenantsPage';
+
+// Payment callbacks
+import VNPayReturnPage from './pages/payment/VNPayReturnPage';
+import MoMoReturnPage from './pages/payment/MoMoReturnPage';
+
+// Admin
 import AdminLandlordsPage from './pages/admin/AdminLandlordsPage';
 import AdminHousesPage from './pages/admin/AdminHousesPage';
 import AdminSaasInvoicesPage from './pages/admin/AdminSaasInvoicesPage';
