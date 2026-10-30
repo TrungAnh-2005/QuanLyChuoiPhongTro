@@ -29,16 +29,16 @@ import {
   Eye,
   Info
 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
-import Modal from '../components/common/Modal';
-import UpgradePromptModal from '../components/common/UpgradePromptModal';
-import BuySaasPackageModal from '../components/staff/BuySaasPackageModal';
-import PaymentModal from '../components/payment/PaymentModal';
-import MeterAiScannerModal from './admin/meters/MeterAiScannerModal';
-import MeterDisputeModal from '../components/tenant/MeterDisputeModal';
-import TrialExpiryBanner from '../components/common/TrialExpiryBanner';
-import { getTrialStatus } from '../utils/packagePermissions';
+import { useAuth } from '../../contexts/AuthContext';
+import { useData } from '../../contexts/DataContext';
+import Modal from '../../components/common/Modal';
+import UpgradePromptModal from '../../components/common/UpgradePromptModal';
+import BuySaasPackageModal from '../../components/staff/BuySaasPackageModal';
+import PaymentModal from '../../components/payment/PaymentModal';
+import MeterAiScannerModal from '../../components/staff/MeterAiScannerModal';
+import MeterDisputeModal from '../../components/tenant/MeterDisputeModal';
+import TrialExpiryBanner from '../../components/common/TrialExpiryBanner';
+import { getTrialStatus } from '../../utils/packagePermissions';
 
 export default function MetersPage() {
   const { user, tenantRooms } = useAuth();
