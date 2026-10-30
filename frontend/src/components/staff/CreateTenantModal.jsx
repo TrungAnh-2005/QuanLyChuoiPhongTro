@@ -23,8 +23,8 @@ import {
   Building2,
   ArrowLeftRight
 } from 'lucide-react';
-import { ocrIdCard, classifyCccdImage, validateCccdMatch, decodeCccdQrCode, parseCccdQrData } from '../../../services/aiService';
-import { useData } from '../../../contexts/DataContext';
+import { ocrIdCard, classifyCccdImage, validateCccdMatch, decodeCccdQrCode, parseCccdQrData } from '../../services/aiService';
+import { useData } from '../../contexts/DataContext';
 
 const FACILITIES = [
   { code: 'CS-01', name: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', shortName: 'Cơ Sở 1 - Cầu Giấy' },

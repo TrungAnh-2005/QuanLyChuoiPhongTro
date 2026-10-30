@@ -2,27 +2,18 @@ import React, { useState, useMemo } from 'react';
 import {
   Wrench,
   Plus,
-  CheckCircle,
-  Clock,
-  AlertCircle,
-  MessageSquare,
-  ShieldCheck,
   Camera,
-  Upload,
   UserCheck,
-  DollarSign,
   Phone,
-  Image,
-  Tag,
-  X,
   Zap,
   Droplets,
   Armchair,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
-import Modal from '../components/common/Modal';
+import { useAuth } from '../../contexts/AuthContext';
+import { useData } from '../../contexts/DataContext';
+import Modal from '../../components/common/Modal';
 
 const CATEGORIES = [
   { id: 'ELECTRICITY', label: 'Hệ thống Điện (Đèn, điều hòa, quạt, ổ cắm)', icon: Zap, color: 'text-amber-600 bg-amber-50 border-amber-200' },
@@ -32,56 +23,26 @@ const CATEGORIES = [
   { id: 'OTHER', label: 'Sự cố khác', icon: Wrench, color: 'text-slate-600 bg-slate-50 border-slate-200' }
 ];
 
-export default function MaintenancePage() {
+export default function UserMaintenancePage() {
   const { user, tenantRooms } = useAuth();
-  const { tickets, createTicket, updateTicketStatus, tenants, addMaintenanceFeeToInvoice, rooms = [] } = useData();
-  const role = user?.role || 'ADMIN';
-  const isTenant = role === 'TENANT';
-  const isStaff = role === 'STAFF';
-  const isAdmin = role === 'ADMIN';
-
-  const staffManageableHouses = useMemo(() => {
-    if (role !== 'STAFF') return [];
-    try {
-      const saved = localStorage.getItem('rental_boarding_houses');
-      const dynamicHouses = saved ? JSON.parse(saved) : [];
-      const u = (user?.username || '').toLowerCase();
-      const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
-      return dynamicHouses.filter((h) => {
-        const created = (h.createdBy || '').toLowerCase();
-        const manager = (h.managerUsername || '').toLowerCase();
-        if (created && created === u) return true;
-        if (manager && manager === u) return true;
-        if (user?.houseCode && h.code === user.houseCode) return true;
-        if (!isZeroSandbox) {
-          if (u === 'staff' && (h.code === 'CS-01' || !h.createdBy)) return true;
-          if (u === 'staff2' && h.code === 'CS-02') return true;
-        }
-        return false;
-      });
-    } catch {
-      return [];
-    }
-  }, [user, role]);
-
-  const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
+  const { tickets, createTicket, tenants, rooms = [] } = useData();
 
   const isTenantNew = user?.username === 'tenant_new' || user?.fullName?.includes('Nam');
-  const userRoom = isTenant && !isTenantNew
+  const userRoom = !isTenantNew
     ? (user?.room !== undefined && user?.room !== null
         ? user.room
         : (tenantRooms?.[user?.username] || tenantRooms?.[user?.fullName] || null))
     : null;
 
   // Lấy toàn bộ các phòng mà khách thuê này đang thuê
-  const currentTenant = tenants.find((t) => {
+  const currentTenant = (tenants || []).find((t) => {
     if (!user) return false;
     const userName = (user.fullName || '').toLowerCase();
     const tName = (t.fullName || '').toLowerCase();
     return userName.includes(tName) || tName.includes(userName.split(' ')[0]);
   });
 
-  const myRentedRooms = isTenant && !isTenantNew
+  const myRentedRooms = !isTenantNew
     ? (currentTenant?.rooms && currentTenant.rooms.length > 0
         ? currentTenant.rooms
         : (currentTenant?.room ? [currentTenant.room] : (userRoom ? [userRoom] : [])))
@@ -90,7 +51,6 @@ export default function MaintenancePage() {
   const activeRentedRooms = (myRentedRooms || []).filter((r) => r && String(r).trim() && String(r).trim() !== 'null' && String(r).trim() !== 'undefined');
 
   const [showModal, setShowModal] = useState(false);
-  const [assignModal, setAssignModal] = useState(null); // ticket being assigned/updated by staff
   const [selectedPhoto, setSelectedPhoto] = useState(null);
 
   const [newTicket, setNewTicket] = useState({
@@ -102,32 +62,19 @@ export default function MaintenancePage() {
     imageUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=600&auto=format&fit=crop'
   });
 
-  const [staffForm, setStaffForm] = useState({
-    technicianName: 'Nguyễn Văn Hùng',
-    technicianPhone: '0988.112.233',
-    cost: 150000,
-    costBearer: 'LANDLORD',
-    addToInvoice: true,
-    status: 'IN_PROGRESS'
-  });
-
-  const handleStatusChange = (id, newStatus) => {
-    updateTicketStatus(id, newStatus);
-  };
-
   const handleCreateTicket = (e) => {
     e.preventDefault();
     if (!newTicket.issue) return;
-    const targetRoomName = isTenant ? (newTicket.room || myRentedRooms[0] || 'Khu vực chung') : newTicket.room;
+    const targetRoomName = newTicket.room || myRentedRooms[0] || 'Khu vực chung';
     const targetRoomObj = (rooms || []).find((r) => r.number === targetRoomName);
-    const resolvedHouseCode = targetRoomObj?.houseCode || (staffHouseCodes[0] || null);
+    const resolvedHouseCode = targetRoomObj?.houseCode || null;
 
     createTicket({
       room: targetRoomName,
       houseCode: resolvedHouseCode,
       category: newTicket.category,
       issue: newTicket.issue,
-      tenant: isTenant ? (user?.fullName || 'Khách thuê') : newTicket.tenant,
+      tenant: user?.fullName || 'Khách thuê',
       priority: newTicket.priority,
       imageUrl: newTicket.imageUrl,
       status: 'PENDING'
@@ -143,93 +90,35 @@ export default function MaintenancePage() {
     });
   };
 
-  const handleSaveStaffAssignment = (e) => {
-    e.preventDefault();
-    if (!assignModal) return;
-    updateTicketStatus(assignModal.id, staffForm.status);
-    // Lưu thông tin thợ và chi phí vào ticket
-    assignModal.technicianName = staffForm.technicianName;
-    assignModal.technicianPhone = staffForm.technicianPhone;
-    assignModal.cost = staffForm.cost;
-    assignModal.costBearer = staffForm.costBearer;
-    // Task 12: Tự động cộng chi phí vào hóa đơn phòng nếu khách chịu chi phí
-    if (staffForm.costBearer === 'TENANT' && staffForm.addToInvoice && staffForm.cost > 0 && addMaintenanceFeeToInvoice) {
-      addMaintenanceFeeToInvoice(assignModal.room, staffForm.cost, `Phí sửa chữa: ${assignModal.issue}`);
-    }
-    setAssignModal(null);
-  };
-
   const displayedTickets = useMemo(() => {
-    if (isTenant) {
-      return tickets.filter(
-        (t) =>
-          myRentedRooms.includes(t.room) ||
-          (typeof t.room === 'string' && t.room.toLowerCase().includes('khu vực chung')) ||
-          (t.tenant && t.tenant.toLowerCase().includes((user?.fullName || '').toLowerCase()))
-      );
-    }
-    if (isStaff) {
-      if (staffHouseCodes.length === 0) return [];
-      return tickets.filter((t) => {
-        if (t.houseCode && staffHouseCodes.includes(t.houseCode)) return true;
-        const ticketRoom = (rooms || []).find((r) => r.number === t.room);
-        if (ticketRoom?.houseCode) {
-          return staffHouseCodes.includes(ticketRoom.houseCode);
-        }
-        // Fallback nhận diện cho phòng demo cơ sở CS-01
-        if (t.room && t.room.startsWith('P.')) {
-          if (staffHouseCodes.includes('CS-01')) return true;
-        }
-        return false;
-      });
-    }
-    return tickets;
-  }, [tickets, isTenant, isStaff, myRentedRooms, user, staffHouseCodes, rooms]);
+    return (tickets || []).filter(
+      (t) =>
+        myRentedRooms.includes(t.room) ||
+        (typeof t.room === 'string' && t.room.toLowerCase().includes('khu vực chung')) ||
+        (t.tenant && t.tenant.toLowerCase().includes((user?.fullName || '').toLowerCase()))
+    );
+  }, [tickets, myRentedRooms, user]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            {isTenant
-              ? `Yêu Cầu Báo Hỏng Thiết Bị (${activeRentedRooms.length > 0 ? activeRentedRooms.map((r) => `P.${String(r).replace('P.', '')}`).join(', ') : 'Chưa Thuê Phòng'})`
-              : 'Yêu Cầu Sửa Chữa & Điều Phối Kỹ Thuật'}
+            Yêu Cầu Báo Hỏng Thiết Bị ({activeRentedRooms.length > 0 ? activeRentedRooms.map((r) => `P.${String(r).replace('P.', '')}`).join(', ') : 'Chưa Thuê Phòng'})
           </h1>
           <p className="text-slate-500 text-sm mt-1 font-medium">
-            {isTenant
-              ? 'Gửi yêu cầu sửa chữa thiết bị, đính kèm hình ảnh hiện trường đến ban quản lý cơ sở.'
-              : 'Tiếp nhận báo hỏng từ cư dân, phân công thợ sửa chữa và theo dõi chi phí phát sinh.'}
+            Gửi yêu cầu sửa chữa thiết bị, đính kèm hình ảnh hiện trường đến ban quản lý cơ sở.
           </p>
         </div>
 
-        {!isAdmin && (
-          <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-sm font-bold rounded-xl shadow-md shadow-purple-600/25 transition-all btn-press cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>{isTenant ? 'Báo Hỏng Thiết Bị Kèm Ảnh' : 'Tạo Phiếu Sửa Chữa Mới'}</span>
-          </button>
-        )}
+        <button
+          onClick={() => setShowModal(true)}
+          className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-sm font-bold rounded-xl shadow-md shadow-purple-600/25 transition-all btn-press cursor-pointer"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Báo Hỏng Thiết Bị Kèm Ảnh</span>
+        </button>
       </div>
-
-      {/* Admin SoD Notice */}
-      {isAdmin && (
-        <div className="p-3.5 bg-slate-900 text-slate-100 rounded-2xl flex items-center justify-between gap-3 shadow-md border border-slate-700 text-xs">
-          <div className="flex items-center gap-2.5">
-            <ShieldCheck className="w-5 h-5 text-indigo-400 shrink-0" />
-            <div>
-              <span className="font-extrabold text-white">Chế độ Giám sát SLA Bảo trì (Platform Administrator):</span>
-              <p className="text-[11px] text-slate-300 mt-0.5">
-                Admin giám sát tổng hợp thời gian phản hồi sự cố & SLA toàn chuỗi. Nghiệp vụ điều phối thợ sửa chữa và nghiệm thu thực tế do Chủ trọ (Staff) thực hiện độc lập theo nguyên tắc Tách biệt Trách nhiệm (SoD).
-              </p>
-            </div>
-          </div>
-          <span className="px-2.5 py-1 bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 rounded-lg text-[10px] font-black uppercase tracking-wider shrink-0">
-            SLA MONITORING
-          </span>
-        </div>
-      )}
 
       {/* Tickets List */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -243,23 +132,19 @@ export default function MaintenancePage() {
                 Chưa có yêu cầu báo hỏng hay sự cố nào
               </h3>
               <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                {isTenant
-                  ? 'Trang thiết bị phòng đang hoạt động bình thường. Nếu phát sinh sự cố điện, nước hoặc nội thất, bạn có thể tạo phiếu mới ngay bên dưới.'
-                  : 'Hiện không có phiếu báo hỏng nào cần xử lý hoặc điều phối thợ.'}
+                Trang thiết bị phòng đang hoạt động bình thường. Nếu phát sinh sự cố điện, nước hoặc nội thất, bạn có thể tạo phiếu mới ngay bên dưới.
               </p>
             </div>
-            {isTenant && (
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-purple-600/20 transition-all btn-press cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Tạo Báo Hỏng Thiết Bị Mới</span>
-                </button>
-              </div>
-            )}
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setShowModal(true)}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-purple-600/20 transition-all btn-press cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Tạo Báo Hỏng Thiết Bị Mới</span>
+              </button>
+            </div>
           </div>
         ) : (
           displayedTickets.map((ticket, idx) => {
@@ -372,26 +257,6 @@ export default function MaintenancePage() {
                         : '🟡 Chờ tiếp nhận'}
                     </span>
                   </div>
-
-                  {isStaff && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAssignModal(ticket);
-                        setStaffForm({
-                          technicianName: ticket.technicianName || 'Nguyễn Văn Hùng',
-                          technicianPhone: ticket.technicianPhone || '0988.112.233',
-                          cost: ticket.cost || 150000,
-                          costBearer: ticket.costBearer || 'LANDLORD',
-                          status: ticket.status || 'IN_PROGRESS'
-                        });
-                      }}
-                      className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs rounded-xl border border-purple-200 transition-colors flex items-center gap-1 cursor-pointer"
-                    >
-                      <Wrench className="w-3.5 h-3.5" />
-                      <span>Điều phối thợ</span>
-                    </button>
-                  )}
                 </div>
               </div>
             );
@@ -399,7 +264,7 @@ export default function MaintenancePage() {
         )}
       </div>
 
-      {/* Modal Tạo Phiếu Báo Hỏng Kèm Ảnh (UC-T04) */}
+      {/* Modal Tạo Phiếu Báo Hỏng Kèm Ảnh */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} maxWidth="max-w-md">
         <h2 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">
           <Wrench className="w-5 h-5 text-purple-600" />
@@ -408,33 +273,22 @@ export default function MaintenancePage() {
         <form onSubmit={handleCreateTicket} className="space-y-3.5 text-xs">
           <div>
             <label className="block font-bold text-slate-700 mb-1">
-              {isTenant ? 'Vị trí / Phòng gặp sự cố' : 'Số phòng hoặc khu vực sự cố'} *
+              Vị trí / Phòng gặp sự cố *
             </label>
-            {isTenant ? (
-              <select
-                value={newTicket.room}
-                onChange={(e) => setNewTicket({ ...newTicket, room: e.target.value })}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:bg-white focus:border-purple-500 cursor-pointer"
-              >
-                {myRentedRooms.map((rm) => (
-                  <option key={rm} value={rm}>
-                    Phòng {rm} (Phòng bạn đang thuê)
-                  </option>
-                ))}
-                <option value="Khu vực chung">
-                  Khu vực sinh hoạt chung (Nhà xe, Sân phơi, Cổng chính)
+            <select
+              value={newTicket.room}
+              onChange={(e) => setNewTicket({ ...newTicket, room: e.target.value })}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:bg-white focus:border-purple-500 cursor-pointer"
+            >
+              {myRentedRooms.map((rm) => (
+                <option key={rm} value={rm}>
+                  Phòng {rm} (Phòng bạn đang thuê)
                 </option>
-              </select>
-            ) : (
-              <input
-                type="text"
-                required
-                placeholder="Ví dụ: P.101 hoặc Khu vực chung"
-                value={newTicket.room}
-                onChange={(e) => setNewTicket({ ...newTicket, room: e.target.value })}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold"
-              />
-            )}
+              ))}
+              <option value="Khu vực chung">
+                Khu vực sinh hoạt chung (Nhà xe, Sân phơi, Cổng chính)
+              </option>
+            </select>
           </div>
 
           <div>
@@ -477,7 +331,6 @@ export default function MaintenancePage() {
             </select>
           </div>
 
-          {/* Photo attachment */}
           <div>
             <label className="block font-bold text-slate-700 mb-1">Hình ảnh bằng chứng hiện trường</label>
             <div className="flex items-center gap-2">
@@ -499,7 +352,7 @@ export default function MaintenancePage() {
                   key={sample.label}
                   type="button"
                   onClick={() => setNewTicket({ ...newTicket, imageUrl: sample.url })}
-                  className="px-2 py-1 bg-slate-100 hover:bg-purple-50 hover:text-purple-700 text-[10px] font-bold rounded-lg border border-slate-200"
+                  className="px-2 py-1 bg-slate-100 hover:bg-purple-50 hover:text-purple-700 text-[10px] font-bold rounded-lg border border-slate-200 cursor-pointer"
                 >
                   + {sample.label}
                 </button>
@@ -511,7 +364,7 @@ export default function MaintenancePage() {
             <button
               type="button"
               onClick={() => setShowModal(false)}
-              className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
+              className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
             >
               Hủy
             </button>
@@ -525,108 +378,6 @@ export default function MaintenancePage() {
         </form>
       </Modal>
 
-      {/* Modal Phân Công Kỹ Thuật Viên & Nghiệm Thu Cho Staff (UC-S05) */}
-      <Modal isOpen={!!assignModal} onClose={() => setAssignModal(null)} maxWidth="max-w-md">
-        {assignModal && (
-          <div>
-            <h2 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">
-              <UserCheck className="w-5 h-5 text-purple-600" />
-              <span>Điều Phối Thợ Sửa Chữa Phòng {assignModal.room}</span>
-            </h2>
-
-            <form onSubmit={handleSaveStaffAssignment} className="space-y-3.5 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Trạng thái xử lý sự cố *</label>
-                <select
-                  value={staffForm.status}
-                  onChange={(e) => setStaffForm({ ...staffForm, status: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold"
-                >
-                  <option value="PENDING">🟡 Chờ tiếp nhận</option>
-                  <option value="IN_PROGRESS">🟣 Đang xử lý / Đã phân công thợ</option>
-                  <option value="RESOLVED">🟢 Đã hoàn tất & Nghiệm thu xong</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Họ tên thợ kỹ thuật *</label>
-                <input
-                  type="text"
-                  required
-                  value={staffForm.technicianName}
-                  onChange={(e) => setStaffForm({ ...staffForm, technicianName: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Số điện thoại liên hệ thợ *</label>
-                <input
-                  type="tel"
-                  required
-                  value={staffForm.technicianPhone}
-                  onChange={(e) => setStaffForm({ ...staffForm, technicianPhone: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Chi phí sửa chữa (VNĐ)</label>
-                  <input
-                    type="number"
-                    value={staffForm.cost}
-                    onChange={(e) => setStaffForm({ ...staffForm, cost: Number(e.target.value) })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Bên chịu chi phí</label>
-                  <select
-                    value={staffForm.costBearer}
-                    onChange={(e) => setStaffForm({ ...staffForm, costBearer: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold"
-                  >
-                    <option value="LANDLORD">Chủ trọ chịu (Bảo hành)</option>
-                    <option value="TENANT">Khách thuê tự chịu</option>
-                  </select>
-                </div>
-              </div>
-
-              {staffForm.costBearer === 'TENANT' && (
-                <div className="pt-1">
-                  <label className="flex items-center gap-2 cursor-pointer p-2.5 bg-purple-50/70 border border-purple-200 rounded-xl text-purple-900 font-semibold">
-                    <input
-                      type="checkbox"
-                      checked={staffForm.addToInvoice}
-                      onChange={(e) => setStaffForm({ ...staffForm, addToInvoice: e.target.checked })}
-                      className="rounded text-purple-600 focus:ring-purple-500"
-                    />
-                    <span>Tự động tính chi phí này vào hóa đơn tháng tiếp theo của phòng</span>
-                  </label>
-                </div>
-              )}
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setAssignModal(null)}
-                  className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 font-bold bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-md cursor-pointer"
-                >
-                  Cập Nhật Tiến Độ & Phân Công
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-      </Modal>
-
       {/* Modal Xem Ảnh Phóng To */}
       {selectedPhoto && (
         <div
@@ -636,7 +387,7 @@ export default function MaintenancePage() {
           <div className="relative max-w-xl max-h-[85vh] bg-slate-900 rounded-2xl overflow-hidden shadow-2xl p-2">
             <button
               onClick={() => setSelectedPhoto(null)}
-              className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-black"
+              className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-black cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
