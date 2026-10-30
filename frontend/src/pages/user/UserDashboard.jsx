@@ -292,23 +292,6 @@ export default function UserDashboard() {
     }
   };
 
-  // Kiểm tra khách đã có đơn trả phòng đang chờ BQL duyệt chưa (Chống spam)
-  const hasPendingCheckoutRequest = useMemo(() => {
-    const uName = (user?.fullName || '').toLowerCase().trim();
-    const uPhone = (user?.phone || '').trim();
-    const myCleanRoom = String(myRoomNumber || '').replace(/^P\.?/i, '').trim();
-    return (roomRequests || []).some((r) => {
-      if (r.type !== 'CHECKOUT') return false;
-      if (r.status !== 'PENDING' && r.status !== 'WAITING_ROOMMATES') return false;
-      const rTenant = (r.tenant || r.tenantName || '').toLowerCase().trim();
-      const rPhone = (r.phone || '').trim();
-      const rRoomClean = String(r.targetRoom || r.currentRoom || r.roomNumber || '').replace(/^P\.?/i, '').trim();
-      const matchTenant = (uName && (rTenant.includes(uName) || uName.includes(rTenant))) || (uPhone && rPhone === uPhone);
-      const matchRoom = myCleanRoom && rRoomClean && myCleanRoom === rRoomClean;
-      return matchTenant || matchRoom;
-    });
-  }, [user, roomRequests, myRoomNumber]);
-
   const isRepresentative = useMemo(() => {
     const rNum = (user?.room || user?.rooms?.[0] || 'P.101');
     const repMember = (roomMembers || []).find(
@@ -391,6 +374,23 @@ export default function UserDashboard() {
     if (found?.status === 'INACTIVE' || (found?.rooms && found.rooms.length === 0)) return null;
     return found?.room || found?.rooms?.[0] || null;
   }, [user, tenants, tenantRooms, isContractPending, contracts]);
+
+  // Kiểm tra khách đã có đơn trả phòng đang chờ BQL duyệt chưa (Chống spam)
+  const hasPendingCheckoutRequest = useMemo(() => {
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    const uPhone = (user?.phone || '').trim();
+    const myCleanRoom = String(myRoomNumber || '').replace(/^P\.?/i, '').trim();
+    return (roomRequests || []).some((r) => {
+      if (r.type !== 'CHECKOUT') return false;
+      if (r.status !== 'PENDING' && r.status !== 'WAITING_ROOMMATES') return false;
+      const rTenant = (r.tenant || r.tenantName || '').toLowerCase().trim();
+      const rPhone = (r.phone || '').trim();
+      const rRoomClean = String(r.targetRoom || r.currentRoom || r.roomNumber || '').replace(/^P\.?/i, '').trim();
+      const matchTenant = (uName && (rTenant.includes(uName) || uName.includes(rTenant))) || (uPhone && rPhone === uPhone);
+      const matchRoom = myCleanRoom && rRoomClean && myCleanRoom === rRoomClean;
+      return matchTenant || matchRoom;
+    });
+  }, [user, roomRequests, myRoomNumber]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
