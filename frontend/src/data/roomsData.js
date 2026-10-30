@@ -203,3 +203,46 @@ export const HOUSES_LIST = [
   { code: 'CS-02', name: 'Nhà Trọ Bách Khoa - Cơ Sở 2', totalRooms: 12 },
   { code: 'CS-03', name: 'Nhà Trọ Đống Đa - Cơ Sở 3', totalRooms: 16 },
 ];
+
+export const ROOM_IMAGE_PRESETS = [
+  { label: 'Phòng Studio Tiêu Chuẩn', url: '/assets/images/room_studio_1.jpg' },
+  { label: 'Căn Duplex Gác Lửng', url: '/assets/images/room_duplex_2.jpg' },
+  { label: 'Phòng Suite Ban Công Penthouse', url: '/assets/images/room_suite_3.jpg' },
+  { label: 'Phòng Ngủ Tối Giản Hiện Đại', url: 'https://images.unsplash.com/photo-1522771739844-6a9f6d5f14af?w=800&auto=format&fit=crop' },
+  { label: 'Phòng Full Nội Thất Cao Cấp', url: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&auto=format&fit=crop' }
+];
+
+export function getHouseFullAddress(h) {
+  if (h?.address && h.address.trim()) return h.address;
+  const name = h?.name || '';
+  const code = h?.code || '';
+  if (code.includes('CS-01') || name.includes('Cầu Giấy')) {
+    return 'Số 45, Ngõ 165 Cầu Giấy, Phường Dịch Vọng, Quận Cầu Giấy, Hà Nội';
+  }
+  if (code.includes('CS-02') || name.includes('Bách Khoa')) {
+    return 'Số 18, Ngõ Tự Do, Phường Đồng Tâm, Quận Hai Bà Trưng, Hà Nội';
+  }
+  if (code.includes('CS-03') || name.includes('Đống Đa')) {
+    return 'Số 92, Phố Chùa Láng, Phường Láng Thượng, Quận Đống Đa, Hà Nội';
+  }
+  return h?.location || 'Thành phố Hà Nội';
+}
+
+export function getHouseDistrict(h) {
+  const addr = getHouseFullAddress(h);
+  const name = h?.name || '';
+  const districts = [
+    'Cầu Giấy', 'Đống Đa', 'Hai Bà Trưng', 'Thanh Xuân', 'Ba Đình', 
+    'Hoàn Kiếm', 'Hoàng Mai', 'Nam Từ Liêm', 'Bắc Từ Liêm', 'Hà Đông', 'Tây Hồ', 'Long Biên'
+  ];
+  for (const d of districts) {
+    if (addr.includes(d) || name.includes(d)) return `Quận ${d}`;
+  }
+  const parts = addr.split(',').map(s => s.trim());
+  if (parts.length >= 2) {
+    const candidate = parts[parts.length - 2];
+    if (candidate && candidate.length < 25) return candidate;
+  }
+  return 'Khu Vực Trung Tâm';
+}
+
