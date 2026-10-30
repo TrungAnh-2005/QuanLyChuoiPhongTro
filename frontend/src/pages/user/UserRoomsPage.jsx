@@ -23,12 +23,139 @@ import Modal from '../../components/common/Modal';
 import ResidentContractModal from '../../components/tenant/ResidentContractModal';
 import RoommateRequestModal from '../../components/tenant/RoommateRequestModal';
 import TenantMoveOutNoticeModal from '../../components/settlement/TenantMoveOutNoticeModal';
-import {
-  getRoomImage,
-  getHouseFullAddress,
-  getHouseDistrict,
-  healBoardingHousesList
-} from '../../data/roomsData';
+export function getRoomImage(room) {
+  if (room?.image) return room.image;
+  const floor = parseInt(room?.floor?.replace(/\D/g, '') || '1', 10);
+  const amenities = Array.isArray(room?.amenities) ? room.amenities : [];
+  if (floor >= 5 || amenities.some(a => typeof a === 'string' && (a.toLowerCase().includes('ban công') || a.toLowerCase().includes('penthouse') || a.toLowerCase().includes('sân phơi')))) {
+    return '/assets/images/room_suite_3.jpg';
+  }
+  if (floor >= 3 || amenities.some(a => typeof a === 'string' && (a.toLowerCase().includes('máy giặt') || a.toLowerCase().includes('tủ lạnh')))) {
+    return '/assets/images/room_duplex_2.jpg';
+  }
+  return '/assets/images/room_studio_1.jpg';
+}
+
+export function getHouseFullAddress(h) {
+  if (h?.address && h.address.trim()) return h.address;
+  const name = h?.name || '';
+  const code = h?.code || '';
+  if (code.includes('CS-01') || name.includes('Cầu Giấy')) {
+    return 'Số 45, Ngõ 165 Cầu Giấy, Phường Dịch Vọng, Quận Cầu Giấy, Hà Nội';
+  }
+  if (code.includes('CS-02') || name.includes('Bách Khoa')) {
+    return 'Số 18, Ngõ Tự Do, Phường Đồng Tâm, Quận Hai Bà Trưng, Hà Nội';
+  }
+  if (code.includes('CS-03') || name.includes('Đống Đa')) {
+    return 'Số 92, Phố Chùa Láng, Phường Láng Thượng, Quận Đống Đa, Hà Nội';
+  }
+  return h?.location || 'Thành phố Hà Nội';
+}
+
+export function getHouseDistrict(h) {
+  const addr = getHouseFullAddress(h);
+  const name = h?.name || '';
+  const districts = [
+    'Cầu Giấy', 'Đống Đa', 'Hai Bà Trưng', 'Thanh Xuân', 'Ba Đình', 
+    'Hoàn Kiếm', 'Hoàng Mai', 'Nam Từ Liêm', 'Bắc Từ Liêm', 'Hà Đông', 'Tây Hồ', 'Long Biên'
+  ];
+  for (const d of districts) {
+    if (addr.includes(d) || name.includes(d)) return `Quận ${d}`;
+  }
+  const parts = addr.split(',').map(s => s.trim());
+  if (parts.length >= 2) {
+    const candidate = parts[parts.length - 2];
+    if (candidate && candidate.length < 25) return candidate;
+  }
+  return 'Khu Vực Trung Tâm';
+}
+
+export function healBoardingHousesList(list) {
+  if (!Array.isArray(list) || list.length === 0) return list;
+
+  let changed = false;
+  const usedCodes = new Set();
+  const codeRenames = {};
+
+  const healed = list.map((h) => {
+    if ((h.code === 'CS-01' || (h.name && h.name.includes('Cầu Giấy'))) && h.floors === 5) {
+      h = { ...h, floors: 4, totalFloors: 4 };
+      changed = true;
+    }
+    const isCustom = (typeof h.id === 'number' && h.id > 1000) || h.createdAtMs || (h.createdAt && !h.features);
+    let code = (h.code || '').trim().toUpperCase();
+    const u = (h.createdBy || h.managerUsername || '').toLowerCase();
+
+    let prefix = 'CS';
+    if (u === 'staff' || u === 'staff1') prefix = 'S1-CS';
+    else if (u === 'staff2') prefix = 'S2-CS';
+    else if (u && u !== 'admin') prefix = `${u.toUpperCase()}-CS`;
+
+    if (isCustom && (code === 'CS-02' || code === 'CS-03')) {
+      code = '';
+    }
+
+    if (!code || usedCodes.has(code)) {
+      let preferredNum = null;
+      const numMatch = (h.name || '').match(/(\d+)/);
+      if (numMatch) {
+        const candidateNum = parseInt(numMatch[1], 10);
+        const candidateCode = `${prefix}-${String(candidateNum).padStart(2, '0')}`;
+        if (!usedCodes.has(candidateCode)) {
+          preferredNum = candidateNum;
+        }
+      }
+
+      let seq = preferredNum || 1;
+      let newCode = `${prefix}-${String(seq).padStart(2, '0')}`;
+      while (usedCodes.has(newCode)) {
+        seq++;
+        newCode = `${prefix}-${String(seq).padStart(2, '0')}`;
+      }
+
+      if (h.code && h.code !== newCode) {
+        codeRenames[h.code] = newCode;
+      }
+      code = newCode;
+      changed = true;
+    }
+
+    usedCodes.add(code);
+    return code !== h.code ? { ...h, code } : h;
+  });
+
+  if (changed) {
+    try {
+      localStorage.setItem('rental_boarding_houses', JSON.stringify(healed));
+    } catch {}
+
+    try {
+      const savedRooms = localStorage.getItem('rental_rooms');
+      if (savedRooms) {
+        const parsedRooms = JSON.parse(savedRooms);
+        if (Array.isArray(parsedRooms)) {
+          let roomsChanged = false;
+          const updatedRooms = parsedRooms.map((r) => {
+            const matchedHouse = healed.find((h) =>
+              (h.name && r.house && (h.name === r.house || String(r.house).trim() === String(h.name).trim())) ||
+              (codeRenames[r.houseCode] && h.code === codeRenames[r.houseCode])
+            );
+            if (matchedHouse && matchedHouse.code !== r.houseCode) {
+              roomsChanged = true;
+              return { ...r, houseCode: matchedHouse.code, house: matchedHouse.name };
+            }
+            return r;
+          });
+          if (roomsChanged) {
+            localStorage.setItem('rental_rooms', JSON.stringify(updatedRooms));
+          }
+        }
+      }
+    } catch {}
+  }
+
+  return healed;
+}
 
 const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
 

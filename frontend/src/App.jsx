@@ -18,9 +18,9 @@ import AdminReportsPage from './pages/admin/AdminReportsPage';
 
 // Staff / Quản lý cơ sở Pages
 import StaffDashboard from './pages/staff/StaffDashboard';
-import BoardingHousesPage from './pages/staff/BoardingHousesPage';
+import BoardingHousesPage from './pages/staff/StaffBoardingHousesPage';
 import StaffRoomsPage from './pages/staff/StaffRoomsPage';
-import TenantsPage from './pages/staff/TenantsPage';
+import TenantsPage from './pages/staff/StaffTenantsPage';
 import StaffMetersPage from './pages/staff/StaffMetersPage';
 import StaffInvoicesPage from './pages/staff/StaffInvoicesPage';
 import StaffMaintenancePage from './pages/staff/StaffMaintenancePage';
