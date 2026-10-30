@@ -5068,29 +5068,20 @@ export const DataProvider = ({ children }) => {
       return next;
     });
 
-    // 4. Cập nhật hồ sơ khách thuê thành INACTIVE và gỡ phòng
+    // 4. Xóa hồ sơ khách thuê hoàn toàn sau nghiệm thu (auto-delete)
     setTenants((prev) => {
-      const next = prev.map((t) => {
+      const reqNorm = (target.tenantName || '').toLowerCase().trim();
+      const next = prev.filter((t) => {
         const tNorm = (t.fullName || '').toLowerCase().trim();
-        const reqNorm = (target.tenantName || '').toLowerCase().trim();
+        // Khớp theo tên hoặc phòng
         const isMatch = (reqNorm && (tNorm.includes(reqNorm) || reqNorm.includes(tNorm))) ||
                         (t.room && isSameRoom(t.room, target.roomNumber)) ||
-                        (t.rooms && t.rooms.some(r => isSameRoom(r, target.roomNumber))) ||
-                        (reqNorm.includes('an') && tNorm.includes('an')) ||
-                        (reqNorm.includes('nam') && tNorm.includes('nam')) ||
-                        (reqNorm.includes('cường') && tNorm.includes('cường'));
-        if (!isMatch) return t;
+                        (t.rooms && t.rooms.some(r => isSameRoom(r, target.roomNumber)));
+        if (!isMatch) return true; // giữ lại những khách không liên quan
+        // Nếu khách có nhiều phòng (ở ghép nhiều cơ sở), chỉ xóa phòng này
         const remainingRooms = (t.rooms || (t.room ? [t.room] : [])).filter(r => !isSameRoom(r, target.roomNumber));
-        const isZero = remainingRooms.length === 0;
-        return {
-          ...t,
-          room: isZero ? null : remainingRooms[0],
-          rooms: remainingRooms,
-          status: isZero ? 'INACTIVE' : t.status,
-          previousRoom: target.roomNumber,
-          leaveDate: new Date().toLocaleDateString('vi-VN'),
-          daysSinceLeave: isZero ? 0 : t.daysSinceLeave
-        };
+        if (remainingRooms.length > 0) return true; // vẫn còn phòng khác -> giữ lại
+        return false; // không còn phòng nào -> xóa hoàn toàn
       });
       try {
         localStorage.setItem('rental_tenants', JSON.stringify(next));

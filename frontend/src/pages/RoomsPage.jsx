@@ -4234,18 +4234,25 @@ export default function RoomsPage() {
                 ))
               )
             ) : (!isTenant
-              ? roomRequests.filter((r) => {
-                  if (!isAllowedReqForStaff(r)) return false;
-                  if (requestFilter === 'ALL') return true;
-                  if (requestFilter === 'PENDING')
-                    return r.status === 'PENDING' || r.status === 'ROOMMATES_APPROVED';
-                  if (requestFilter === 'WAITING')
-                    return r.status === 'WAITING_ROOMMATES';
-                  if (requestFilter === 'APPROVED') return r.status === 'APPROVED';
-                  if (requestFilter === 'REJECTED')
-                    return r.status === 'REJECTED' || r.status === 'REJECTED_BY_ROOMMATES';
-                  return true;
-                })
+              ? (() => {
+                  const fc = roomRequests.filter((r) => {
+                    if (!isAllowedReqForStaff(r)) return false;
+                    if (requestFilter === 'ALL') return true;
+                    if (requestFilter === 'PENDING')
+                      return r.status === 'PENDING' || r.status === 'ROOMMATES_APPROVED';
+                    if (requestFilter === 'WAITING')
+                      return r.status === 'WAITING_ROOMMATES';
+                    if (requestFilter === 'APPROVED') return r.status === 'APPROVED';
+                    if (requestFilter === 'REJECTED')
+                      return r.status === 'REJECTED' || r.status === 'REJECTED_BY_ROOMMATES';
+                    return true;
+                  });
+                  const sc = new Set();
+                  return fc.filter((r) => {
+                    const k = [r.type, (r.targetRoom || r.currentRoom || '').replace(/^P\.?/i, '').trim().toLowerCase(), (r.tenant || '').toLowerCase().trim(), r.status].join('|');
+                    if (sc.has(k)) return false; sc.add(k); return true;
+                  });
+                })()
               : myRequests
             ).length === 0 ? (
               <div className="text-center py-12 text-slate-400 text-xs">
