@@ -3,6 +3,8 @@ import { useSearchParams, Link } from 'react-router-dom';
 import {
   Home,
   MapPin,
+  ArrowRight,
+  ArrowLeft,
   Building2,
   ChevronRight,
   ShieldCheck,
@@ -169,6 +171,7 @@ export default function UserRoomsPage() {
     roomRequests = [],
     tenants = [],
     roomMembers = [],
+    landlords = [],
     submitRoomRequest,
     cancelRoomHold,
     signContractElectronically,
@@ -218,6 +221,20 @@ export default function UserRoomsPage() {
   const [showRequestsHistory, setShowRequestsHistory] = useState(false);
   const [actionToast, setActionToast] = useState(null);
 
+
+  const getLandlordDisplayName = useCallback((house) => {
+    if (!house) return 'Chủ trọ';
+    if (house.landlordName) return house.landlordName;
+    if (house.manager && !['staff', 'staff1', 'staff2', 'admin'].includes(house.manager.toLowerCase())) return house.manager;
+    const uname = (house.managerUsername || house.createdBy || house.manager || '').toLowerCase();
+    const l = (landlords || []).find((ld) => (ld.username || '').toLowerCase() === uname || ld.id === house.landlordId);
+    if (l?.fullName) return l.fullName;
+    if (uname === 'staff' || uname === 'staff1') return 'Lê Thị Thu Ngân';
+    if (uname === 'staff2') return 'Đàm Văn Táo';
+    if (uname === 'admin') return 'Ban Quản Lý Chuỗi';
+    return 'Chủ trọ';
+  }, [landlords]);
+
   const getLandlordKeyFromHouse = useCallback((h) => {
     if (!h) return null;
     const code = (h.code || '').toUpperCase();
@@ -265,37 +282,62 @@ export default function UserRoomsPage() {
 
   // Nhóm cơ sở theo khu vực
   const locationGroups = useMemo(() => {
+    const validHouses = visibleHousesForUser.filter((h) => h.status !== 'PENDING_APPROVAL');
     const map = new Map();
-    visibleHousesForUser.forEach((house) => {
+
+    validHouses.forEach((house) => {
       const district = getHouseDistrict(house);
-      if (!map.has(district)) {
-        map.set(district, []);
-      }
-      map.get(district).push(house);
-    });
-
-    const groups = [];
-    map.forEach((housesInDistrict, district) => {
-      const houseCodes = housesInDistrict.map((h) => h.code);
-      const roomsInDistrict = rooms.filter((r) => houseCodes.includes(r.houseCode));
-      const availableRoomsCount = roomsInDistrict.filter((r) => r.status === 'AVAILABLE').length;
-
-      const prices = roomsInDistrict.map((r) => Number(r.price) || 0).filter((p) => p > 0);
+      const houseRooms = (rooms || []).filter((r) => r.houseCode === house.code);
+      const availableRooms = houseRooms.filter((r) => r.status === 'AVAILABLE');
+      const prices = houseRooms.map((r) => Number(r.price) || 0).filter((p) => p > 0);
       const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
       const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;
 
-      groups.push({
-        district,
-        houses: housesInDistrict,
-        totalRoomsCount: roomsInDistrict.length,
-        availableRoomsCount,
+      if (!map.has(district)) {
+        map.set(district, {
+          district,
+          houses: [],
+          totalRooms: 0,
+          availableRoomsCount: 0,
+          minPrice: minPrice || 0,
+          maxPrice: maxPrice || 0,
+          landlords: new Set()
+        });
+      }
+
+      const group = map.get(district);
+      const owner = getLandlordDisplayName(house);
+      group.houses.push({
+        ...house,
+        address: getHouseFullAddress(house),
+        landlordDisplay: owner,
+        roomsCount: houseRooms.length,
+        availableCount: availableRooms.length,
         minPrice,
         maxPrice
       });
+      group.totalRooms += houseRooms.length;
+      group.availableRoomsCount += availableRooms.length;
+      if (minPrice > 0 && (group.minPrice === 0 || minPrice < group.minPrice)) group.minPrice = minPrice;
+      if (maxPrice > group.maxPrice) group.maxPrice = maxPrice;
+      group.landlords.add(owner);
     });
 
-    return groups;
-  }, [visibleHousesForUser, rooms]);
+    return Array.from(map.values()).map((g) => ({
+      ...g,
+      landlordsList: Array.from(g.landlords)
+    }));
+  }, [visibleHousesForUser, rooms, getLandlordDisplayName]);
+
+  const myRequests = useMemo(() => {
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    const uPhone = (user?.phone || '').trim();
+    return (roomRequests || []).filter((r) => {
+      const rName = (r.tenant || r.tenantName || '').toLowerCase().trim();
+      const rPhone = (r.phone || r.tenantPhone || '').trim();
+      return (uName && (rName.includes(uName) || uName.includes(rName))) || (uPhone && rPhone === uPhone);
+    });
+  }, [roomRequests, user]);
 
   const currentTenant = useMemo(() => {
     if (!user) return null;
@@ -382,10 +424,22 @@ export default function UserRoomsPage() {
             </span>
           </div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            Khám Phá Phòng Trọ & Đặt Cọc Giữ Chỗ
+            {selectedHouse !== 'ALL'
+              ? `Danh Sách Phòng: ${visibleHousesForUser.find((h) => h.code === selectedHouse)?.name || selectedHouse}`
+              : tenantLocation && !tenantViewAllFlat
+              ? `Các Cơ Sở Nhà Trọ Tại ${tenantLocation}`
+              : tenantViewAllFlat
+              ? 'Toàn Bộ Phòng Đang Mở Cho Thuê'
+              : 'Tìm Trọ Theo Địa Chỉ & Cơ Sở'}
           </h1>
           <p className="text-slate-500 text-sm mt-0.5 font-medium">
-            Xem danh sách phòng trống, tiện ích, vị trí và đặt cọc giữ chỗ trực tuyến có bảo chứng hoàn trả.
+            {selectedHouse !== 'ALL'
+              ? `Địa chỉ: ${getHouseFullAddress(visibleHousesForUser.find((h) => h.code === selectedHouse))} • Quản lý: ${visibleHousesForUser.find((h) => h.code === selectedHouse)?.manager || 'Chủ trọ'}`
+              : tenantLocation && !tenantViewAllFlat
+              ? 'Chọn cơ sở bạn muốn xem để khám phá các phòng trống, tiện ích và giá niêm yết.'
+              : tenantViewAllFlat
+              ? 'Đang hiển thị toàn bộ phòng của tất cả các cơ sở trên toàn sàn.'
+              : 'Chọn địa chỉ hoặc khu vực bạn muốn tìm phòng để xem các cơ sở của từng chủ trọ uy tín.'}
           </p>
         </div>
 
@@ -414,10 +468,10 @@ export default function UserRoomsPage() {
           <button
             type="button"
             onClick={() => setShowRequestsHistory(true)}
-            className="px-3.5 py-2 bg-white border border-slate-200 hover:border-purple-300 text-slate-700 font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-purple-200 text-purple-700 hover:bg-purple-50 text-xs font-bold rounded-xl shadow-xs transition-all btn-press cursor-pointer"
           >
-            <FileText className="w-3.5 h-3.5 text-purple-600" />
-            <span>Đơn Của Tôi</span>
+            <FileText className="w-4 h-4" />
+            <span>Lịch Sử Đơn Của Bạn ({myRequests.length})</span>
           </button>
         </div>
       </div>
@@ -495,7 +549,7 @@ export default function UserRoomsPage() {
                 setTenantLocation(null);
                 setSelectedHouse('ALL');
               }}
-              className="flex items-center gap-1.5 text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-3.5 py-1.5 rounded-xl transition-all cursor-pointer"
+              className="flex items-center gap-1.5 text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-3.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs"
             >
               <MapPin className="w-3.5 h-3.5 text-purple-600" />
               <span>Quay lại tìm theo Địa chỉ</span>
@@ -508,8 +562,9 @@ export default function UserRoomsPage() {
                 setSelectedHouse('ALL');
               }}
               className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-purple-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+              title="Xem toàn bộ phòng của tất cả cơ sở dạng lưới phẳng"
             >
-              <span>🏢 Xem tất cả {rooms.length} phòng</span>
+              <span>🏢 Xem nhanh tất cả phòng ({rooms.length})</span>
             </button>
           )}
         </div>
@@ -518,116 +573,210 @@ export default function UserRoomsPage() {
       {/* BƯỚC 1: Chọn Khu Vực */}
       {selectedHouse === 'ALL' && !tenantLocation && !tenantViewAllFlat ? (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-purple-700">
               <MapPin className="w-4 h-4 text-purple-600" />
-              <span>Bước 1: Chọn Khu Vực Bạn Muốn Tìm Trọ</span>
-            </h2>
+              <span>BƯỚC 1: CHỌN ĐỊA CHỈ / KHU VỰC BẠN MUỐN TÌM TRỌ</span>
+            </div>
             <span className="text-xs text-slate-500 font-medium">
-              {locationGroups.length} khu vực ({visibleHousesForUser.length} cơ sở)
+              {locationGroups.length} khu vực ({visibleHousesForUser.length} cơ sở chuỗi)
             </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {locationGroups.map((group) => (
-              <div
-                key={group.district}
-                onClick={() => setTenantLocation(group.district)}
-                className="bento-card p-5 cursor-pointer hover:shadow-xl hover:border-purple-300 hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group border-slate-200/90 bg-white"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-100 to-indigo-100 text-purple-700 flex items-center justify-center font-bold text-xl group-hover:from-purple-600 group-hover:to-indigo-600 group-hover:text-white transition-all shadow-inner">
-                      <MapPin className="w-6 h-6" />
-                    </div>
-                    <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      Còn {group.availableRoomsCount} phòng trống
-                    </span>
-                  </div>
-
-                  <h3 className="text-lg font-black text-slate-900 mt-4 group-hover:text-purple-700 transition-colors">
-                    {group.district}
-                  </h3>
-                  <p className="text-xs text-slate-500 font-medium mt-1">
-                    Gồm {group.houses.length} cơ sở nhà trọ trực thuộc
-                  </p>
-
-                  <div className="mt-4 p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1.5 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Mức giá:</span>
-                      <span className="font-extrabold text-purple-700">
-                        {group.minPrice > 0 ? `${(group.minPrice / 1000000).toFixed(1)} Tr` : '3.0 Tr'} - {group.maxPrice > 0 ? `${(group.maxPrice / 1000000).toFixed(1)} Tr` : '5.0 Tr'}/tháng
+          {locationGroups.length === 0 ? (
+            <div className="p-8 bg-white rounded-2xl border border-slate-200 text-center text-slate-500 text-xs">
+              Hiện chưa có cơ sở nhà trọ nào đang mở cho thuê trên hệ thống.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {locationGroups.map((group) => (
+                <div
+                  key={group.district}
+                  onClick={() => {
+                    setTenantLocation(group.district);
+                    setTenantViewAllFlat(false);
+                  }}
+                  className="bento-card p-5 cursor-pointer hover:shadow-xl hover:border-purple-300 hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group border-slate-200/90 bg-white"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-100 to-indigo-100 text-purple-700 flex items-center justify-center font-bold text-xl group-hover:from-purple-600 group-hover:to-indigo-600 group-hover:text-white transition-all shadow-inner">
+                        <MapPin className="w-6 h-6" />
+                      </div>
+                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+                        🟢 Còn {group.availableRoomsCount} phòng trống
                       </span>
                     </div>
+
+                    <h3 className="text-lg font-black text-slate-900 mt-4 group-hover:text-purple-700 transition-colors">
+                      {group.district}
+                    </h3>
+
+                    <p className="text-xs text-slate-500 font-medium mt-1">
+                      Gồm {group.houses.length} cơ sở nhà trọ trực thuộc
+                    </p>
+
+                    <div className="mt-4 p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Mức giá phổ biến:</span>
+                        <span className="font-extrabold text-purple-700">
+                          {group.minPrice > 0 ? `${(group.minPrice / 1000000).toFixed(1)} Tr` : '3.0 Tr'} – {group.maxPrice > 0 ? `${(group.maxPrice / 1000000).toFixed(1)} Tr` : '5.0 Tr'}/tháng
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-600">
+                        <span>Chủ trọ / Ban QL:</span>
+                        <span className="font-semibold truncate max-w-[150px] text-slate-800" title={(group.landlordsList || []).join(', ')}>
+                          {(group.landlordsList || []).join(', ') || 'Chủ trọ'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-purple-600 group-hover:text-purple-700">
+                    <span>Khám phá các cơ sở tại đây</span>
+                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1.5 transition-transform" />
                   </div>
                 </div>
-
-                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-purple-600 group-hover:text-purple-700">
-                  <span>Khám phá các cơ sở</span>
-                  <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       ) : selectedHouse === 'ALL' && tenantLocation && !tenantViewAllFlat ? (
         /* BƯỚC 2: Chọn Cơ Sở trong Khu Vực */
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-purple-600" />
-              <span>Bước 2: Chọn Cơ Sở Nhà Trọ Tại {tenantLocation}</span>
-            </h2>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-purple-700">
+                <Building2 className="w-4 h-4" />
+                <span>Bước 2: Chọn Cơ Sở Nhà Trọ Tại {tenantLocation}</span>
+              </div>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                Có {(locationGroups.find((g) => g.district === tenantLocation)?.houses || []).length} cơ sở của các chủ trọ đang mở cho thuê. Chọn một cơ sở để xem danh sách phòng:
+              </p>
+            </div>
             <button
               type="button"
               onClick={() => setTenantLocation(null)}
-              className="text-xs font-bold text-purple-600 hover:underline cursor-pointer"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-purple-700 bg-white hover:bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl transition-all cursor-pointer self-start sm:self-auto shadow-2xs"
             >
-              ← Đổi khu vực khác
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Đổi Địa Chỉ Khác</span>
             </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {visibleHousesForUser
-              .filter((h) => getHouseDistrict(h) === tenantLocation)
-              .map((house) => {
-                const houseRooms = rooms.filter((r) => r.houseCode === house.code);
-                const vacantCount = houseRooms.filter((r) => r.status === 'AVAILABLE').length;
-
-                return (
-                  <div
-                    key={house.code}
-                    onClick={() => setSelectedHouse(house.code)}
-                    className="bento-card p-5 cursor-pointer hover:shadow-xl hover:border-purple-300 hover:-translate-y-0.5 transition-all group bg-white border-slate-200/90"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
-                        <Building2 className="w-5 h-5" />
+            {(locationGroups.find((g) => g.district === tenantLocation)?.houses || []).map((house) => {
+              return (
+                <div
+                  key={house.code}
+                  className="bento-card p-5 border-slate-200/90 bg-white flex flex-col justify-between hover:shadow-xl hover:border-purple-300 transition-all duration-300 group"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-black text-base shadow-2xs">
+                          🏢
+                        </span>
+                        <div>
+                          <h4 className="font-black text-slate-900 text-sm group-hover:text-purple-700 transition-colors">
+                            {house.name}
+                          </h4>
+                          <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-100">
+                            {house.code}
+                          </span>
+                        </div>
                       </div>
-                      <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        {vacantCount} phòng trống
+                      <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                        🟢 Còn {house.availableCount} phòng trống
                       </span>
                     </div>
 
-                    <h3 className="text-base font-bold text-slate-900 mt-3 group-hover:text-purple-700 transition-colors">
-                      {house.name}
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-1 line-clamp-2">
-                      {getHouseFullAddress(house)}
-                    </p>
+                    <div className="mt-3 text-xs text-slate-600 flex items-start gap-1.5 bg-slate-50/70 p-2.5 rounded-xl border border-slate-100">
+                      <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
+                      <span className="font-medium leading-relaxed">{house.address}</span>
+                    </div>
 
-                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-purple-600">
-                      <span>Xem sơ đồ & bảng giá phòng</span>
-                      <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                    <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1.5 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Chủ trọ / Quản lý:</span>
+                        <span className="font-bold text-slate-800">{house.landlordDisplay}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Quy mô cơ sở:</span>
+                        <span className="font-semibold text-slate-700">{house.roomsCount} phòng</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Khoảng giá thuê:</span>
+                        <span className="font-extrabold text-purple-700">
+                          {house.minPrice > 0 ? `${house.minPrice.toLocaleString('vi-VN')} đ` : 'Liên hệ'} {house.maxPrice > house.minPrice ? `- ${house.maxPrice.toLocaleString('vi-VN')} đ` : ''}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-1 text-[10px]">
+                      <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-semibold border border-purple-100">Khóa vân tay</span>
+                      <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-semibold border border-purple-100">Camera 24/7</span>
+                      <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-semibold border border-purple-100">Giờ giấc tự do</span>
+                      <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-semibold border border-purple-100">Không chung chủ</span>
                     </div>
                   </div>
-                );
-              })}
+
+                  <div className="mt-5 pt-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedHouse(house.code)}
+                      className="w-full py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-purple-600/20 transition-all btn-press flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <span>Xem Các Phòng Thuộc Cơ Sở Này</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </div>
-      ) : (
+        </div>      ) : (
         /* BƯỚC 3: Danh Sách Phòng Trọ */
         <div className="space-y-4">
+          {/* Banner giới thiệu cơ sở hiện tại dành cho khách thuê ở Bước 3 */}
+          {selectedHouse !== 'ALL' && (
+            <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-purple-50 p-4 rounded-2xl border border-purple-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+              <div className="flex items-start sm:items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold text-lg shadow-sm shrink-0">
+                  🏢
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-extrabold text-sm text-slate-900">
+                      {visibleHousesForUser.find((h) => h.code === selectedHouse)?.name || selectedHouse}
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-md bg-purple-200 text-purple-900 text-[10px] font-black">
+                      {selectedHouse}
+                    </span>
+                  </div>
+                  <p className="text-slate-600 text-xs mt-0.5 flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                    <span>{getHouseFullAddress(visibleHousesForUser.find((h) => h.code === selectedHouse))}</span>
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Chủ trọ / Quản lý: <strong>{visibleHousesForUser.find((h) => h.code === selectedHouse)?.manager || 'Chủ trọ'}</strong>
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedHouse('ALL');
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-purple-700 border border-purple-200 rounded-xl font-bold text-xs shadow-2xs transition-all cursor-pointer self-start sm:self-auto"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Đổi Cơ Sở Khác</span>
+              </button>
+            </div>
+          )}
+
           {/* Filter Bar */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
             <div className="flex items-center gap-2 flex-wrap">
