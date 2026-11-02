@@ -56,12 +56,17 @@ export default function StaffMaintenancePage() {
 
   const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
 
+  const staffRooms = useMemo(() => {
+    if (isAdmin) return rooms || [];
+    return (rooms || []).filter((r) => staffHouseCodes.includes(r.houseCode));
+  }, [rooms, staffHouseCodes, isAdmin]);
+
   const [showModal, setShowModal] = useState(false);
   const [assignModal, setAssignModal] = useState(null);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
 
   const [newTicket, setNewTicket] = useState({
-    room: 'P.101',
+    room: staffRooms[0]?.number || 'Khu vực chung',
     category: 'ELECTRICITY',
     issue: '',
     tenant: 'Quản lý cơ sở',
@@ -80,15 +85,27 @@ export default function StaffMaintenancePage() {
 
   const handleCreateTicket = (e) => {
     e.preventDefault();
-    if (!newTicket.issue) return;
-    const targetRoomObj = (rooms || []).find((r) => r.number === newTicket.room);
+    if (!isAdmin && staffManageableHouses.length === 0) {
+      alert('⚠️ Bạn chưa khởi tạo cơ sở/tòa nhà nào! Vui lòng tạo cơ sở trước khi lập phiếu sửa chữa.');
+      return;
+    }
+    const trimmedIssue = String(newTicket.issue || '').trim();
+    if (!trimmedIssue) {
+      alert('⚠️ Vui lòng nhập mô tả chi tiết sự cố hỏng hóc!');
+      return;
+    }
+    if (!newTicket.room) {
+      alert('⚠️ Vui lòng chọn phòng hoặc khu vực xảy ra sự cố!');
+      return;
+    }
+    const targetRoomObj = staffRooms.find((r) => r.number === newTicket.room);
     const resolvedHouseCode = targetRoomObj?.houseCode || (staffHouseCodes[0] || null);
 
     createTicket({
       room: newTicket.room,
       houseCode: resolvedHouseCode,
       category: newTicket.category,
-      issue: newTicket.issue,
+      issue: trimmedIssue,
       tenant: newTicket.tenant || user?.fullName || 'Quản lý cơ sở',
       priority: newTicket.priority,
       imageUrl: newTicket.imageUrl,
@@ -96,7 +113,7 @@ export default function StaffMaintenancePage() {
     });
     setShowModal(false);
     setNewTicket({
-      room: 'P.101',
+      room: staffRooms[0]?.number || 'Khu vực chung',
       category: 'ELECTRICITY',
       issue: '',
       tenant: 'Quản lý cơ sở',
@@ -108,13 +125,17 @@ export default function StaffMaintenancePage() {
   const handleSaveStaffAssignment = (e) => {
     e.preventDefault();
     if (!assignModal) return;
+    if (Number(staffForm.cost) < 0) {
+      alert('⚠️ Chi phí sửa chữa không được là số âm!');
+      return;
+    }
     updateTicketStatus(assignModal.id, staffForm.status);
     assignModal.technicianName = staffForm.technicianName;
     assignModal.technicianPhone = staffForm.technicianPhone;
-    assignModal.cost = staffForm.cost;
+    assignModal.cost = Math.max(0, Number(staffForm.cost) || 0);
     assignModal.costBearer = staffForm.costBearer;
     if (staffForm.costBearer === 'TENANT' && staffForm.addToInvoice && staffForm.cost > 0 && addMaintenanceFeeToInvoice) {
-      addMaintenanceFeeToInvoice(assignModal.room, staffForm.cost, `Phí sửa chữa: ${assignModal.issue}`);
+      addMaintenanceFeeToInvoice(assignModal.room, Math.max(0, Number(staffForm.cost) || 0), `Phí sửa chữa: ${assignModal.issue}`);
     }
     setAssignModal(null);
   };
@@ -148,7 +169,19 @@ export default function StaffMaintenancePage() {
         </div>
 
         <button
-          onClick={() => setShowModal(true)}
+          onClick={() => {
+            if (!isAdmin && staffManageableHouses.length === 0) {
+              alert(
+                '⚠️ Bạn chưa khởi tạo cơ sở/tòa nhà nào!\n\nVui lòng tạo cơ sở tại mục "Quản lý Chuỗi Cơ Sở" trước khi tạo phiếu sửa chữa.'
+              );
+              return;
+            }
+            setNewTicket((prev) => ({
+              ...prev,
+              room: staffRooms[0]?.number || 'Khu vực chung'
+            }));
+            setShowModal(true);
+          }}
           className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-sm font-bold rounded-xl shadow-md shadow-purple-600/25 transition-all btn-press cursor-pointer"
         >
           <Plus className="w-4 h-4" />
@@ -338,14 +371,19 @@ export default function StaffMaintenancePage() {
             <label className="block font-bold text-slate-700 mb-1">
               Số phòng hoặc khu vực sự cố *
             </label>
-            <input
-              type="text"
+            <select
               required
-              placeholder="Ví dụ: P.101 hoặc Khu vực chung"
               value={newTicket.room}
               onChange={(e) => setNewTicket({ ...newTicket, room: e.target.value })}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold"
-            />
+            >
+              {staffRooms.map((r) => (
+                <option key={r.id || r.number} value={r.number}>
+                  {r.number} ({r.house || r.houseCode})
+                </option>
+              ))}
+              <option value="Khu vực chung">Khu vực chung (Hành lang / Nhà xe / Cổng)</option>
+            </select>
           </div>
 
           <div>

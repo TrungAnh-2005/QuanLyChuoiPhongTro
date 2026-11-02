@@ -43,8 +43,23 @@ export default function LoginPage() {
     setError('');
     setSuccessMsg('');
 
-    if (!regData.fullName || !regData.username || !regData.password) {
-      setError('Vui lòng điền đầy đủ các thông tin bắt buộc.');
+    const trimmedName = String(regData.fullName || '').trim();
+    const trimmedUser = String(regData.username || '').trim();
+    const cleanedPhone = String(regData.phone || '').trim().replace(/[\s.-]/g, '');
+    const cleanedCccd = String(regData.identityCard || '').trim().replace(/\s+/g, '');
+
+    if (!trimmedName || !trimmedUser || !regData.password) {
+      setError('Vui lòng điền đầy đủ Họ tên, Tên đăng nhập và Mật khẩu.');
+      return;
+    }
+
+    if (trimmedUser.length < 3 || /\s/.test(trimmedUser)) {
+      setError('Tên đăng nhập phải có ít nhất 3 ký tự và không chứa khoảng trắng.');
+      return;
+    }
+
+    if (String(regData.password).length < 6) {
+      setError('Mật khẩu phải có độ dài tối thiểu 6 ký tự.');
       return;
     }
 
@@ -53,19 +68,30 @@ export default function LoginPage() {
       return;
     }
 
-    if (selectedRole === 'STAFF' && !regData.identityCard) {
-      setError('Vui lòng nhập Số CCCD để gửi Quản trị viên (Admin) xét duyệt hồ sơ chủ trọ.');
+    if (cleanedPhone && !/^(0|\+84)\d{9,10}$/.test(cleanedPhone)) {
+      setError('Số điện thoại phải gồm 10–11 chữ số hợp lệ (bắt đầu bằng 0 hoặc +84).');
       return;
+    }
+
+    if (selectedRole === 'STAFF') {
+      if (!cleanedCccd) {
+        setError('Vui lòng nhập Số CCCD để gửi Quản trị viên (Admin) xét duyệt hồ sơ chủ trọ.');
+        return;
+      }
+      if (!/^\d{12}$/.test(cleanedCccd)) {
+        setError('Số CCCD gắn chip của Chủ trọ phải gồm đúng 12 chữ số.');
+        return;
+      }
     }
 
     const res = await register({
       role: selectedRole,
-      fullName: regData.fullName,
-      username: regData.username,
-      email: regData.email || `${regData.username}@gmail.com`,
-      phone: regData.phone || '0900.000.000',
+      fullName: trimmedName,
+      username: trimmedUser,
+      email: regData.email || `${trimmedUser}@gmail.com`,
+      phone: cleanedPhone || '0900.000.000',
       password: regData.password,
-      identityCard: regData.identityCard
+      identityCard: cleanedCccd
     });
 
     if (res?.success) {

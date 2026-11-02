@@ -399,7 +399,16 @@ export default function AdminSaasInvoicesPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            const targetLandlord = landlords.find(l => l.id === Number(newSaasInvoice.landlordId)) || landlords[0];
+            const targetLandlord = landlords.find((l) => l.id === Number(newSaasInvoice.landlordId)) || landlords[0];
+            if (!targetLandlord) {
+              alert('⚠️ Chưa có tài khoản Chủ trọ nào trong hệ thống để xuất hóa đơn SaaS!');
+              return;
+            }
+            const amountNum = Number(newSaasInvoice.amount);
+            if (!Number.isFinite(amountNum) || amountNum <= 0) {
+              alert('⚠️ Số tiền hóa đơn thu phí SaaS phải lớn hơn 0 VNĐ!');
+              return;
+            }
             createSaasInvoice({
               landlordId: targetLandlord.id,
               landlordUsername: targetLandlord.username || (targetLandlord.id === 2 ? 'staff2' : 'staff'),
@@ -408,7 +417,7 @@ export default function AdminSaasInvoicesPage() {
               packageName: newSaasInvoice.packageName,
               packageCode: newSaasInvoice.packageCode,
               billingCycle: newSaasInvoice.billingCycle,
-              amount: newSaasInvoice.amount,
+              amount: amountNum,
               dueDate: newSaasInvoice.dueDate
             });
             setShowAddSaasModal(false);

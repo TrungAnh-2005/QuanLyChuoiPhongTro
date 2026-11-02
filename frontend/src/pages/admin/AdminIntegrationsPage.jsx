@@ -66,6 +66,20 @@ export default function AdminIntegrationsPage() {
 
   const handleSave = (e) => {
     e.preventDefault();
+    const cur = configs[activeTab] || {};
+    if (cur.enabled !== false) {
+      const missingCred =
+        (activeTab === 'vnpay' && (!String(cur.tmnCode || '').trim() || !String(cur.hashSecret || '').trim())) ||
+        (activeTab === 'momo' && (!String(cur.partnerCode || '').trim() || !String(cur.accessKey || '').trim())) ||
+        (activeTab === 'aiOcr' && !String(cur.apiKey || '').trim()) ||
+        (activeTab === 'smtp' && (!String(cur.host || '').trim() || !String(cur.username || '').trim())) ||
+        (activeTab === 'sms' && !String(cur.apiKey || '').trim());
+
+      if (missingCred) {
+        alert('⚠️ Vui lòng nhập đầy đủ khóa API / thông tin xác thực bắt buộc trước khi lưu cấu hình đang kích hoạt!');
+        return;
+      }
+    }
     if (updateSystemIntegration) {
       updateSystemIntegration(activeTab, configs[activeTab]);
     }
