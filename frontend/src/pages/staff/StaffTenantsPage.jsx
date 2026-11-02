@@ -721,9 +721,46 @@ export default function TenantsPage() {
 
   const handleCreateTenant = (e) => {
     e.preventDefault();
-    if (!newTenant.fullName || !newTenant.cccd) return;
+    const trimmedName = String(newTenant.fullName || '').trim();
+    const cleanedCccd = String(newTenant.cccd || '').trim().replace(/\s+/g, '');
+    const cleanedPhone = String(newTenant.phone || '').trim().replace(/[\s.-]/g, '');
+
+    if (!trimmedName || !cleanedCccd) {
+      setPwdResetToast({ type: 'ERROR', title: 'Thiếu Thông Tin', message: 'Vui lòng nhập đầy đủ Họ tên và Số CCCD!' });
+      setTimeout(() => setPwdResetToast(null), 4500);
+      return;
+    }
+    if (facilities.length === 0 || !manualHouseCode) {
+      setPwdResetToast({ type: 'ERROR', title: 'Chưa Có Cơ Sở', message: 'Bạn chưa tạo cơ sở/tòa nhà nào. Vui lòng tạo cơ sở trước khi thêm khách thuê!' });
+      setTimeout(() => setPwdResetToast(null), 5000);
+      return;
+    }
+    if (!/^\d{12}$/.test(cleanedCccd)) {
+      setPwdResetToast({ type: 'ERROR', title: 'Sai Định Dạng CCCD', message: 'Số CCCD gắn chip phải gồm đúng 12 chữ số!' });
+      setTimeout(() => setPwdResetToast(null), 4500);
+      return;
+    }
+    if (cleanedPhone && !/^(0|\+84)\d{9,10}$/.test(cleanedPhone)) {
+      setPwdResetToast({ type: 'ERROR', title: 'Sai Số Điện Thoại', message: 'Số điện thoại phải gồm 10–11 chữ số hợp lệ (bắt đầu bằng 0 hoặc +84)!' });
+      setTimeout(() => setPwdResetToast(null), 4500);
+      return;
+    }
+    const isDuplicateCccd = (tenants || []).some(
+      (t) => String(t.cccd || '').trim() === cleanedCccd && t.status === 'ACTIVE'
+    );
+    if (isDuplicateCccd) {
+      setPwdResetToast({ type: 'ERROR', title: 'Trùng Số CCCD', message: `Số CCCD ${cleanedCccd} đã tồn tại trên một hồ sơ khách thuê đang hiệu lực!` });
+      setTimeout(() => setPwdResetToast(null), 5000);
+      return;
+    }
     if (!newTenant.room) {
-      setPwdResetToast({ type: 'ERROR', title: 'Chưa Chọn Phòng', message: 'Vui lòng chọn cơ sở có phòng trống và chọn phòng cần thuê!' }); setTimeout(() => setPwdResetToast(null), 5000);
+      setPwdResetToast({ type: 'ERROR', title: 'Chưa Chọn Phòng', message: 'Vui lòng chọn cơ sở có phòng trống và chọn phòng cần thuê!' });
+      setTimeout(() => setPwdResetToast(null), 5000);
+      return;
+    }
+    if (Number(newTenant.deposit) < 0) {
+      setPwdResetToast({ type: 'ERROR', title: 'Tiền Cọc Không Hợp Lệ', message: 'Số tiền đặt cọc không được là số âm!' });
+      setTimeout(() => setPwdResetToast(null), 4500);
       return;
     }
     const selectedFacilityObj = facilities.find((f) => f.code === manualHouseCode);
@@ -731,6 +768,10 @@ export default function TenantsPage() {
 
     addTenant({
       ...newTenant,
+      fullName: trimmedName,
+      cccd: cleanedCccd,
+      phone: cleanedPhone,
+      deposit: Math.max(0, Number(newTenant.deposit) || 0),
       houseCode: manualHouseCode,
       house: selectedFacilityObj?.name || (facilities[0]?.name || 'Cơ sở nhà trọ'),
       contractEnd: calculatedEnd,
@@ -740,7 +781,7 @@ export default function TenantsPage() {
     setShowModal(false);
     setDeleteNotice({
       type: 'SUCCESS',
-      message: `Đã thêm thành công hồ sơ khách thuê "${newTenant.fullName}" vào phòng ${newTenant.room} (${selectedFacilityObj?.shortName || manualHouseCode})!`
+      message: `Đã thêm thành công hồ sơ khách thuê "${trimmedName}" vào phòng ${newTenant.room} (${selectedFacilityObj?.shortName || manualHouseCode})!`
     });
     setTimeout(() => setDeleteNotice(null), 5000);
     setNewTenant({
@@ -764,27 +805,52 @@ export default function TenantsPage() {
     e.preventDefault();
     if (!editingTenant) return;
 
+    const trimmedName = String(editingTenant.fullName || '').trim();
+    const cleanedCccd = String(editingTenant.cccd || '').trim().replace(/\s+/g, '');
+    const cleanedPhone = String(editingTenant.phone || '').trim().replace(/[\s.-]/g, '');
+
+    if (!trimmedName) {
+      setPwdResetToast({ type: 'ERROR', title: 'Thiếu Họ Tên', message: 'Họ và tên khách thuê không được để trống!' });
+      setTimeout(() => setPwdResetToast(null), 4000);
+      return;
+    }
+    if (cleanedCccd && !/^\d{12}$/.test(cleanedCccd)) {
+      setPwdResetToast({ type: 'ERROR', title: 'Sai Định Dạng CCCD', message: 'Số CCCD gắn chip phải gồm đúng 12 chữ số!' });
+      setTimeout(() => setPwdResetToast(null), 4000);
+      return;
+    }
+    if (cleanedPhone && !/^(0|\+84)\d{9,10}$/.test(cleanedPhone)) {
+      setPwdResetToast({ type: 'ERROR', title: 'Sai Số Điện Thoại', message: 'Số điện thoại phải gồm 10–11 chữ số hợp lệ!' });
+      setTimeout(() => setPwdResetToast(null), 4000);
+      return;
+    }
+    if (Number(editingTenant.deposit) < 0) {
+      setPwdResetToast({ type: 'ERROR', title: 'Tiền Cọc Không Hợp Lệ', message: 'Số tiền đặt cọc không được là số âm!' });
+      setTimeout(() => setPwdResetToast(null), 4000);
+      return;
+    }
+
     // QUY CHẾ HỆ THỐNG: Admin và Staff KHÔNG được sửa trạng thái hợp đồng và các phòng đang thuê!
     // Các dữ liệu này phải tự động cập nhật theo giao dịch của khách hàng.
     // Staff/Admin chỉ chỉnh sửa thông tin cá nhân và tiền cọc.
     updateTenant(editingTenant.id, {
-      fullName: editingTenant.fullName,
-      cccd: editingTenant.cccd,
-      phone: editingTenant.phone,
+      fullName: trimmedName,
+      cccd: cleanedCccd,
+      phone: cleanedPhone,
       email: editingTenant.email,
       hometown: editingTenant.hometown,
-      deposit: Number(editingTenant.deposit) || 0
+      deposit: Math.max(0, Number(editingTenant.deposit) || 0)
     });
 
     if (selectedTenant && selectedTenant.id === editingTenant.id) {
       setSelectedTenant({
         ...selectedTenant,
-        fullName: editingTenant.fullName,
-        cccd: editingTenant.cccd,
-        phone: editingTenant.phone,
+        fullName: trimmedName,
+        cccd: cleanedCccd,
+        phone: cleanedPhone,
         email: editingTenant.email,
         hometown: editingTenant.hometown,
-        deposit: Number(editingTenant.deposit) || 0
+        deposit: Math.max(0, Number(editingTenant.deposit) || 0)
       });
     }
     setEditingTenant(null);
@@ -807,9 +873,28 @@ export default function TenantsPage() {
   return (
     <div className="space-y-6">
       {pwdResetToast && (
-        <div className="fixed top-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700 text-xs font-bold animate-bounce">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span>{pwdResetToast}</span>
+        <div
+          className={`fixed top-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 text-white rounded-2xl shadow-2xl border text-xs font-bold animate-bounce ${
+            typeof pwdResetToast === 'object' && pwdResetToast.type === 'ERROR'
+              ? 'bg-rose-900 border-rose-700'
+              : 'bg-slate-900 border-slate-700'
+          }`}
+        >
+          {typeof pwdResetToast === 'object' && pwdResetToast.type === 'ERROR' ? (
+            <AlertCircle className="w-4 h-4 text-rose-300 shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          )}
+          <div>
+            {typeof pwdResetToast === 'object' ? (
+              <>
+                {pwdResetToast.title && <div className="font-extrabold">{pwdResetToast.title}</div>}
+                <div className="font-medium opacity-95">{pwdResetToast.message || ''}</div>
+              </>
+            ) : (
+              <span>{String(pwdResetToast)}</span>
+            )}
+          </div>
         </div>
       )}
             {/* 2 Tabs Chuyển Đổi Phân Hệ: Hợp Đồng vs Khai Báo Tạm Trú VNeID */}
@@ -870,6 +955,15 @@ export default function TenantsPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
+                if (facilities.length === 0) {
+                  setPwdResetToast({
+                    type: 'ERROR',
+                    title: 'Chưa Khởi Tạo Cơ Sở',
+                    message: 'Vui lòng tạo Cơ sở / Tòa nhà và thêm phòng trống trước khi thêm khách thuê!'
+                  });
+                  setTimeout(() => setPwdResetToast(null), 4500);
+                  return;
+                }
                 if (!isEnterprise) {
                   setShowUpgradeModal(true);
                 } else {
@@ -892,7 +986,18 @@ export default function TenantsPage() {
               )}
             </button>
             <button
-              onClick={() => setShowModal(true)}
+              onClick={() => {
+                if (facilities.length === 0) {
+                  setPwdResetToast({
+                    type: 'ERROR',
+                    title: 'Chưa Khởi Tạo Cơ Sở',
+                    message: 'Vui lòng tạo Cơ sở / Tòa nhà và thêm phòng trống trước khi thêm khách thuê!'
+                  });
+                  setTimeout(() => setPwdResetToast(null), 4500);
+                  return;
+                }
+                setShowModal(true);
+              }}
               className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />

@@ -112,7 +112,15 @@ export default function UserMaintenancePage() {
         </div>
 
         <button
-          onClick={() => setShowModal(true)}
+          onClick={() => {
+            if (activeRentedRooms.length === 0) {
+              alert(
+                '⚠️ Bạn hiện chưa có hợp đồng thuê phòng nào đang hiệu lực!\n\nVui lòng đặt thuê phòng và ký hợp đồng trước khi gửi yêu cầu báo hỏng thiết bị.'
+              );
+              return;
+            }
+            setShowModal(true);
+          }}
           className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-sm font-bold rounded-xl shadow-md shadow-purple-600/25 transition-all btn-press cursor-pointer"
         >
           <Plus className="w-4 h-4" />
@@ -138,7 +146,15 @@ export default function UserMaintenancePage() {
             <div className="pt-2">
               <button
                 type="button"
-                onClick={() => setShowModal(true)}
+                onClick={() => {
+                  if (activeRentedRooms.length === 0) {
+                    alert(
+                      '⚠️ Bạn hiện chưa có hợp đồng thuê phòng nào đang hiệu lực!\n\nVui lòng đặt thuê phòng và ký hợp đồng trước khi gửi yêu cầu báo hỏng thiết bị.'
+                    );
+                    return;
+                  }
+                  setShowModal(true);
+                }}
                 className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-purple-600/20 transition-all btn-press cursor-pointer"
               >
                 <Plus className="w-4 h-4" />

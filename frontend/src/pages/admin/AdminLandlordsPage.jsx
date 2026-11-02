@@ -42,6 +42,7 @@ export default function AdminLandlordsPage() {
     createLandlord,
     toggleLandlordLock,
     updateLandlordPackage,
+    resetLandlordPassword,
     landlordProfiles = [],
     verifyLandlordKyc,
     rooms = []

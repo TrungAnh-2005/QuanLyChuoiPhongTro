@@ -95,6 +95,32 @@ export default function StaffMetersPage() {
       return;
     }
 
+    const target = (readings || []).find((r) => r.id === id);
+    if (target) {
+      const oldE = Number(target.oldElec) || 0;
+      const newE = Number(target.newElec);
+      const oldW = Number(target.oldWater) || 0;
+      const newW = Number(target.newWater);
+
+      if (!Number.isFinite(newE) || newE < oldE) {
+        setSaveToast({
+          type: 'ERROR',
+          message: `⚠️ Không thể chốt số! Chỉ số điện mới của phòng ${target.room} (${target.newElec} kWh) nhỏ hơn chỉ số cũ (${oldE} kWh).`
+        });
+        setTimeout(() => setSaveToast(null), 4500);
+        return;
+      }
+
+      if (!Number.isFinite(newW) || newW < oldW) {
+        setSaveToast({
+          type: 'ERROR',
+          message: `⚠️ Không thể chốt số! Chỉ số nước mới của phòng ${target.room} (${target.newWater} m³) nhỏ hơn chỉ số cũ (${oldW} m³).`
+        });
+        setTimeout(() => setSaveToast(null), 4500);
+        return;
+      }
+    }
+
     saveMeterReading(id);
     setSaveToast({
       type: 'SUCCESS',

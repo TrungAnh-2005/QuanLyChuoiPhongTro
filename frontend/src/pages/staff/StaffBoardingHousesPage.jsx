@@ -552,6 +552,18 @@ export default function BoardingHousesPage() {
       return;
     }
 
+    const floorsVal = Number(editHouseForm.floors);
+    if (!Number.isFinite(floorsVal) || floorsVal < 1 || floorsVal > 50) {
+      alert('⚠️ Số tầng của cơ sở phải từ 1 đến 50 tầng!');
+      return;
+    }
+
+    const cleanedPhone = String(editHouseForm.managerPhone || '').trim().replace(/[\s.-]/g, '');
+    if (cleanedPhone && !/^(0|\+84)\d{9,10}$/.test(cleanedPhone)) {
+      alert('⚠️ Số điện thoại quản lý phải gồm 10–11 chữ số hợp lệ (bắt đầu bằng 0 hoặc +84)!');
+      return;
+    }
+
     const nextList = rawHouses.map((h) => {
       if (h.code === editingHouse.code) {
         return {
@@ -694,6 +706,18 @@ export default function BoardingHousesPage() {
       return;
     }
 
+    const floorsVal = Number(newHouse.floors);
+    if (!Number.isFinite(floorsVal) || floorsVal < 1 || floorsVal > 50) {
+      alert('⚠️ Số tầng của cơ sở phải từ 1 đến 50 tầng!');
+      return;
+    }
+
+    const cleanedPhone = String(newHouse.managerPhone || '').trim().replace(/[\s.-]/g, '');
+    if (cleanedPhone && !/^(0|\+84)\d{9,10}$/.test(cleanedPhone)) {
+      alert('⚠️ Số điện thoại quản lý phải gồm 10–11 chữ số hợp lệ (bắt đầu bằng 0 hoặc +84)!');
+      return;
+    }
+
     if (myHousesCount >= maxHousesAllowed) {
       setShowModal(false);
       setShowUpgradeModal(true);
@@ -798,7 +822,13 @@ export default function BoardingHousesPage() {
           {isStaff && (
             <button
               onClick={() => {
-                const myHouseCode = houses[0]?.code || staffHouseCode || (user?.username === 'staff2' ? 'CS-02' : 'CS-01');
+                if (houses.length === 0) {
+                  alert(
+                    '⚠️ Bạn chưa khởi tạo cơ sở/tòa nhà nào!\n\nVui lòng nhấn "Thêm Cơ Sở Nhà Trọ" trước khi cài đặt biểu giá dịch vụ chi nhánh.'
+                  );
+                  return;
+                }
+                const myHouseCode = houses[0]?.code;
                 setSelectedHouseForConfig(myHouseCode);
                 setServiceConfigModalOpen(true);
               }}
@@ -1041,7 +1071,7 @@ export default function BoardingHousesPage() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {filtered.map((house, idx) => {
-          const occupancyRate = Math.round((house.occupiedRooms / house.totalRooms) * 100);
+          const occupancyRate = house.totalRooms > 0 ? Math.round((house.occupiedRooms / house.totalRooms) * 100) : 0;
           const houseImg = house.imageUrl || house.image || house.thumbnail || (house.code === 'CS-03' ? '/assets/images/house_dong_da.jpg' : '/assets/images/house_cau_giay.jpg');
 
           return (
