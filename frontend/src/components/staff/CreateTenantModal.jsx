@@ -25,11 +25,12 @@ import {
 } from 'lucide-react';
 import { ocrIdCard, classifyCccdImage, validateCccdMatch, decodeCccdQrCode, parseCccdQrData } from '../../services/aiService';
 import { useData } from '../../contexts/DataContext';
+import { useAuth } from '../../contexts/AuthContext';
 
-const FACILITIES = [
-  { code: 'CS-01', name: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', shortName: 'Cơ Sở 1 - Cầu Giấy' },
-  { code: 'CS-02', name: 'Nhà Trọ Bách Khoa - Cơ Sở 2', shortName: 'Cơ Sở 2 - Bách Khoa' },
-  { code: 'CS-03', name: 'Nhà Trọ Đống Đa - Cơ Sở 3', shortName: 'Cơ Sở 3 - Đống Đa' }
+const DEFAULT_FACILITIES = [
+  { code: 'CS-01', name: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', shortName: 'Cơ Sở 1 - Cầu Giấy', createdBy: 'staff', status: 'ACTIVE' },
+  { code: 'CS-02', name: 'Nhà Trọ Bách Khoa - Cơ Sở 2', shortName: 'Cơ Sở 2 - Bách Khoa', createdBy: 'staff2', status: 'ACTIVE' },
+  { code: 'CS-03', name: 'Nhà Trọ Đống Đa - Cơ Sở 3', shortName: 'Cơ Sở 3 - Đống Đa', createdBy: 'admin', status: 'ACTIVE' }
 ];
 
 const SAMPLE_CCCDS = [
@@ -98,9 +99,53 @@ const SAMPLE_CCCDS = [
   }
 ];
 
-export default function CreateTenantModal({ isOpen, onClose, onSaveTenant }) {
+export default function CreateTenantModal({ isOpen, onClose, onSaveTenant, facilities: propFacilities }) {
   const { rooms = [], tenants = [] } = useData();
-  const [selectedHouseCode, setSelectedHouseCode] = useState('CS-01');
+  const { user } = useAuth();
+
+  // Lấy danh sách cơ sở thực tế thuộc quyền quản lý của Chủ trọ đang đăng nhập (và đã duyệt ACTIVE)
+  const dynamicFacilities = useMemo(() => {
+    if (Array.isArray(propFacilities) && propFacilities.length > 0) {
+      return propFacilities;
+    }
+    const isZero = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+    let stored = [];
+    try {
+      const raw = localStorage.getItem('rental_boarding_houses');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) stored = parsed;
+      }
+    } catch {}
+    if (stored.length === 0 && !isZero) {
+      stored = DEFAULT_FACILITIES;
+    }
+    const activeHouses = stored.filter((h) => !h.status || h.status === 'ACTIVE' || h.status === 'APPROVED');
+    if (!user || user.role === 'ADMIN') return activeHouses;
+    const u = (user.username || '').toLowerCase();
+    return activeHouses.filter((h) => {
+      const created = (h.createdBy || '').toLowerCase();
+      const manager = (h.managerUsername || '').toLowerCase();
+      if (created && created === u) return true;
+      if (manager && manager === u) return true;
+      if (user.houseCode && h.code === user.houseCode) return true;
+      if (!isZero) {
+        if (u === 'staff' && (h.code === 'CS-01' || !h.createdBy)) return true;
+        if (u === 'staff2' && h.code === 'CS-02') return true;
+      }
+      return false;
+    });
+  }, [propFacilities, user, isOpen]);
+
+  const [selectedHouseCode, setSelectedHouseCode] = useState(() => dynamicFacilities[0]?.code || '');
+
+  useEffect(() => {
+    if (dynamicFacilities.length > 0 && !dynamicFacilities.some((f) => f.code === selectedHouseCode)) {
+      setSelectedHouseCode(dynamicFacilities[0].code);
+    } else if (dynamicFacilities.length === 0) {
+      setSelectedHouseCode('');
+    }
+  }, [dynamicFacilities, selectedHouseCode]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -416,36 +461,63 @@ export default function CreateTenantModal({ isOpen, onClose, onSaveTenant }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     setSubmitError(null);
-    if (!formData.fullName || !formData.identityCard) {
+    const trimmedName = String(formData.fullName || '').trim();
+    const cleanedCccd = String(formData.identityCard || '').trim().replace(/\s+/g, '');
+    const cleanedPhone = String(formData.phone || '').trim().replace(/[\s.-]/g, '');
+
+    if (!trimmedName || !cleanedCccd) {
       setSubmitError('Họ tên và Số CCCD là thông tin bắt buộc!');
+      return;
+    }
+    if (!/^\d{12}$/.test(cleanedCccd)) {
+      setSubmitError('Số CCCD gắn chip phải gồm đúng 12 chữ số!');
+      return;
+    }
+    if (!cleanedPhone || !/^(0|\+84)\d{9,10}$/.test(cleanedPhone)) {
+      setSubmitError('Vui lòng nhập số điện thoại hợp lệ (10–11 chữ số, bắt đầu bằng 0 hoặc +84)!');
+      return;
+    }
+    const isDuplicateCccd = (tenants || []).some(
+      (t) => String(t.cccd || '').trim() === cleanedCccd && t.status === 'ACTIVE'
+    );
+    if (isDuplicateCccd) {
+      setSubmitError(`Số CCCD ${cleanedCccd} đã tồn tại trên một hồ sơ khách thuê đang hoạt động!`);
+      return;
+    }
+    if (dynamicFacilities.length === 0 || !selectedHouseCode) {
+      setSubmitError('Bạn chưa có cơ sở nhà trọ nào đang hoạt động! Vui lòng tạo cơ sở trước khi thêm khách thuê.');
       return;
     }
     if (!formData.room) {
       setSubmitError('Vui lòng chọn cơ sở có phòng trống và chọn phòng cần thuê!');
       return;
     }
+    if (Number(formData.deposit) < 0) {
+      setSubmitError('Số tiền cọc bảo chứng không được là số âm!');
+      return;
+    }
 
-    const selectedFacilityObj = FACILITIES.find((f) => f.code === selectedHouseCode);
+    const selectedFacilityObj = dynamicFacilities.find((f) => f.code === selectedHouseCode);
     const selectedRoomObj = vacantRooms.find((r) => r.number === formData.room);
 
     const newTenant = {
       id: `T${Date.now().toString().slice(-4)}`,
-      name: formData.fullName,
-      fullName: formData.fullName,
-      phone: formData.phone || '',
-      cccd: formData.identityCard,
+      name: trimmedName,
+      fullName: trimmedName,
+      phone: cleanedPhone,
+      cccd: cleanedCccd,
       gender: formData.gender,
       dob: formData.birthDate,
       hometown: formData.hometown,
       address: formData.address,
       email: formData.email || '',
       houseCode: selectedHouseCode,
-      house: selectedFacilityObj?.name || 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
+      house: selectedFacilityObj?.name || selectedHouseCode,
       room: formData.room,
       rooms: [formData.room],
       status: 'ACTIVE',
       contractDuration: formData.contractDuration,
-      deposit: Number(formData.deposit) || selectedRoomObj?.price || 3500000,
+      deposit: Math.max(0, Number(formData.deposit) || selectedRoomObj?.price || 3500000),
       createdAt: new Date().toISOString()
     };
 
@@ -855,19 +927,23 @@ export default function CreateTenantModal({ isOpen, onClose, onSaveTenant }) {
                   onChange={(e) => setSelectedHouseCode(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-purple-500 focus:bg-white transition-all cursor-pointer"
                 >
-                  {FACILITIES.map((f) => {
-                    const countVacant = (rooms || []).filter((r) => {
-                      if ((r.houseCode || 'CS-01') !== f.code) return false;
-                      if (r.status !== 'AVAILABLE') return false;
-                      if (r.occupants && r.occupants > 0) return false;
-                      return true;
-                    }).length;
-                    return (
-                      <option key={f.code} value={f.code}>
-                        {f.name} ({countVacant} phòng trống)
-                      </option>
-                    );
-                  })}
+                  {dynamicFacilities.length === 0 ? (
+                    <option value="">-- Chưa có cơ sở nào đang hoạt động --</option>
+                  ) : (
+                    dynamicFacilities.map((f) => {
+                      const countVacant = (rooms || []).filter((r) => {
+                        if ((r.houseCode || '') !== f.code) return false;
+                        if (r.status !== 'AVAILABLE') return false;
+                        if (r.occupants && r.occupants > 0) return false;
+                        return true;
+                      }).length;
+                      return (
+                        <option key={f.code} value={f.code}>
+                          {f.name} ({countVacant} phòng trống)
+                        </option>
+                      );
+                    })
+                  )}
                 </select>
               </div>
 

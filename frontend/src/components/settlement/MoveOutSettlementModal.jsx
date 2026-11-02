@@ -208,6 +208,11 @@ export default function MoveOutSettlementModal({ isOpen, onClose, settlement, ro
     e.preventDefault();
     setError('');
 
+    if (Number(formData.damageFee) < 0 || Number(formData.unpaidUtilitiesFee) < 0) {
+      setError('Chi phí bồi thường hư hỏng và cước điện nước phát sinh không được là số âm!');
+      return;
+    }
+
     try {
       if (settlement?.id) {
         settleMoveOut(settlement.id, {

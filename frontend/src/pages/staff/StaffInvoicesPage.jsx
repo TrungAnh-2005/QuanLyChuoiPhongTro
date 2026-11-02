@@ -189,12 +189,24 @@ export default function StaffInvoicesPage({ forcedTab }) {
   };
 
   const handleBatchPublish = () => {
+    const publishable = displayedTenantInvoices.filter(
+      (inv) => inv.status !== 'PAID' && inv.status !== 'PENDING_METER'
+    );
+    if (publishable.length === 0) {
+      setBatchSentToast({
+        success: false,
+        message: '⚠️ Hiện không có hóa đơn chưa thanh toán nào đã chốt số điện nước để phát hành!'
+      });
+      setTimeout(() => setBatchSentToast(null), 4000);
+      return;
+    }
+
     setBatchSending(true);
     setTimeout(() => {
       setBatchSending(false);
       setBatchSentToast({
         success: true,
-        message: 'Đã gửi thông báo hóa đơn qua SMS & Zalo thành công đến tất cả khách thuê!'
+        message: `Đã gửi thông báo ${publishable.length} hóa đơn qua SMS & Zalo thành công đến khách thuê!`
       });
       setTimeout(() => setBatchSentToast(null), 4000);
     }, 1200);
@@ -211,12 +223,15 @@ export default function StaffInvoicesPage({ forcedTab }) {
 
   // Lọc hóa đơn phòng của khách
   const displayedTenantInvoices = useMemo(() => {
+    if (user?.role !== 'ADMIN' && staffHouseCodes.length === 0) {
+      return [];
+    }
     return (invoices || []).filter((inv) => {
-      if (staffHouseCodes.length > 0) {
+      if (user?.role !== 'ADMIN' && staffHouseCodes.length > 0) {
         const matchesHouse =
           (inv.houseCode && staffHouseCodes.includes(inv.houseCode)) ||
           (inv.house && staffHouseCodes.some((code) => inv.house.includes(code))) ||
-          staffHouseCodes.includes('CS-01');
+          (!inv.houseCode && !inv.house && staffHouseCodes.includes('CS-01'));
         if (!matchesHouse) return false;
       }
       if (selectedFacility !== 'ALL') {
@@ -227,7 +242,7 @@ export default function StaffInvoicesPage({ forcedTab }) {
       }
       return true;
     });
-  }, [invoices, staffHouseCodes, selectedFacility]);
+  }, [invoices, staffHouseCodes, selectedFacility, user?.role]);
 
   const filteredTenantInvoices = useMemo(() => {
     return displayedTenantInvoices.filter((inv) => {
