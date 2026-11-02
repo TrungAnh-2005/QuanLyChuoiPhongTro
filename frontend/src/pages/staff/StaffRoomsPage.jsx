@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import {
   Home,
   Plus,
@@ -252,6 +252,7 @@ const HOUSE_COLOR_THEMES = [
 
 export default function StaffRoomsPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const rawParam = searchParams.get('house') || 'ALL';
 
@@ -569,18 +570,32 @@ export default function StaffRoomsPage() {
     }).length;
   }, [dedupedRoomRequests, staffHouseCodes, user?.role]);
 
+  // State & Handler cho Sửa Giá Phòng Trống
+  const [priceErrorMsg, setPriceErrorMsg] = useState('');
+
+  const handleSaveRoomPrice = (e) => {
+    e.preventDefault();
+    if (!roomToEditPrice) {
+      setPriceErrorMsg('Vui lòng chọn một phòng còn trống!');
+      return;
+    }
+    const res = updateRoomPrice(roomToEditPrice.id, newRoomPriceInput);
+    if (!res?.success) {
+      setPriceErrorMsg(res?.message || 'Có lỗi khi cập nhật giá phòng!');
+      return;
+    }
+    setShowPriceEditModal(false);
+    setActionToast(res.message);
+    setTimeout(() => setActionToast(null), 4000);
+  };
+
   const handleOpenAddModal = () => {
-    // 1. Kiểm tra đã tạo cơ sở nào chưa
-    if (staffManageableHouses.length === 0) {
-      setNoHouseWarningModal('NO_HOUSE');
+    // 1. Nếu chưa có cơ sở nào hoặc cơ sở chưa hoạt động: CHUYỂN SANG TRANG CƠ SỞ TRỌ LUÔN
+    if (activeManageableHouses.length === 0 || staffManageableHouses.length === 0) {
+      navigate('/houses');
       return;
     }
-    // 2. Kiểm tra có cơ sở nào đang hoạt động (ACTIVE / APPROVED) hay không
-    if (activeManageableHouses.length === 0) {
-      setNoHouseWarningModal('NO_ACTIVE_HOUSE');
-      return;
-    }
-    // 3. Kiểm tra hạn mức gói cước SaaS
+    // 2. Kiểm tra hạn mức gói cước SaaS
     if (staffRooms.length >= maxRoomsAllowed) {
       setQuotaExceededModal(true);
       return;
@@ -788,11 +803,31 @@ export default function StaffRoomsPage() {
 
           <button
             type="button"
+            onClick={() => {
+              setRoomToEditPrice(null);
+              setNewRoomPriceInput('');
+              setPriceErrorMsg('');
+              setShowPriceEditModal(true);
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2.5 bg-white border border-slate-200 hover:border-purple-300 hover:text-purple-700 text-slate-700 text-xs font-bold rounded-xl shadow-xs transition-all btn-press cursor-pointer"
+            title="Quy định: Chỉ được sửa giá các phòng còn trống"
+          >
+            <Edit3 className="w-3.5 h-3.5 text-purple-600" />
+            <span>Sửa Giá Phòng Trống</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleOpenAddModal}
             className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-purple-600/25 transition-all btn-press cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Thêm Phòng Mới</span>
+            {activeManageableHouses.length === 0 && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-slate-950 shadow-2xs">
+                Cần tạo Cơ sở trước
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -1576,6 +1611,119 @@ export default function StaffRoomsPage() {
           </div>
         </Modal>
       )}
+
+      {/* Modal Sửa Giá Phòng: CHỈ CHO PHÉP SỬA PHÒNG CÒN TRỐNG */}
+      <Modal isOpen={showPriceEditModal} onClose={() => setShowPriceEditModal(false)} maxWidth="max-w-md">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold">
+              <DollarSign className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900">
+                Điều Chỉnh Giá Thuê Phòng
+              </h2>
+              <p className="text-xs text-slate-500">
+                Quy định: Chỉ sửa giá phòng còn trống, không sửa phòng đang có người
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowPriceEditModal(false)}
+            className="p-1 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSaveRoomPrice} className="space-y-4 pt-4 text-xs">
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs space-y-1">
+            <div className="font-bold flex items-center gap-1.5 text-amber-800">
+              <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>Quy định điều chỉnh giá phòng:</span>
+            </div>
+            <p className="text-[11px] text-amber-800 leading-relaxed pl-5.5">
+              Hệ thống <strong>chỉ cho phép sửa giá niêm yết của các phòng CÒN TRỐNG</strong> để đón khách mới. Các phòng <strong>ĐANG CÓ NGƯỜI Ở</strong> sẽ bị khóa, không được sửa giá nhằm bảo vệ tính pháp lý của hợp đồng thuê hiện hành.
+            </p>
+          </div>
+
+          <div>
+            <label className="block font-bold text-slate-700 mb-1">
+              Chọn phòng còn trống cần sửa giá *
+            </label>
+            <select
+              value={roomToEditPrice ? roomToEditPrice.id : ''}
+              onChange={(e) => {
+                const found = (staffRooms || []).find((r) => r.id === Number(e.target.value));
+                setRoomToEditPrice(found || null);
+                if (found) {
+                  setNewRoomPriceInput(String(found.price));
+                } else {
+                  setNewRoomPriceInput('');
+                }
+              }}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:border-purple-500"
+            >
+              <option value="">-- Chọn phòng còn trống --</option>
+              {(staffRooms || [])
+                .filter((r) => r.status === 'AVAILABLE')
+                .map((r) => (
+                  <option key={r.id} value={r.id}>
+                    Phòng {r.number} ({r.houseCode || 'CS'}) - Giá hiện tại: {Number(r.price).toLocaleString('vi-VN')} đ/tháng
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          {roomToEditPrice && (
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">
+                Giá thuê mới (VNĐ / tháng) *
+              </label>
+              <input
+                type="number"
+                step="50000"
+                min="500000"
+                required
+                value={newRoomPriceInput}
+                onChange={(e) => setNewRoomPriceInput(e.target.value)}
+                placeholder="Nhập giá mới (VD: 3500000)"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-mono font-bold text-slate-900 focus:outline-none focus:border-purple-500 text-sm"
+              />
+              <p className="text-[11px] text-slate-400 mt-1">
+                {newRoomPriceInput && !isNaN(Number(newRoomPriceInput))
+                  ? `Bằng chữ: ${Number(newRoomPriceInput).toLocaleString('vi-VN')} đ/tháng`
+                  : ''}
+              </p>
+            </div>
+          )}
+
+          {priceErrorMsg && (
+            <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 font-bold text-xs flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 shrink-0" />
+              <span>{priceErrorMsg}</span>
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setShowPriceEditModal(false)}
+              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer"
+            >
+              Hủy
+            </button>
+            <button
+              type="submit"
+              disabled={!roomToEditPrice || !newRoomPriceInput}
+              className="px-5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-md shadow-purple-600/25 cursor-pointer btn-press"
+            >
+              Lưu Giá Phòng Mới
+            </button>
+          </div>
+        </form>
+      </Modal>
+
     </div>
   );
 }
