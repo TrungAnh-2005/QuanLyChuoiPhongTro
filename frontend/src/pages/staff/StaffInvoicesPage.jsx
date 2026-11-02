@@ -22,6 +22,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 import Modal from '../../components/common/Modal';
+import PaymentModal from '../../components/payment/PaymentModal';
 import BuySaasPackageModal from '../../components/staff/BuySaasPackageModal';
 import TrialExpiryBanner from '../../components/common/TrialExpiryBanner';
 
@@ -33,6 +34,7 @@ export default function StaffInvoicesPage({ forcedTab }) {
     invoices = [],
     payInvoice,
     saasInvoices = [],
+    createSaasInvoice,
     paySaasInvoice,
     resetSaasInvoiceStatus,
     updateLandlordPackage,
@@ -46,8 +48,7 @@ export default function StaffInvoicesPage({ forcedTab }) {
   }, [forcedTab]);
 
   const [selectedSaasInvoice, setSelectedSaasInvoice] = useState(null);
-  const [payingSaasInvoice, setPayingSaasInvoice] = useState(null);
-  const [saasPaySimulated, setSaasPaySimulated] = useState(false);
+  const [payingInvoice, setPayingInvoice] = useState(null);
   const [showBuyPackageModal, setShowBuyPackageModal] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
 
@@ -114,34 +115,77 @@ export default function StaffInvoicesPage({ forcedTab }) {
     });
   }, [saasInvoices, currentLandlord, user]);
 
-  const handleConfirmPurchase = (planData) => {
-    setShowBuyPackageModal(false);
-    const targetLandlordId = currentLandlord?.id || (user?.username === 'staff2' ? 2 : 1);
-    if (updateLandlordPackage) {
-      updateLandlordPackage(targetLandlordId, planData.packageCode);
-    }
-    setBatchSentToast({
-      success: true,
-      message: `Đã cập nhật yêu cầu mua gói ${planData.packageName}. Hóa đơn mới đã được phát hành!`
-    });
-    setTimeout(() => setBatchSentToast(null), 4000);
-  };
+  const handlePaymentSuccess = (inv, method) => {
+    const methodLabel =
+      method === 'VNPAY'
+        ? 'Cổng VNPay Sandbox'
+        : method === 'MOMO'
+        ? 'Ví Điện Tử MoMo Sandbox'
+        : 'Cổng SePay VietQR (Tự động gạch nợ)';
 
-  const handlePaySaasConfirm = (saasInv) => {
-    setSaasPaySimulated(true);
-    setTimeout(() => {
-      paySaasInvoice(saasInv.id, 'Chuyển khoản VietQR', saasInv.packageCode || 'ENTERPRISE', saasInv.landlordId || 1);
-      if (updateLandlordPackage) {
-        updateLandlordPackage(saasInv.landlordId || (user?.username === 'staff2' ? 2 : 1), saasInv.packageCode || 'ENTERPRISE');
+    if (inv?.isSaas || inv?.code?.startsWith('HD-SAAS')) {
+      const pkgCode = inv.packageCode || (inv.amount >= 4000000 ? 'PRO' : 'BASIC');
+      const lId = inv.landlordId || (user?.username === 'staff2' ? 2 : 1);
+
+      if (paySaasInvoice) {
+        paySaasInvoice(inv.id, methodLabel, pkgCode, lId);
       }
-      setSaasPaySimulated(false);
-      setPayingSaasInvoice(null);
+      if (updateLandlordPackage) {
+        updateLandlordPackage(lId, pkgCode);
+      }
+      setPayingInvoice(null);
       setBatchSentToast({
         success: true,
-        message: `Thanh toán hóa đơn gói SaaS ${saasInv.code} thành công! Bản quyền đã được gia hạn tự động.`
+        message: `Nộp cước SaaS ${inv.code} (${Number(inv.total || inv.amount).toLocaleString('vi-VN')} đ) cho Admin qua ${methodLabel} thành công! Bản quyền đã được kích hoạt.`
       });
       setTimeout(() => setBatchSentToast(null), 5000);
-    }, 1200);
+    } else {
+      if (payInvoice) {
+        payInvoice(inv.id, methodLabel);
+      }
+      setPayingInvoice(null);
+      setBatchSentToast({
+        success: true,
+        message: `Đã ghi nhận thanh toán thành công qua ${methodLabel} cho phòng ${inv.room}!`
+      });
+      setTimeout(() => setBatchSentToast(null), 5000);
+    }
+  };
+
+  const handleConfirmPurchase = (planData) => {
+    setShowBuyPackageModal(false);
+    const targetLandlord = currentLandlord || (user?.username === 'staff2' ? (landlords?.[1] || landlords?.[0]) : landlords?.[0]);
+    const targetLandlordId = targetLandlord?.id || (user?.username === 'staff2' ? 2 : 1);
+    const newInv = {
+      id: `SAAS-${Date.now()}`,
+      code: `HD-SAAS-2026-${String((saasInvoices || []).length + 1).padStart(2, '0')}`,
+      landlordId: targetLandlordId,
+      landlordUsername: user?.username || (targetLandlordId === 2 ? 'staff2' : 'staff'),
+      landlordName: targetLandlord?.fullName || user?.fullName || 'Quản lý cơ sở',
+      landlordPhone: targetLandlord?.phone || user?.phone || '0900.000.000',
+      packageName: planData.packageName,
+      packageCode: planData.packageCode,
+      billingCycle: planData.billingCycle,
+      period: `${new Date().toLocaleDateString('vi-VN')} - ${new Date(Date.now() + (planData.months || 12) * 30 * 86400000).toLocaleDateString('vi-VN')}`,
+      amount: planData.amount,
+      total: planData.amount,
+      dueDate: new Date(Date.now() + 7 * 86400000).toLocaleDateString('vi-VN'),
+      status: 'UNPAID',
+      isSaas: true
+    };
+
+    const createdInv = createSaasInvoice ? createSaasInvoice(newInv) : newInv;
+
+    // Mở PaymentModal (SePay VietQR, VNPay Sandbox, MoMo Sandbox) ngay lập tức
+    setPayingInvoice({
+      ...createdInv,
+      total: createdInv.amount,
+      room: createdInv.packageName || createdInv.packageCode,
+      tenant: 'CTCP SaaS Trọ Việt (Web Admin)',
+      packageCode: createdInv.packageCode || 'ENTERPRISE',
+      landlordId: targetLandlordId,
+      isSaas: true
+    });
   };
 
   const handleBatchPublish = () => {
@@ -239,31 +283,6 @@ export default function StaffInvoicesPage({ forcedTab }) {
             <span>{batchSending ? 'Đang gửi SMS & Zalo...' : 'Phát Hành & Gửi Tất Cả Hóa Đơn'}</span>
           </button>
         )}
-      </div>
-
-      {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200">
-        <button
-          onClick={() => setInvoiceTab('TENANT_INVOICES')}
-          className={`px-4 py-2.5 font-bold text-xs border-b-2 transition-all cursor-pointer ${
-            invoiceTab === 'TENANT_INVOICES'
-              ? 'border-purple-600 text-purple-700'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          Thu Tiền Phòng Khách Thuê
-        </button>
-        <button
-          onClick={() => setInvoiceTab('SAAS_INVOICES')}
-          className={`px-4 py-2.5 font-bold text-xs border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
-            invoiceTab === 'SAAS_INVOICES'
-              ? 'border-indigo-600 text-indigo-700'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Crown className="w-3.5 h-3.5 text-amber-500" />
-          <span>Cước Bản Quyền SaaS (Đóng Cho Admin)</span>
-        </button>
       </div>
 
       {/* Batch Sent Toast */}
@@ -394,10 +413,25 @@ export default function StaffInvoicesPage({ forcedTab }) {
                         <td className="py-4 px-5 text-right space-x-1.5">
                           {inv.status !== 'PAID' ? (
                             <button
-                              onClick={() => setPayingSaasInvoice(inv)}
-                              className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
+                              onClick={() => {
+                                setPayingInvoice({
+                                  ...inv,
+                                  id: inv.id,
+                                  code: inv.code,
+                                  total: inv.amount,
+                                  amount: inv.amount,
+                                  room: inv.packageCode || 'Gói Bản Quyền SaaS',
+                                  tenant: 'CTCP SaaS Trọ Việt (Web Admin)',
+                                  packageCode: inv.packageCode || 'ENTERPRISE',
+                                  landlordId: inv.landlordId || (user?.username === 'staff2' ? 2 : 1),
+                                  isSaas: true
+                                });
+                              }}
+                              className="px-3 py-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold text-xs rounded-xl shadow-xs transition btn-press inline-flex items-center gap-1.5 cursor-pointer"
+                              title="Nộp tiền cước cho Admin qua VNPay, MoMo hoặc VietQR"
                             >
-                              Nộp Cước VietQR
+                              <CreditCard className="w-3.5 h-3.5" />
+                              <span>Nộp Tiền SePay / VNPay / MoMo</span>
                             </button>
                           ) : (
                             <button
@@ -708,51 +742,13 @@ export default function StaffInvoicesPage({ forcedTab }) {
         onConfirmPurchase={handleConfirmPurchase}
       />
 
-      {/* Pay SaaS Invoice Modal */}
-      {payingSaasInvoice && (
-        <Modal isOpen={!!payingSaasInvoice} onClose={() => setPayingSaasInvoice(null)} maxWidth="max-w-md">
-          <div className="p-4 space-y-4 text-xs">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <QrCode className="w-5 h-5 text-indigo-600" />
-                <h3 className="font-bold text-slate-900 text-sm">Thanh Toán Phí Gói SaaS</h3>
-              </div>
-              <button onClick={() => setPayingSaasInvoice(null)} className="p-1 text-slate-400 hover:text-slate-700">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="text-center py-2 space-y-3">
-              <div className="inline-block p-3 bg-white rounded-2xl border-2 border-indigo-600/30 shadow-lg">
-                <img
-                  src={`https://api.vietqr.io/image/970422-9999888899-compact2.jpg?amount=${payingSaasInvoice.amount}&addInfo=${encodeURIComponent(payingSaasInvoice.code)}&accountName=${encodeURIComponent('CTCP SAAS TRO VIET')}`}
-                  alt="VietQR Admin Web"
-                  className="w-48 h-48 mx-auto object-contain"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <div className="text-xs text-slate-500">Số tiền cần chuyển:</div>
-                <div className="text-2xl font-black text-indigo-600">
-                  {payingSaasInvoice.amount.toLocaleString('vi-VN')} đ
-                </div>
-                <div className="text-xs font-mono text-slate-700 font-bold bg-slate-100 py-1 px-2 rounded-lg inline-block">
-                  Nội dung CK: {payingSaasInvoice.code}
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={() => handlePaySaasConfirm(payingSaasInvoice)}
-              disabled={saasPaySimulated}
-              className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs rounded-xl shadow-lg transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-            >
-              {saasPaySimulated ? <Clock className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4 stroke-[3]" />}
-              <span>{saasPaySimulated ? 'Đang xác thực giao dịch...' : 'Giả Lập Chuyển Khoản Thành Công'}</span>
-            </button>
-          </div>
-        </Modal>
-      )}
+      {/* Payment Modal (SePay VietQR, VNPay Sandbox, MoMo Sandbox) */}
+      <PaymentModal
+        isOpen={!!payingInvoice}
+        onClose={() => setPayingInvoice(null)}
+        onSuccess={handlePaymentSuccess}
+        invoice={payingInvoice || undefined}
+      />
 
       {/* Modal Xem Hóa Đơn VAT SaaS */}
       {selectedSaasInvoice && (

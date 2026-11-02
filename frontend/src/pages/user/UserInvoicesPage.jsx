@@ -89,8 +89,10 @@ export default function UserInvoicesPage() {
       .reduce((sum, inv) => sum + (inv.total || 0), 0);
   }, [invoices, myRentedRooms, user]);
 
-  const handlePaymentSuccess = (invoiceId) => {
-    payInvoice(invoiceId, 'ONLINE_GATEWAY');
+  const handlePaymentSuccess = (inv, method) => {
+    const invId = inv?.id || inv?.code || inv;
+    const methodLabel = method === 'VNPAY' ? 'VNPay Sandbox' : method === 'MOMO' ? 'MoMo Sandbox' : 'SePay VietQR';
+    payInvoice(invId, methodLabel);
     setPaymentModalInvoice(null);
   };
 
