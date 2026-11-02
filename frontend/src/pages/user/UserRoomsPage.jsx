@@ -213,6 +213,16 @@ export default function UserRoomsPage() {
   }, [user, roomRequests, uName, uPhone]);
 
   // Đơn đăng ký giữ trọ của khách đang chờ Quản lý duyệt
+  // Kiểm tra xem phòng có đơn PENDING từ bất kỳ ai đang chờ Quản lý duyệt hay không
+  const isRoomPendingApproval = (roomNumber, houseCode) => {
+    return (roomRequests || []).some((r) => {
+      const matchRoom = (r.targetRoom === roomNumber || r.roomNumber === roomNumber);
+      const matchHouse = !houseCode || !r.houseCode || r.houseCode === houseCode;
+      const isRentType = r.type === 'RENT' || r.type === 'NEW_RENT' || r.type === 'RENTAL';
+      return matchRoom && matchHouse && isRentType && r.status === 'PENDING';
+    });
+  };
+
   const myPendingRequest = useMemo(() => {
     return (roomRequests || []).find((r) =>
       (r.type === 'RENT' || r.type === 'NEW_RENT' || r.type === 'RENTAL') &&
@@ -493,6 +503,16 @@ export default function UserRoomsPage() {
   const handleDepositClick = (room) => {
     if (myApprovedRequest && (myApprovedRequest.targetRoom === room.number || myApprovedRequest.roomNumber === room.number)) {
       navigate('/');
+      return;
+    }
+    if (isRoomPendingApproval(room.number, room.houseCode)) {
+      const isMine = myPendingRequest && (myPendingRequest.targetRoom === room.number || myPendingRequest.roomNumber === room.number);
+      if (isMine) {
+        setActionToast('ℹ️ Đơn giữ trọ phòng ' + room.number + ' của bạn đang chờ Quản lý cơ sở phê duyệt hồ sơ!');
+      } else {
+        setActionToast('⚠️ Phòng ' + room.number + ' đang có khách đăng ký giữ chỗ và chờ Quản lý duyệt. Vui lòng chọn phòng khác!');
+      }
+      setTimeout(() => setActionToast(null), 4000);
       return;
     }
     if (myPendingRequest && (myPendingRequest.targetRoom === room.number || myPendingRequest.roomNumber === room.number)) {
@@ -994,19 +1014,36 @@ export default function UserRoomsPage() {
                         <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-transparent to-black/20 pointer-events-none" />
 
                         <div className="absolute top-2.5 right-2.5 z-10">
-                          {room.status === 'AVAILABLE' ? (
-                            <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-emerald-500/90 text-white backdrop-blur-md shadow-md">
-                              🟢 Còn trống
-                            </span>
-                          ) : room.status === 'HOLDING' ? (
-                            <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-amber-500/95 text-white backdrop-blur-md shadow-md animate-pulse">
-                              🔒 Đang giữ chỗ
-                            </span>
-                          ) : (
-                            <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-slate-900/80 text-white backdrop-blur-md shadow-md">
-                              Đang thuê
-                            </span>
-                          )}
+                          {(() => {
+                            const isPendingOther = isRoomPendingApproval(room.number, room.houseCode);
+                            if (room.status === 'AVAILABLE') {
+                              if (isPendingOther) {
+                                return (
+                                  <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-amber-500/95 text-white backdrop-blur-md shadow-md flex items-center gap-1 animate-pulse">
+                                    <span>⏳</span>
+                                    <span>Chờ duyệt</span>
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-emerald-500/90 text-white backdrop-blur-md shadow-md">
+                                  🟢 Còn trống
+                                </span>
+                              );
+                            }
+                            if (room.status === 'HOLDING') {
+                              return (
+                                <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-amber-500/95 text-white backdrop-blur-md shadow-md animate-pulse">
+                                  🔒 Đang giữ chỗ
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-slate-900/80 text-white backdrop-blur-md shadow-md">
+                                Đang thuê
+                              </span>
+                            );
+                          })()}
                         </div>
 
                         <div className="absolute bottom-2.5 left-3 right-3 flex items-center justify-between text-white text-xs pointer-events-none">
@@ -1067,13 +1104,14 @@ export default function UserRoomsPage() {
                         (() => {
                           const isThisApproved = myApprovedRequest && (myApprovedRequest.targetRoom === room.number || myApprovedRequest.roomNumber === room.number);
                           const isThisPending = myPendingRequest && (myPendingRequest.targetRoom === room.number || myPendingRequest.roomNumber === room.number);
+                          const isPendingOther = isRoomPendingApproval(room.number, room.houseCode);
 
                           if (isThisApproved) {
                             return (
                               <button
                                 type="button"
                                 onClick={() => navigate('/')}
-                                className="text-xs text-white font-bold px-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-xl shadow-xs transition-all flex-1 text-center btn-press cursor-pointer flex items-center justify-center gap-1"
+                                className="text-xs text-white font-bold px-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-xl shadow-xs transition-all flex-1 text-center btn-press cursor-pointer flex items-center justify-center gap-1 animate-pulse"
                               >
                                 <span>Nộp Cọc & Ký HĐ</span>
                                 <ArrowRight className="w-3.5 h-3.5" />
@@ -1093,6 +1131,21 @@ export default function UserRoomsPage() {
                               >
                                 <Clock className="w-3.5 h-3.5" />
                                 <span>Chờ Quản Lý Duyệt</span>
+                              </button>
+                            );
+                          }
+
+                          // Nếu có khách khác đang gửi đơn PENDING chờ duyệt -> Khóa nút với Khách khác
+                          if (isPendingOther) {
+                            return (
+                              <button
+                                type="button"
+                                disabled
+                                className="text-[11px] text-amber-900 bg-amber-100/90 border border-amber-300/80 font-bold px-2 py-2 rounded-xl shadow-2xs opacity-85 flex-1 text-center cursor-not-allowed flex items-center justify-center gap-1"
+                                title="Phòng này đang có khách gửi đơn đăng ký giữ chỗ và đang chờ Quản lý duyệt hồ sơ"
+                              >
+                                <Clock className="w-3.5 h-3.5 text-amber-700" />
+                                <span>Đang Có Người Chờ Duyệt</span>
                               </button>
                             );
                           }
