@@ -228,7 +228,7 @@ export default function ResidentContractModal({
         <p>
           <strong>1. Thời hạn thuê:</strong> Từ ngày <strong>${contract.startDate || '01/01/2026'}</strong> đến hết ngày <strong>${contract.endDate || '31/12/2026'}</strong>.<br>
           <strong>2. Giá thuê phòng:</strong> <strong>${(contract.rentalPrice || 3500000).toLocaleString('vi-VN')} VNĐ/tháng</strong> (Thanh toán định kỳ hàng tháng trước ngày 05 qua VietQR).<br>
-          <strong>3. Tiền đặt cọc bảo chứng:</strong> <strong>${(contract.depositAmount || 3500000).toLocaleString('vi-VN')} VNĐ</strong> (Được hoàn trả lại khi thanh lý hợp đồng đúng cam kết).<br>
+          <strong>3. Tiền đặt cọc bảo chứng:</strong> <strong>${(contract.depositAmount || contract.deposit || contract.rentalPrice || contract.price || 3500000).toLocaleString('vi-VN')} VNĐ</strong> (Tương đương 01 tháng tiền trọ, được hoàn trả lại khi thanh lý hợp đồng đúng cam kết).<br>
           <strong>4. Biểu giá dịch vụ:</strong> Điện: 3.500 đ/kWh, Nước: 25.000 đ/m³, Rác & Wifi: 100.000 đ/tháng.<br>
           <strong>5. Quy định an toàn & cư trú:</strong> Bên B tuân thủ tối đa 2 người/phòng, khai báo tạm trú đầy đủ, không sang nhượng phòng trái phép.
         </p>
@@ -337,7 +337,7 @@ export default function ResidentContractModal({
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-600">Tiền đặt cọc phòng:</span>
-                <span className="font-bold text-emerald-700">{(contract.depositAmount || 3500000).toLocaleString('vi-VN')} đ</span>
+                <span className="font-bold text-emerald-700">{(contract.depositAmount || contract.deposit || contract.rentalPrice || contract.price || 3500000).toLocaleString('vi-VN')} đ (1 tháng)</span>
               </div>
             </div>
 
@@ -361,6 +361,35 @@ export default function ResidentContractModal({
         ) : (
           /* Luồng Ký Điện Tử e-Sign khi chưa ký */
           <form onSubmit={handleConfirmSign} className="py-4 space-y-4 text-xs">
+            {/* Thẻ thông tin phòng & Tiền cọc 1 tháng */}
+            <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-purple-50 border border-purple-200/80 rounded-2xl p-4 text-xs space-y-2 shadow-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5">
+                  <span>🏢 Phòng {contract.roomNumber}</span>
+                  <span className="text-[11px] font-semibold text-purple-700 bg-purple-100/80 px-2 py-0.5 rounded-md">
+                    {contract.houseName || contract.houseCode || 'Cơ sở chuỗi'}
+                  </span>
+                </span>
+                <span className="text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200">
+                  Giữ Trọ Đặt Cọc
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-purple-100">
+                <div>
+                  <div className="text-[11px] text-slate-500 font-medium">Giá thuê hàng tháng:</div>
+                  <div className="font-bold text-slate-900 text-sm mt-0.5">
+                    {(contract.rentalPrice || contract.price || 3500000).toLocaleString('vi-VN')} đ/tháng
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-slate-500 font-medium">Số tiền đặt cọc giữ trọ:</div>
+                  <div className="font-black text-purple-700 text-sm mt-0.5 flex items-center gap-1">
+                    <span>{(contract.depositAmount || contract.deposit || contract.rentalPrice || contract.price || 3500000).toLocaleString('vi-VN')} đ</span>
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">1 tháng tiền trọ</span>
+                  </div>
+                </div>
+              </div>
+            </div>
             {isHolding && (
               <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 text-xs flex items-start gap-2.5 shadow-xs">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />

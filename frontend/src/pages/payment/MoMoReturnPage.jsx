@@ -78,6 +78,29 @@ export default function MoMoReturnPage() {
         if (typeof updateLandlordPackage === 'function') {
           updateLandlordPackage(targetLandlord, targetPackage);
         }
+      } else if (pendingInfo?.type === 'DEPOSIT') {
+        try {
+          const s = localStorage.getItem('rental_contracts');
+          const list = s ? JSON.parse(s) : [];
+          const updated = list.map(c => {
+            const match = (pendingInfo.contractId && c.id === pendingInfo.contractId) ||
+                          (pendingInfo.contractCode && c.contractCode === pendingInfo.contractCode) ||
+                          (pendingInfo.room && c.roomNumber === pendingInfo.room);
+            if (match) {
+              return {
+                ...c,
+                depositPaid: true,
+                depositPaidAt: new Date().toLocaleString('vi-VN'),
+                depositPaymentMethod: 'Ví MoMo Sandbox',
+                status: c.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING_SIGN'
+              };
+            }
+            return c;
+          });
+          localStorage.setItem('rental_contracts', JSON.stringify(updated));
+          if (pendingInfo.contractId) localStorage.setItem(`rental_deposit_paid_${pendingInfo.contractId}`, 'true');
+          if (pendingInfo.room) localStorage.setItem(`rental_deposit_paid_${pendingInfo.room}`, 'true');
+        } catch {}
       } else {
         keysToPay.forEach((key) => {
           payInvoice(key, 'Ví MoMo Sandbox');

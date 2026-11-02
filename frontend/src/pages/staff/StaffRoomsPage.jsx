@@ -281,6 +281,33 @@ export default function StaffRoomsPage() {
   const [editingRoom, setEditingRoom] = useState(null);
   const [showPriceEditModal, setShowPriceEditModal] = useState(false);
   const [showRequestsManager, setShowRequestsManager] = useState(false);
+  const [highlightedRequestId, setHighlightedRequestId] = useState(null);
+
+  // Tự động mở Modal Duyệt Đơn khi click từ Thông Báo Navbar hoặc URL có action=review-requests
+  useEffect(() => {
+    const action = searchParams.get('action');
+    const reqId = searchParams.get('requestId');
+    if (action === 'review-requests' || reqId) {
+      setShowRequestsManager(true);
+      if (reqId) setHighlightedRequestId(Number(reqId));
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    const handleOpenReqManager = (e) => {
+      setShowRequestsManager(true);
+      if (e?.detail?.requestId) {
+        setHighlightedRequestId(Number(e.detail.requestId));
+      } else if (e?.detail?.notif?.id) {
+        const match = String(e.detail.notif.id).match(/req-(\d+)/);
+        if (match) setHighlightedRequestId(Number(match[1]));
+      }
+    };
+    window.addEventListener('rental:open-requests-manager', handleOpenReqManager);
+    return () => {
+      window.removeEventListener('rental:open-requests-manager', handleOpenReqManager);
+    };
+  }, []);
   const [selectedRoomForMembers, setSelectedRoomForMembers] = useState(null);
   const [activeSettlementModal, setActiveSettlementModal] = useState(null);
   const [quotaExceededModal, setQuotaExceededModal] = useState(false);
@@ -349,6 +376,15 @@ export default function StaffRoomsPage() {
       return true;
     });
   }, [roomRequests]);
+
+  const sortedDedupedRequests = useMemo(() => {
+    if (!highlightedRequestId) return dedupedRoomRequests;
+    return [...dedupedRoomRequests].sort((a, b) => {
+      if (Number(a.id) === Number(highlightedRequestId)) return -1;
+      if (Number(b.id) === Number(highlightedRequestId)) return 1;
+      return 0;
+    });
+  }, [dedupedRoomRequests, highlightedRequestId]);
 
   const pendingRequestsCount = useMemo(() => {
     return dedupedRoomRequests.filter((req) => {
@@ -836,34 +872,75 @@ export default function StaffRoomsPage() {
 
       {/* Modal Duyệt Đơn Yêu Cầu Cư Dân */}
       {showRequestsManager && (
-        <Modal isOpen={showRequestsManager} onClose={() => setShowRequestsManager(false)} maxWidth="max-w-lg">
+        <Modal
+          isOpen={showRequestsManager}
+          onClose={() => {
+            setShowRequestsManager(false);
+            setHighlightedRequestId(null);
+            if (searchParams.get('action') || searchParams.get('requestId')) {
+              const newParams = new URLSearchParams(searchParams);
+              newParams.delete('action');
+              newParams.delete('requestId');
+              setSearchParams(newParams, { replace: true });
+            }
+          }}
+          maxWidth="max-w-lg"
+        >
           <div className="space-y-4 text-xs">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="font-bold text-slate-900 text-sm">Xét Duyệt Đơn Từ Cư Dân ({pendingRequestsCount} Đơn Chờ)</h3>
-              <button onClick={() => setShowRequestsManager(false)} className="p-1 text-slate-400 hover:text-slate-700">
+              <button
+                onClick={() => {
+                  setShowRequestsManager(false);
+                  setHighlightedRequestId(null);
+                  if (searchParams.get('action') || searchParams.get('requestId')) {
+                    const newParams = new URLSearchParams(searchParams);
+                    newParams.delete('action');
+                    newParams.delete('requestId');
+                    setSearchParams(newParams, { replace: true });
+                  }
+                }}
+                className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="space-y-2 max-h-96 overflow-y-auto">
-              {dedupedRoomRequests.length === 0 ? (
+              {sortedDedupedRequests.length === 0 ? (
                 <p className="text-center py-6 text-slate-400">Không có đơn nào cần xử lý</p>
               ) : (
-                dedupedRoomRequests.map((req) => (
-                  <div key={req.id} className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-900">
-                        {req.type === 'RENTAL' ? 'Đơn Thuê / Đặt Cọc' : req.type === 'ROOMMATE' ? 'Tìm Ở Ghép' : 'Báo Trả Phòng'}
-                      </span>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        req.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                      }`}>
-                        {req.status === 'APPROVED' ? 'Đã duyệt' : 'Chờ duyệt'}
-                      </span>
-                    </div>
+                sortedDedupedRequests.map((req) => {
+                  const isHighlighted = highlightedRequestId && Number(req.id) === Number(highlightedRequestId);
+                  return (
+                    <div
+                      key={req.id}
+                      className={`p-3.5 rounded-xl border transition-all space-y-2 ${
+                        isHighlighted
+                          ? 'bg-purple-50/90 border-purple-500 shadow-md ring-2 ring-purple-400'
+                          : 'bg-slate-50 border-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-slate-900">
+                            {['RENTAL', 'RENT', 'NEW_RENT'].includes(req.type) ? 'Đơn Thuê / Giữ Trọ Đặt Cọc' : req.type === 'ROOMMATE' ? 'Tìm Ở Ghép' : req.type === 'TRANSFER' ? 'Chuyển Phòng' : 'Báo Trả Phòng'}
+                          </span>
+                          {isHighlighted && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-purple-600 text-white animate-pulse">
+                              ✨ Đơn Vừa Chọn
+                            </span>
+                          )}
+                        </div>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          req.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {req.status === 'APPROVED' ? 'Đã duyệt' : 'Chờ duyệt'}
+                        </span>
+                      </div>
 
-                    <div className="text-slate-600 space-y-0.5">
-                      <div>Khách: <strong>{req.tenantName || req.sender}</strong> ({req.phone || 'Chưa có SĐT'})</div>
+                      <div className="text-slate-600 space-y-0.5">
+                        <div>Khách: <strong>{req.tenantName || req.tenant || req.sender}</strong> ({req.phone || 'Chưa có SĐT'})</div>
                       <div>Phòng: <strong>{req.roomNumber || req.targetRoom}</strong> • Cơ sở: {req.houseCode}</div>
                       {req.note && <div className="text-slate-500 italic">"{req.note}"</div>}
                     </div>
@@ -885,7 +962,7 @@ export default function StaffRoomsPage() {
                           type="button"
                           onClick={() => {
                             if (approveRoomRequest) approveRoomRequest(req.id);
-                            setActionToast('Đã phê duyệt đơn thành công!');
+                            setActionToast('🎉 Đã phê duyệt đơn! Đã kích hoạt giữ chỗ 15 phút và mở cổng nộp cọc, ký HĐ cho khách.');
                             setTimeout(() => setActionToast(null), 3000);
                           }}
                           className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer"
@@ -895,8 +972,9 @@ export default function StaffRoomsPage() {
                       </div>
                     )}
                   </div>
-                ))
-              )}
+                );
+              })
+            )}
             </div>
           </div>
         </Modal>

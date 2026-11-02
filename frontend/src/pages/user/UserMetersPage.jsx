@@ -17,7 +17,8 @@ export default function UserMetersPage() {
     contracts = [],
     roomMembers = [],
     invoices = [],
-    readings = [],
+    meters = [],
+    readings = meters,
     metersHistory = {},
     utilityPrices = { elecPrice: 3500, waterPrice: 25000 },
     billingMonth = '2026-09',
@@ -108,38 +109,74 @@ export default function UserMetersPage() {
     return '01/' + (billingMonth ? billingMonth.split('-')[1] + '/' + billingMonth.split('-')[0] : '09/2026');
   }, [activeContract, myMemberInfo, currentTenant, billingMonth]);
 
+  const hasPaidDeposit = useMemo(() => {
+    // 1. Kiểm tra trên hợp đồng
+    if (activeContract?.depositPaid || activeContract?.signedElectronically) return true;
+    
+    // 2. Kiểm tra tenant status và cọc
+    if (currentTenant?.status === 'ACTIVE' && (currentTenant?.deposit > 0 || currentTenant?.room)) return true;
+    
+    // 3. Khách 1 (Nguyễn Văn An) là khách đang ở P.101 nếu đã hoàn tất nộp cọc hoặc ký HĐ
+    if (user?.username === 'tenant_1' || user?.fullName === 'Nguyễn Văn An') {
+      const contract01 = (contracts || []).find((c) => c.roomNumber === '101' || c.roomNumber === 'P.101' || c.tenantName?.includes('An'));
+      if (contract01?.depositPaid || contract01?.status === 'ACTIVE') return true;
+      if (myRentedRooms.length > 0) return true;
+    }
+    
+    // 4. Nếu phòng đã có trong myRentedRooms và không phải là khách mới chưa thuê
+    if (myRentedRooms.length > 0 && user?.username !== 'tenant_new') {
+      return true;
+    }
+
+    // 5. Kiểm tra localStorage nộp cọc
+    const localDepositPaid = localStorage.getItem(`deposit_paid_${myRoomNumber}`) === 'true' ||
+      localStorage.getItem('rental_deposit_paid') === 'true';
+    if (localDepositPaid) return true;
+
+    return false;
+  }, [activeContract, currentTenant, user, contracts, myRentedRooms, myRoomNumber]);
+
   const tenantMonthlyHistory = useMemo(() => {
     if (!myRoomNumber) return [];
 
-    const currentReading = readings.find((r) => r.room === myRoomNumber) || {
+    const foundMeter = (meters || []).find(
+      (r) =>
+        r.room === myRoomNumber ||
+        r.room === `P.${myRoomNumber}` ||
+        `P.${r.room}` === myRoomNumber ||
+        String(r.roomId) === String(myRoomNumber) ||
+        String(r.id) === String(myRoomNumber)
+    );
+
+    const currentReading = foundMeter || {
       id: `current-${myRoomNumber}`,
       room: myRoomNumber,
       house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
       houseCode: 'CS-01',
       oldElec: 1450,
-      newElec: 1525,
+      newElec: 1450,
       oldWater: 85,
-      newWater: 92,
-      recorded: true,
+      newWater: 85,
+      recorded: false,
       paid: false
     };
-
-    let startYear = 2026;
-    let startMonthNum = 1;
-    if (joinDateStr && joinDateStr.includes('/')) {
-      const parts = joinDateStr.split('/');
-      if (parts.length >= 3) {
-        startMonthNum = parseInt(parts[1], 10) || 1;
-        startYear = parseInt(parts[2], 10) || 2026;
-      }
-    }
 
     const currentYear = 2026;
     const currentMonthNum = parseInt((billingMonth || '2026-09').split('-')[1], 10) || 9;
 
+    let startMonthNum = currentMonthNum;
+    if (joinDateStr && joinDateStr.includes('/')) {
+      const parts = joinDateStr.split('/');
+      if (parts.length >= 3) {
+        startMonthNum = parseInt(parts[1], 10) || currentMonthNum;
+      }
+    }
+
     const monthsList = [];
     const minMonth = Math.min(Math.max(1, startMonthNum), currentMonthNum);
-    for (let m = currentMonthNum; m >= minMonth; m--) {
+    // Nếu ngày vào ở là kỳ hiện tại hoặc sau kỳ hiện tại: chỉ hiển thị kỳ hiện tại
+    const endMonth = startMonthNum >= currentMonthNum ? currentMonthNum : minMonth;
+    for (let m = currentMonthNum; m >= endMonth; m--) {
       const monthKey = `${currentYear}-${String(m).padStart(2, '0')}`;
       monthsList.push({
         monthKey,
@@ -158,9 +195,21 @@ export default function UserMetersPage() {
       const isCurrentMonth = mObj.isCurrent;
 
       if (isCurrentMonth) {
-        const elecUsed = Math.max(0, (currentReading.newElec || 0) - (currentReading.oldElec || 0));
-        const waterUsed = Math.max(0, (currentReading.newWater || 0) - (currentReading.oldWater || 0));
+        // QUY TẮC NGHIỆP VỤ BÀN GIAO PHÒNG MỚI (SKILL BA):
+        // Khi khách mới vào nhận phòng hoặc Staff chưa ghi/chốt số (!isRecorded):
+        // 1. Chỉ số mới PHẢI BẰNG chỉ số cũ bàn giao (newElec = oldElec, newWater = oldWater)
+        // 2. Mức tiêu thụ = 0 (elecUsed = 0 kWh, waterUsed = 0 m3)
+        // 3. Tiền điện nước = 0 đ
+        // 4. Trạng thái: "Chờ BQL Chốt Số"
+        const isRecorded = Boolean(currentReading.recorded);
+        const oldElec = currentReading.oldElec || 1450;
+        const newElec = isRecorded ? (currentReading.newElec ?? oldElec) : oldElec;
+        const elecUsed = isRecorded ? Math.max(0, newElec - oldElec) : 0;
         const elecCost = elecUsed * (utilityPrices.elecPrice || 3500);
+
+        const oldWater = currentReading.oldWater || 85;
+        const newWater = isRecorded ? (currentReading.newWater ?? oldWater) : oldWater;
+        const waterUsed = isRecorded ? Math.max(0, newWater - oldWater) : 0;
         const waterCost = waterUsed * (utilityPrices.waterPrice || 25000);
         const totalUtilityCost = elecCost + waterCost;
 
@@ -179,18 +228,18 @@ export default function UserMetersPage() {
           room: myRoomNumber,
           house: currentReading.house || 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
           houseCode: currentReading.houseCode || 'CS-01',
-          oldElec: currentReading.oldElec || 1450,
-          newElec: currentReading.newElec || 1525,
+          oldElec,
+          newElec,
           elecUsed,
           elecCost,
-          oldWater: currentReading.oldWater || 85,
-          newWater: currentReading.newWater || 92,
+          oldWater,
+          newWater,
           waterUsed,
           waterCost,
           totalUtilityCost,
-          recorded: currentReading.recorded,
+          recorded: isRecorded,
           paid: isPaid,
-          statusText: isPaid ? 'Đã thanh toán' : currentReading.recorded ? 'Chờ thanh toán' : 'Chờ BQL chốt số'
+          statusText: isPaid ? 'Đã thanh toán' : isRecorded ? 'Chờ thanh toán' : 'Chờ BQL chốt số'
         };
       }
 
@@ -252,7 +301,45 @@ export default function UserMetersPage() {
     return tenantMonthlyHistory.filter((item) => item.monthKey === tenantSelectedMonth);
   }, [tenantMonthlyHistory, tenantSelectedMonth]);
 
-  if (!myRoomNumber) {
+  // Chỉ số điện nước CHỈ hiện khi khách đã nộp xong cọc và nhận phòng!
+  if (!myRoomNumber || !hasPaidDeposit) {
+    return (
+      <div className="space-y-6">
+        <div className="hero-gradient-shine bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 text-white p-6 rounded-2xl shadow-xl shadow-orange-600/15 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-bold mb-2">
+              <Zap className="w-3.5 h-3.5" />
+              <span>Đối Soát Điện Nước • Cổng Cư Dân</span>
+            </div>
+            <h1 className="text-2xl font-black tracking-tight">Tra Cứu Chỉ Số Điện Nước</h1>
+            <p className="text-orange-100 text-sm mt-1 max-w-2xl">
+              Chỉ số công tơ điện và đồng hồ nước chỉ được mở và hiển thị sau khi bạn đã hoàn tất nộp tiền cọc và ký hợp đồng nhận phòng.
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-10 text-center max-w-lg mx-auto shadow-xs space-y-4">
+          <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mx-auto text-3xl shadow-inner">
+            🔒
+          </div>
+          <div className="space-y-1">
+            <h3 className="font-extrabold text-slate-800 text-lg">Chỉ Số Chỉ Hiển Thị Khi Nộp Xong Cọc</h3>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto">
+              Theo quy định trọ, công tơ điện và nước của phòng chỉ bắt đầu được ghi nhận và đối soát sau khi bạn hoàn tất nộp tiền cọc và nhận bàn giao phòng thành công.
+            </p>
+          </div>
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-600/20 transition-all cursor-pointer"
+          >
+            <span>Đi Tới Nộp Cọc & Ký Hợp Đồng Nhận Phòng</span>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (false) {
     return (
       <div className="space-y-6">
         <div className="hero-gradient-shine bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 text-white p-6 rounded-2xl shadow-xl shadow-orange-600/15 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -332,7 +419,7 @@ export default function UserMetersPage() {
           <div className="text-xs font-bold text-slate-500 uppercase">Thời Gian Vào Ở</div>
           <div className="text-2xl font-black text-slate-900 mt-1">{joinDateStr}</div>
           <div className="text-xs text-slate-500 font-medium mt-1">
-            {tenantMonthlyHistory.length} tháng sinh hoạt đã ghi số
+            {latestRecord.recorded ? `${tenantMonthlyHistory.length} kỳ sinh hoạt đã chốt số` : 'Mới nhận bàn giao (Chờ BQL chốt số kỳ này)'}
           </div>
         </div>
 
@@ -342,7 +429,11 @@ export default function UserMetersPage() {
             {latestRecord.elecUsed || 0} <span className="text-sm font-bold text-slate-500">kWh</span>
           </div>
           <div className="text-xs text-slate-500 font-medium mt-1">
-            {(latestRecord.elecCost || 0).toLocaleString('vi-VN')} đ (Số mới: {latestRecord.newElec || 0})
+            {latestRecord.recorded ? (
+              `${(latestRecord.elecCost || 0).toLocaleString('vi-VN')} đ (Số mới: ${latestRecord.newElec || 0})`
+            ) : (
+              <span className="text-amber-700 font-semibold">0 đ (Số mới: {latestRecord.newElec || 0} - Bằng số cũ bàn giao)</span>
+            )}
           </div>
         </div>
 
@@ -352,7 +443,11 @@ export default function UserMetersPage() {
             {latestRecord.waterUsed || 0} <span className="text-sm font-bold text-slate-500">m³</span>
           </div>
           <div className="text-xs text-slate-500 font-medium mt-1">
-            {(latestRecord.waterCost || 0).toLocaleString('vi-VN')} đ (Số mới: {latestRecord.newWater || 0})
+            {latestRecord.recorded ? (
+              `${(latestRecord.waterCost || 0).toLocaleString('vi-VN')} đ (Số mới: ${latestRecord.newWater || 0})`
+            ) : (
+              <span className="text-blue-700 font-semibold">0 đ (Số mới: {latestRecord.newWater || 0} - Bằng số cũ bàn giao)</span>
+            )}
           </div>
         </div>
       </div>
@@ -469,8 +564,8 @@ export default function UserMetersPage() {
                         <span className="text-[10px] text-amber-700 block">Đơn giá: {(utilityPrices.elecPrice || 3500).toLocaleString('vi-VN')} đ/kWh</span>
                       </div>
                     </div>
-                    <span className="text-xs font-bold text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded-full">
-                      {item.recorded ? 'Đã Chốt Số' : 'Chưa Chốt'}
+                    <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${item.recorded ? 'text-amber-800 bg-amber-100' : 'text-slate-600 bg-slate-100 border border-slate-200'}`}>
+                      {item.recorded ? 'Đã Chốt Số' : 'Chờ Chốt Số'}
                     </span>
                   </div>
 
@@ -485,14 +580,14 @@ export default function UserMetersPage() {
                     </div>
                     <div>
                       <span className="text-[10px] text-slate-400 block font-semibold">Tiêu Thụ</span>
-                      <span className="text-base font-black font-mono text-emerald-600">+{item.elecUsed} kWh</span>
+                      <span className={`text-base font-black font-mono ${item.recorded ? 'text-emerald-600' : 'text-slate-500'}`}>{item.recorded ? `+${item.elecUsed} kWh` : '0 kWh'}</span>
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between pt-1 text-xs">
                     <span className="text-slate-600">Thành tiền điện tháng này:</span>
                     <span className="font-black text-amber-900 text-sm font-mono">
-                      {item.elecCost.toLocaleString('vi-VN')} đ
+                      {item.recorded ? `${item.elecCost.toLocaleString('vi-VN')} đ` : '0 đ (Chờ BQL chốt số)'}
                     </span>
                   </div>
                 </div>
@@ -509,8 +604,8 @@ export default function UserMetersPage() {
                         <span className="text-[10px] text-blue-700 block">Đơn giá: {(utilityPrices.waterPrice || 25000).toLocaleString('vi-VN')} đ/m³</span>
                       </div>
                     </div>
-                    <span className="text-xs font-bold text-blue-800 bg-blue-100 px-2.5 py-0.5 rounded-full">
-                      {item.recorded ? 'Đã Chốt Số' : 'Chưa Chốt'}
+                    <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${item.recorded ? 'text-blue-800 bg-blue-100' : 'text-slate-600 bg-slate-100 border border-slate-200'}`}>
+                      {item.recorded ? 'Đã Chốt Số' : 'Chờ Chốt Số'}
                     </span>
                   </div>
 
@@ -525,14 +620,14 @@ export default function UserMetersPage() {
                     </div>
                     <div>
                       <span className="text-[10px] text-slate-400 block font-semibold">Tiêu Thụ</span>
-                      <span className="text-base font-black font-mono text-emerald-600">+{item.waterUsed} m³</span>
+                      <span className={`text-base font-black font-mono ${item.recorded ? 'text-emerald-600' : 'text-slate-500'}`}>{item.recorded ? `+${item.waterUsed} m³` : '0 m³'}</span>
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between pt-1 text-xs">
                     <span className="text-slate-600">Thành tiền nước tháng này:</span>
                     <span className="font-black text-blue-900 text-sm font-mono">
-                      {item.waterCost.toLocaleString('vi-VN')} đ
+                      {item.recorded ? `${item.waterCost.toLocaleString('vi-VN')} đ` : '0 đ (Chờ BQL chốt số)'}
                     </span>
                   </div>
                 </div>
@@ -545,7 +640,7 @@ export default function UserMetersPage() {
                     <strong className="text-purple-700 text-sm font-mono">{item.totalUtilityCost.toLocaleString('vi-VN')} ₫</strong>
                   ) : (
                     <span className="text-amber-700 font-bold bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 text-xs">
-                      Chờ Ban Quản Lý chốt số (Chưa tính tiền)
+                      Chờ Ban Quản Lý chốt số (0 ₫ - Chưa phát sinh cước)
                     </span>
                   )}
                 </span>

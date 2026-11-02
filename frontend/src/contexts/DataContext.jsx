@@ -285,8 +285,11 @@ export const generateDefaultMeters = () => {
     const baseWater = 40 + (r.id % 15) * 6;
     const waterUsed = isOccupied ? 5 + (r.id % 6) : 0;
 
-    // Phòng P.101, P.102, P.103 ở CS-01 mặc định là đã chốt số
-    const isRecorded = r.houseCode === 'CS-01' && ['P.101', 'P.102', 'P.103'].includes(r.number);
+    // Phòng P.102, P.103 ở CS-01 mặc định là đã chốt số (khách cũ đã sinh hoạt các kỳ trước)
+    // Riêng P.101 là phòng bàn giao khách mới thuê (Khách 1 / Khách mới), Staff chưa ghi gì nên số mới = số cũ bàn giao, chưa chốt số!
+    const isRecorded = r.houseCode === 'CS-01' && ['P.102', 'P.103'].includes(r.number);
+    const actualElecUsed = isRecorded ? elecUsed : 0;
+    const actualWaterUsed = isRecorded ? waterUsed : 0;
 
     // Phòng P.103 (CS-01) và P.101 (CS-02) mặc định đã thanh toán xong tiền trọ
     const isPaid = (r.houseCode === 'CS-01' && r.number === 'P.103') ||
@@ -302,9 +305,9 @@ export const generateDefaultMeters = () => {
       status: r.status,
       tenant: tenantName,
       oldElec: baseElec,
-      newElec: baseElec + elecUsed,
+      newElec: isRecorded ? baseElec + actualElecUsed : baseElec,
       oldWater: baseWater,
-      newWater: baseWater + waterUsed,
+      newWater: isRecorded ? baseWater + actualWaterUsed : baseWater,
       elecPrice: 3500,
       waterPrice: 25000,
       recorded: isRecorded,
@@ -1495,7 +1498,19 @@ export const DataProvider = ({ children }) => {
       const isRoomPaid = !!existing?.paid || roomInv?.status === 'PAID';
       const isRoomRecorded = !!existing?.recorded || isRoomPaid; // Phòng đã thanh toán khoá chốt điện nước => PHẢI ĐƯỢC TÍNH VÀO PHÒNG ĐÃ CHỐT!
 
+      // QUY TẮC NGHIỆP VỤ BÀN GIAO PHÒNG MỚI (SKILL BA):
+      // Phòng P.101 CS-01 là phòng bàn giao khách mới nhận phòng (Khách 1 / Khách mới).
+      // Khi Staff chưa ghi/chốt số thực tế (chưa có staffSaved) và chưa thanh toán:
+      // BẮT BUỘC: recorded = false, newElec = oldElec, newWater = oldWater (tiêu thụ = 0, tiền = 0)
+      const isNewHandover = (r.number === 'P.101' || r.number === '101') && (r.houseCode === 'CS-01' || !r.houseCode) && !existing?.staffSaved && !isRoomPaid;
+      const isRecorded = isNewHandover ? false : (isRoomPaid || (!!existing?.recorded && existing?.staffSaved !== false));
+
       if (existing) {
+        const baseElec = existing.oldElec || (800 + (r.id % 20) * 110);
+        const baseWater = existing.oldWater || (40 + (r.id % 15) * 6);
+        const newElecVal = isRecorded ? (existing.newElec ?? baseElec) : baseElec;
+        const newWaterVal = isRecorded ? (existing.newWater ?? baseWater) : baseWater;
+
         return {
           ...existing,
           id: r.id,
@@ -1506,7 +1521,11 @@ export const DataProvider = ({ children }) => {
           floor: r.floor,
           status: r.status,
           tenant: tenantName,
-          recorded: isRoomRecorded,
+          oldElec: baseElec,
+          newElec: newElecVal,
+          oldWater: baseWater,
+          newWater: newWaterVal,
+          recorded: isRecorded,
           paid: isRoomPaid
         };
       }
@@ -2946,7 +2965,7 @@ export const DataProvider = ({ children }) => {
             )
           );
 
-          return { ...m, recorded: true };
+          return { ...m, recorded: true, staffSaved: true };
         }
         return m;
       })
@@ -4593,6 +4612,29 @@ export const DataProvider = ({ children }) => {
         ];
         localStorage.setItem('rental_room_members', JSON.stringify(updated));
         return updated;
+      });
+
+      // Khởi tạo công tơ bàn giao cho khách mới: số mới = số cũ bàn giao, chưa chốt số
+      setMetersHistory((prev) => {
+        const nextObj = { ...prev };
+        Object.keys(nextObj).forEach((mKey) => {
+          nextObj[mKey] = (nextObj[mKey] || []).map((m) => {
+            const isMatch = m.room === targetContract.roomNumber || m.room === `P.${targetContract.roomNumber}`;
+            if (isMatch) {
+              return {
+                ...m,
+                tenant: targetContract.tenantName,
+                newElec: m.oldElec,
+                newWater: m.oldWater,
+                recorded: false,
+                paid: false
+              };
+            }
+            return m;
+          });
+        });
+        localStorage.setItem('rental_meters_history', JSON.stringify(nextObj));
+        return nextObj;
       });
 
       addAuditLog({

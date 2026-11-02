@@ -178,7 +178,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
         desc: `Khách ${req.tenant} gửi đơn đăng ký thuê phòng ${req.targetRoom} tại ${req.house || 'Nhà trọ'}. Vui lòng duyệt hồ sơ để mở cổng nộp cọc.`,
         time: req.date || 'Hôm nay',
         defaultRead: false,
-        link: '/rooms'
+        link: `/rooms?action=review-requests&requestId=${req.id}`
       });
     });
 
@@ -241,7 +241,12 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
       } catch {}
       return [];
     })();
-    const myStaffHouseCodes = myStaffHouses.map((h) => h.code);
+    const myStaffHouseCodes = Array.from(new Set([
+      ...myStaffHouses.map((h) => h.code),
+      ...(user?.houseCode ? [user.houseCode] : []),
+      ...(user?.username === 'staff' ? ['CS-01'] : []),
+      ...(user?.username === 'staff2' ? ['CS-02'] : [])
+    ]));
 
     // 1. Danh sách sự cố cần cử thợ sửa chữa (Chỉ cho cơ sở của Staff này)
     const activeTickets = tickets.filter((t) => {
@@ -303,7 +308,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
         desc,
         time: req.date || 'Hôm nay',
         defaultRead: false,
-        link: '/rooms?action=review-requests'
+        link: `/rooms?action=review-requests&requestId=${req.id}`
       });
     });
 
@@ -1007,7 +1012,9 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
                             notif.title.includes('ở ghép')
                           ));
                         if (isReqNotif) {
-                          window.dispatchEvent(new CustomEvent('rental:open-requests-manager', { detail: { notif } }));
+                          const reqIdMatch = String(notif.id).match(/req-(\d+)/) || (notif.link && notif.link.match(/requestId=(\d+)/));
+                          const targetReqId = reqIdMatch ? Number(reqIdMatch[1]) : null;
+                          window.dispatchEvent(new CustomEvent('rental:open-requests-manager', { detail: { notif, requestId: targetReqId } }));
                         }
                       }}
                       className={`p-3 sm:p-3.5 flex items-start gap-2.5 sm:gap-3 transition-colors hover:bg-slate-50 block ${

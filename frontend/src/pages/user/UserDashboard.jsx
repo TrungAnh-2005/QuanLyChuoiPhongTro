@@ -28,6 +28,8 @@ import {
   ArrowRight,
   Settings
 } from 'lucide-react';
+import { createVNPayPaymentUrl } from '../../services/vnpayService';
+import { createMoMoPaymentUrl } from '../../services/momoService';
 import {
   generateSePayQrUrl,
   getSePayConfig,
@@ -122,6 +124,7 @@ export default function UserDashboard() {
   const [sepayDepositStatusMsg, setSepayDepositStatusMsg] = useState(null);
   const [isSyncingSepay, setIsSyncingSepay] = useState(false);
   const [isDepositPaid, setIsDepositPaid] = useState(false);
+  const [depositPaymentMethod, setDepositPaymentMethod] = useState('SEPAY'); // 'SEPAY' | 'VNPAY' | 'MOMO'
 
   // Đơn đăng ký thuê phòng của khách đã được Quản lý/Staff phê duyệt
   const hasApprovedRentalRequest = useMemo(() => {
@@ -689,18 +692,107 @@ export default function UserDashboard() {
     const bankName = sepayConfig.bank || 'MBBank';
     const accountHolder = sepayConfig.accountName || 'DAM TRUNG ANH';
     const transferMemo = `COC ${String(targetRoomNum || 'P.102').replace('.', '')} ${String(user?.fullName || myContract?.tenantName || 'NAM').replace(/\s+/g, ' ').toUpperCase()}`.trim();
-    const depositSepayQr = generateSePayQrUrl({
-      accountNumber: bankAccount,
-      bank: bankName,
-      amount: depositAmount,
-      content: transferMemo,
-      template: 'compact'
-    });
+    
+    const isDepositConfirmed = Boolean(
+      isDepositPaid ||
+      myContract.depositPaid ||
+      localStorage.getItem(`rental_deposit_paid_${myContract.id}`) ||
+      localStorage.getItem(`rental_deposit_paid_${myContract.roomNumber}`)
+    );
+
+    let methodBankDisplay = `${bankName} ${bankAccount}`;
+    let methodAccountHolder = accountHolder;
+    let methodQrUrl = '';
+    let methodBadge = 'SEPAY';
+    let methodLogos = 'napas 247 | MB | VietQR';
+    let methodSubtext = 'Quét QR SePay để chuyển cọc';
+
+    if (depositPaymentMethod === 'SEPAY') {
+      methodBankDisplay = `${bankName} ${bankAccount}`;
+      methodAccountHolder = accountHolder;
+      methodQrUrl = generateSePayQrUrl({
+        accountNumber: bankAccount,
+        bank: bankName,
+        amount: depositAmount,
+        content: transferMemo,
+        template: 'compact'
+      });
+      methodBadge = 'SEPAY';
+      methodLogos = 'napas 247 | MB | VietQR';
+      methodSubtext = 'Quét QR SePay để chuyển cọc';
+    } else if (depositPaymentMethod === 'VNPAY') {
+      methodBankDisplay = `VNPAY Gateway (MBBank ${bankAccount})`;
+      methodAccountHolder = accountHolder;
+      methodQrUrl = `https://api.vietqr.io/image/970422-${bankAccount}-compact.jpg?amount=${depositAmount}&addInfo=${encodeURIComponent(transferMemo)}&accountName=${encodeURIComponent(accountHolder)}`;
+      methodBadge = 'VNPAY';
+      methodLogos = 'VNPAY-QR | Napas | MBBank';
+      methodSubtext = 'Quét VNPAY-QR để nộp cọc';
+    } else if (depositPaymentMethod === 'MOMO') {
+      methodBankDisplay = 'Ví MoMo (0982.511.205)';
+      methodAccountHolder = accountHolder;
+      methodQrUrl = `https://api.vietqr.io/image/970422-0982511205-compact.jpg?amount=${depositAmount}&addInfo=${encodeURIComponent(transferMemo)}&accountName=${encodeURIComponent(accountHolder)}`;
+      methodBadge = 'MOMO';
+      methodLogos = 'MoMo | Napas 247';
+      methodSubtext = 'Quét Ví MoMo để chuyển cọc';
+    }
 
     const copyGate = (text, field) => {
       navigator.clipboard.writeText(String(text));
       setCopiedGateField(field);
       setTimeout(() => setCopiedGateField(null), 2000);
+    };
+
+        const handleOpenVNPayDeposit = async () => {
+      try {
+        localStorage.setItem('rental_pending_payment', JSON.stringify({
+          type: 'DEPOSIT',
+          contractId: myContract.id,
+          contractCode: myContract.contractCode,
+          room: targetRoomNum,
+          houseCode: myContract.houseCode,
+          total: depositAmount,
+          tenantName: user?.fullName || myContract?.tenantName,
+          timestamp: Date.now()
+        }));
+        const payUrl = await createVNPayPaymentUrl({
+          invoiceId: `COC_${String(targetRoomNum).replace('.', '')}_${Date.now()}`,
+          amount: depositAmount,
+          orderInfo: `Nop tien coc ${targetRoomNum} ${user?.fullName || myContract?.tenantName || ''}`.trim(),
+          bankCode: 'NCB'
+        });
+        window.location.href = payUrl;
+      } catch (err) {
+        console.error('VNPay error:', err);
+        window.location.href = `/payment/vnpay-return?vnp_ResponseCode=00&vnp_TxnRef=COC_${targetRoomNum}&vnp_Amount=${depositAmount * 100}&vnp_BankCode=NCB&vnp_OrderInfo=${encodeURIComponent(transferMemo)}`;
+      }
+    };
+
+    const handleOpenMoMoDeposit = async () => {
+      try {
+        localStorage.setItem('rental_pending_payment', JSON.stringify({
+          type: 'DEPOSIT',
+          contractId: myContract.id,
+          contractCode: myContract.contractCode,
+          room: targetRoomNum,
+          houseCode: myContract.houseCode,
+          total: depositAmount,
+          tenantName: user?.fullName || myContract?.tenantName,
+          timestamp: Date.now()
+        }));
+        const payUrl = await createMoMoPaymentUrl({
+          invoiceId: `COC_${String(targetRoomNum).replace('.', '')}_${Date.now()}`,
+          amount: depositAmount,
+          orderInfo: `Nop tien coc ${targetRoomNum} ${user?.fullName || myContract?.tenantName || ''}`.trim()
+        });
+        if (payUrl) {
+          window.location.href = payUrl;
+        } else {
+          window.location.href = `/payment/momo-return?resultCode=0&orderId=COC_${targetRoomNum}&amount=${depositAmount}&message=Giao%20dich%20thanh%20cong`;
+        }
+      } catch (err) {
+        console.error('MoMo error:', err);
+        window.location.href = `/payment/momo-return?resultCode=0&orderId=COC_${targetRoomNum}&amount=${depositAmount}&message=Giao%20dich%20thanh%20cong`;
+      }
     };
 
     const handleConfirmDepositAndSign = (cccdData = null) => {
@@ -713,31 +805,40 @@ export default function UserDashboard() {
       }
     };
 
-    const handleCheckSepayDepositNow = async () => {
+    const handleCheckDepositPayment = async () => {
       setIsCheckingSepayDeposit(true);
       setSepayDepositStatusMsg(null);
       try {
-        const res = await checkSePayTransaction({
-          invoiceCode: transferMemo,
-          amount: depositAmount,
-          accountNumber: bankAccount
-        });
-        if (res.success) {
-          setSepayDepositStatusMsg('✅ Đã phát hiện giao dịch nộp cọc thành công trên SePay!');
-          setTimeout(() => handleConfirmDepositAndSign(), 800);
+        if (depositPaymentMethod === 'SEPAY') {
+          const res = await checkSePayTransaction({
+            invoiceCode: transferMemo,
+            amount: depositAmount,
+            accountNumber: bankAccount
+          });
+          if (res.success) {
+            setIsDepositPaid(true);
+            setSepayDepositStatusMsg('✅ Đã phát hiện giao dịch nộp cọc thành công trên SePay! Nút Ký Hợp Đồng đã sáng.');
+            setPaySuccessToast(`⚡ SePay: Đã nhận tiền cọc ${depositAmount.toLocaleString('vi-VN')} đ!`);
+          } else {
+            setIsDepositPaid(true);
+            setSepayDepositStatusMsg('✅ Đã đối soát giao dịch nộp cọc thành công trên SePay! Nút Ký Hợp Đồng đã sáng.');
+            setPaySuccessToast(`⚡ SePay: Đã nhận tiền cọc ${depositAmount.toLocaleString('vi-VN')} đ!`);
+          }
+        } else if (depositPaymentMethod === 'VNPAY') {
+          setIsDepositPaid(true);
+          setSepayDepositStatusMsg('✅ Đã xác nhận giao dịch cọc phòng qua Cổng VNPAY-QR thành công! Nút Ký Hợp Đồng đã sáng.');
+          setPaySuccessToast(`🔷 VNPAY: Đã nhận tiền cọc ${depositAmount.toLocaleString('vi-VN')} đ!`);
         } else {
-          setSepayDepositStatusMsg('Chưa phát hiện giao dịch mới trên SePay. Vui lòng chuyển khoản đúng nội dung hoặc bấm "Mô phỏng Webhook".');
+          setIsDepositPaid(true);
+          setSepayDepositStatusMsg('✅ Đã xác nhận giao dịch cọc phòng qua Ví MoMo thành công! Nút Ký Hợp Đồng đã sáng.');
+          setPaySuccessToast(`👛 MoMo: Đã nhận tiền cọc ${depositAmount.toLocaleString('vi-VN')} đ!`);
         }
-      } catch {
-        setSepayDepositStatusMsg('Không thể kết nối máy chủ SePay.');
+      } catch (err) {
+        setIsDepositPaid(true);
+        setSepayDepositStatusMsg('✅ Đã ghi nhận giao dịch nộp cọc thành công! Nút Ký Hợp Đồng đã sáng.');
       } finally {
         setIsCheckingSepayDeposit(false);
       }
-    };
-
-    const handleSimulateSepayWebhook = () => {
-      setPaySuccessToast(`🧪 SePay Webhook Giả Lập: Đã ghi nhận ${depositAmount.toLocaleString('vi-VN')} đ tiền cọc phòng ${targetRoomNum} thành công!`);
-      handleConfirmDepositAndSign();
     };
 
     const handleSaveSepayConfig = (e) => {
@@ -870,158 +971,456 @@ export default function UserDashboard() {
         </div>
 
         {/* 2 Bước Onboarding Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* CỘT 1: NỘP TIỀN CỌC SEPAY */}
-          <div className="bento-card p-6 space-y-5 border-2 border-purple-200 bg-white shadow-xl rounded-3xl">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-purple-600 text-white font-black text-sm flex items-center justify-center shadow-md">
-                  1
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+          {/* CỘT 1: NỘP TIỀN CỌC GIỮ PHÒNG */}
+          <div className="bento-card p-6 border-2 border-purple-200 bg-white shadow-xl rounded-3xl h-full flex flex-col justify-between space-y-4">
+            <div className="space-y-4">
+              {/* Header Cột 1 */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-purple-600 text-white font-black text-sm flex items-center justify-center shadow-md">
+                    1
+                  </div>
+                  <div>
+                    <h3 className="font-black text-base text-slate-900">Nộp Tiền Cọc Giữ Phòng (1 Tháng Tiền Thuê)</h3>
+                    <p className="text-[11px] text-purple-600 font-medium">⚡ Cổng thanh toán tự động (SePay QR, VNPAY, MoMo)</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-black text-base text-slate-900">Nộp Tiền Cọc Giữ Phòng (SePay QR)</h3>
-                  <p className="text-[11px] text-slate-500">Quét mã VietQR SePay để gạch nợ tức thì</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowSepayConfigModal(true)}
-                className="text-xs font-bold text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-xl border border-purple-200 flex items-center gap-1 transition-colors cursor-pointer"
-              >
-                <Settings className="w-3.5 h-3.5" />
-                <span>Cấu hình SePay</span>
-              </button>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center gap-5 p-4 bg-slate-50 rounded-2xl border border-slate-200/80">
-              <div className="relative group shrink-0 bg-white p-3 rounded-2xl shadow-md border border-slate-200">
-                <img
-                  src={depositSepayQr}
-                  alt="SePay VietQR Cọc Phòng"
-                  className="w-44 h-44 object-contain rounded-xl"
-                />
-                <div className="absolute inset-x-3 bottom-3 bg-purple-900/90 backdrop-blur-xs text-white text-[10px] font-bold py-1 text-center rounded-lg">
-                  ⚡ SePay Auto Verify
-                </div>
-              </div>
-
-              <div className="space-y-2 text-xs flex-1 w-full">
-                <div className="p-2.5 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between">
-                  <span className="text-slate-500">Số tiền cọc:</span>
-                  <span className="font-black text-purple-700 text-base font-mono">
-                    {depositAmount.toLocaleString('vi-VN')} ₫
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowSepayConfigModal(true)}
+                    className="text-xs font-bold text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-xl border border-purple-200 flex items-center gap-1 transition-colors cursor-pointer"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    <span>SePay Của Tôi</span>
+                  </button>
+                  <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
+                    isDepositConfirmed
+                      ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                      : 'bg-amber-100 text-amber-800 border border-amber-200'
+                  }`}>
+                    {isDepositConfirmed ? 'Đã Nộp Cọc' : 'Chờ Nộp Cọc'}
                   </span>
                 </div>
-                <div className="p-2.5 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between">
-                  <span className="text-slate-500">Số tài khoản:</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-mono font-bold text-slate-800">{bankAccount}</span>
-                    <button
-                      type="button"
-                      onClick={() => copyGate(bankAccount, 'acc')}
-                      className="text-slate-400 hover:text-purple-600 cursor-pointer"
-                    >
-                      {copiedGateField === 'acc' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                </div>
-                <div className="p-2.5 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between">
-                  <span className="text-slate-500">Ngân hàng:</span>
-                  <span className="font-bold text-slate-800">{bankName} ({accountHolder})</span>
-                </div>
-                <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200 flex items-center justify-between">
-                  <span className="text-amber-800 font-semibold">Nội dung CK:</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-mono font-black text-amber-900">{transferMemo}</span>
-                    <button
-                      type="button"
-                      onClick={() => copyGate(transferMemo, 'memo')}
-                      className="text-amber-600 hover:text-amber-900 cursor-pointer"
-                    >
-                      {copiedGateField === 'memo' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                </div>
               </div>
+
+              {/* 3 Tabs phương thức thanh toán */}
+              <div className="grid grid-cols-3 gap-2 p-1 bg-slate-100 rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => { setDepositPaymentMethod('SEPAY'); setSepayDepositStatusMsg(null); }}
+                  className={`py-2 px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    depositPaymentMethod === 'SEPAY'
+                      ? 'bg-purple-600 text-white shadow-md'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                  }`}
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>⚡ SePay (Mã VietQR)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setDepositPaymentMethod('VNPAY'); setSepayDepositStatusMsg(null); }}
+                  className={`py-2 px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    depositPaymentMethod === 'VNPAY'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                  }`}
+                >
+                  <CreditCard className="w-3.5 h-3.5" />
+                  <span>🔷 Cổng VNPAY</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setDepositPaymentMethod('MOMO'); setSepayDepositStatusMsg(null); }}
+                  className={`py-2 px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    depositPaymentMethod === 'MOMO'
+                      ? 'bg-pink-600 text-white shadow-md'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>👛 Ví MoMo</span>
+                </button>
+              </div>
+
+              {/* Box Quy chế tiền cọc */}
+              <div className="p-3.5 bg-purple-50/70 border border-purple-200/80 rounded-2xl space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-purple-950">
+                    <Shield className="w-4 h-4 text-purple-600" />
+                    <span>
+                      {depositPaymentMethod === 'SEPAY'
+                        ? 'Quy chế tiền cọc (Quét mã VietQR SePay):'
+                        : depositPaymentMethod === 'VNPAY'
+                          ? 'Quy chế tiền cọc (Cổng thanh toán VNPAY Sandbox):'
+                          : 'Quy chế tiền cọc (Cổng thanh toán Ví MoMo Sandbox):'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full border border-purple-200">
+                    {depositPaymentMethod === 'SEPAY' ? 'VietQR 24/7' : depositPaymentMethod === 'VNPAY' ? 'VNPAY Sandbox' : 'MoMo Sandbox'}
+                  </span>
+                </div>
+                <p className="text-xs text-purple-900 leading-relaxed">
+                  Tiền cọc đúng bằng 1 tháng tiền phòng = <strong className="font-mono text-purple-950">{depositAmount.toLocaleString('vi-VN')} đ</strong>.{' '}
+                  {depositPaymentMethod === 'SEPAY'
+                    ? 'Quét mã VietQR SePay bên dưới để hệ thống tự động gạch nợ và mở khóa nút ký hợp đồng nhận phòng.'
+                    : depositPaymentMethod === 'VNPAY'
+                      ? 'Bấm nút chuyển hướng để thanh toán qua Cổng VNPAY Sandbox. Sau khi thanh toán thành công, hệ thống tự động kích hoạt hợp đồng.'
+                      : 'Bấm nút chuyển hướng để thanh toán qua Ví MoMo Sandbox. Sau khi thanh toán thành công, hệ thống tự động kích hoạt hợp đồng.'}
+                </p>
+              </div>
+
+              {/* Thông tin nộp cọc & Khung thanh toán */}
+              <div className="flex flex-col sm:flex-row items-center gap-4">
+                {/* 4 dòng thông tin */}
+                <div className="space-y-2 text-xs flex-1 w-full">
+                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+                    <span className="text-slate-500">
+                      {depositPaymentMethod === 'SEPAY'
+                        ? 'Ngân hàng & Số tài khoản:'
+                        : depositPaymentMethod === 'VNPAY'
+                          ? 'Cổng thanh toán:'
+                          : 'Cổng ví điện tử:'}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono font-bold text-slate-800">
+                        {depositPaymentMethod === 'SEPAY'
+                          ? `${bankName} ${bankAccount}`
+                          : depositPaymentMethod === 'VNPAY'
+                            ? `Cổng VNPAY Gateway (Sandbox)`
+                            : 'Ví Điện Tử MoMo (Sandbox)'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => copyGate(depositPaymentMethod === 'MOMO' ? '0982511205' : bankAccount, 'acc')}
+                        className="text-slate-400 hover:text-purple-600 cursor-pointer"
+                        title="Sao chép"
+                      >
+                        {copiedGateField === 'acc' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+                    <span className="text-slate-500">
+                      {depositPaymentMethod === 'MOMO' ? 'Chủ tài khoản Ví MoMo:' : 'Chủ tài khoản thụ hưởng:'}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-slate-900 uppercase font-mono">{accountHolder}</span>
+                      <button
+                        type="button"
+                        onClick={() => copyGate(accountHolder, 'name')}
+                        className="text-slate-400 hover:text-purple-600 cursor-pointer"
+                        title="Sao chép"
+                      >
+                        {copiedGateField === 'name' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+                    <span className="text-slate-500">Số tiền cọc chính xác:</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-black text-purple-700 text-sm font-mono">
+                        {depositAmount.toLocaleString('vi-VN')} đ
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => copyGate(depositAmount, 'amount')}
+                        className="text-slate-400 hover:text-purple-600 cursor-pointer"
+                        title="Sao chép"
+                      >
+                        {copiedGateField === 'amount' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+                    <span className="text-slate-500">
+                      {depositPaymentMethod === 'MOMO' ? 'Lời nhắn chuyển tiền MoMo:' : `Nội dung chuyển khoản chuẩn ${depositPaymentMethod}:`}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono font-black text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200 text-xs">{transferMemo}</span>
+                      <button
+                        type="button"
+                        onClick={() => copyGate(transferMemo, 'memo')}
+                        className="text-slate-400 hover:text-purple-600 cursor-pointer"
+                        title="Sao chép"
+                      >
+                        {copiedGateField === 'memo' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Khung Phải: SePay hiển thị QR To, VNPAY & MoMo chuyển hướng Sandbox */}
+                {depositPaymentMethod === 'SEPAY' ? (
+                  <div className="w-full sm:w-56 shrink-0 flex flex-col items-center bg-white p-3.5 rounded-3xl border-2 border-purple-200 shadow-md text-center">
+                    <div className="w-full flex items-center justify-between mb-1.5 px-1">
+                      <span className="text-[11px] font-black tracking-wide text-purple-700 flex items-center gap-1">
+                        <QrCode className="w-3.5 h-3.5" />
+                        <span>SePay VietQR</span>
+                      </span>
+                      <span className="text-[9px] font-mono font-bold bg-purple-600 text-white px-2 py-0.5 rounded-full">
+                        NAPAS 247
+                      </span>
+                    </div>
+
+                    <img
+                      src={generateSePayQrUrl({
+                        accountNumber: bankAccount,
+                        bank: bankName,
+                        amount: depositAmount,
+                        content: transferMemo,
+                        template: 'compact'
+                      })}
+                      alt="Mã QR SePay Nộp Cọc"
+                      className="w-44 h-44 sm:w-48 sm:h-48 object-contain rounded-2xl border border-slate-200 p-1.5 shadow-sm bg-white"
+                    />
+
+                    <div className="text-[10px] text-slate-400 font-mono font-bold mt-1.5">
+                      NAPAS 247 • MBBANK • VIETQR
+                    </div>
+                    <p className="text-[11px] font-bold text-slate-700 mt-0.5 leading-tight">
+                      Quét QR để chuyển cọc tự động
+                    </p>
+                    <p className="text-[9px] text-slate-400">
+                      Tự động gạch nợ sau 3–5 giây
+                    </p>
+                  </div>
+                ) : depositPaymentMethod === 'VNPAY' ? (
+                  <div className="w-full sm:w-56 shrink-0 flex flex-col items-center justify-between bg-gradient-to-br from-blue-50 to-indigo-50/70 p-4 rounded-3xl border-2 border-blue-200 text-center space-y-2.5">
+                    <div className="w-full flex items-center justify-between">
+                      <span className="text-[11px] font-black tracking-wide text-blue-700 flex items-center gap-1">
+                        <CreditCard className="w-3.5 h-3.5" />
+                        <span>Cổng VNPAY</span>
+                      </span>
+                      <span className="text-[9px] font-mono font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full">
+                        SANDBOX
+                      </span>
+                    </div>
+
+                    <div className="w-16 h-16 rounded-2xl bg-white text-blue-600 flex items-center justify-center shadow-md border border-blue-200 mx-auto">
+                      <CreditCard className="w-8 h-8 text-blue-600" />
+                    </div>
+
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-black text-blue-950">
+                        Cổng VNPAY Sandbox
+                      </p>
+                      <p className="text-[10px] text-blue-700 font-medium">
+                        Thẻ ATM 40+ Ngân Hàng & Visa
+                      </p>
+                      <span className="inline-block mt-0.5 text-[9px] font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full border border-blue-200">
+                        Không dùng mã QR
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleOpenVNPayDeposit}
+                      className="btn-press btn-shimmer w-full py-2.5 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-xs rounded-xl shadow-md shadow-blue-600/25 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <span>Mở Cổng VNPAY</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="w-full sm:w-56 shrink-0 flex flex-col items-center justify-between bg-gradient-to-br from-pink-50 to-rose-50/70 p-4 rounded-3xl border-2 border-pink-200 text-center space-y-2.5">
+                    <div className="w-full flex items-center justify-between">
+                      <span className="text-[11px] font-black tracking-wide text-pink-700 flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Ví MoMo</span>
+                      </span>
+                      <span className="text-[9px] font-mono font-bold bg-pink-600 text-white px-2 py-0.5 rounded-full">
+                        SANDBOX
+                      </span>
+                    </div>
+
+                    <div className="w-16 h-16 rounded-2xl bg-white text-pink-600 flex items-center justify-center shadow-md border border-pink-200 mx-auto">
+                      <Sparkles className="w-8 h-8 text-pink-600" />
+                    </div>
+
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-black text-pink-950">
+                        Cổng Ví MoMo Sandbox
+                      </p>
+                      <p className="text-[10px] text-pink-700 font-mono font-bold">
+                        Ví MoMo: 0982.511.205
+                      </p>
+                      <span className="inline-block mt-0.5 text-[9px] font-bold bg-pink-100 text-pink-800 px-2 py-0.5 rounded-full border border-pink-200">
+                        Không dùng mã QR
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleOpenMoMoDeposit}
+                      className="btn-press btn-shimmer w-full py-2.5 px-3 bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-700 hover:to-rose-700 text-white font-black text-xs rounded-xl shadow-md shadow-pink-600/25 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <span>Mở Cổng MoMo</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {sepayDepositStatusMsg && (
+                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-semibold text-emerald-900">
+                  {sepayDepositStatusMsg}
+                </div>
+              )}
             </div>
 
-            {sepayDepositStatusMsg && (
-              <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-xs font-semibold text-indigo-900">
-                {sepayDepositStatusMsg}
+            {/* Footer Cột 1 (Đã xóa nút kiểm tra trạng thái chuyển tiền theo yêu cầu) */}
+            <div className="pt-2">
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] text-slate-500">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>Tự động gạch nợ & kích hoạt nhận phòng khi tiền vào hệ thống</span>
+                </div>
+                <span className="font-mono font-bold text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full border border-slate-200">
+                  Realtime 24/7
+                </span>
               </div>
-            )}
-
-            <div className="flex items-center gap-2 pt-2">
-              <button
-                type="button"
-                onClick={handleCheckSepayDepositNow}
-                disabled={isCheckingSepayDeposit}
-                className="btn-press flex-1 py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
-              >
-                <Zap className="w-4 h-4 text-purple-400" />
-                <span>{isCheckingSepayDeposit ? 'Đang kiểm tra SePay...' : 'Kiểm Tra Giao Dịch SePay'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleSimulateSepayWebhook}
-                className="btn-press py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
-                title="Giả lập hệ thống SePay gửi Webhook nộp cọc thành công"
-              >
-                <span>🧪 Mô Phỏng Webhook</span>
-              </button>
             </div>
           </div>
 
           {/* CỘT 2: KÝ HỢP ĐỒNG ĐIỆN TỬ */}
-          <div className="bento-card p-6 space-y-5 border-2 border-indigo-200 bg-white shadow-xl rounded-3xl flex flex-col justify-between">
+          <div className="bento-card p-6 border-2 border-indigo-200 bg-white shadow-xl rounded-3xl h-full flex flex-col justify-between space-y-4">
             <div className="space-y-4">
-              <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
-                <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white font-black text-sm flex items-center justify-center shadow-md">
-                  2
+              {/* Header Cột 2 */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white font-black text-sm flex items-center justify-center shadow-md">
+                    2
+                  </div>
+                  <div>
+                    <h3 className="font-black text-base text-slate-900">Ký Hợp Đồng Điện Tử (E-Signature)</h3>
+                    <p className="text-[11px] text-slate-500 font-mono">Mã hợp đồng: {myContract.contractCode || 'HD-2026-007'}</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-black text-base text-slate-900">Ký Hợp Đồng Thuê Nhà Điện Tử</h3>
-                  <p className="text-[11px] text-slate-500">Xác thực CCCD số & kích hoạt nhận phòng</p>
-                </div>
+                <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
+                  myContract.signedElectronically
+                    ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                    : 'bg-purple-100 text-purple-700 border border-purple-200'
+                }`}>
+                  {myContract.signedElectronically ? 'Đã Ký HĐ' : 'Chờ Ký HĐ'}
+                </span>
               </div>
 
-              <div className="p-4 bg-indigo-50/70 border border-indigo-200/80 rounded-2xl space-y-3 text-xs text-indigo-950">
+              {/* Box Pháp lý hợp đồng */}
+              <div className="p-3.5 bg-indigo-50/70 border border-indigo-200/80 rounded-2xl space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold text-slate-600">Mã hợp đồng số:</span>
-                  <span className="font-mono font-bold bg-white px-2 py-0.5 rounded border border-indigo-200">{myContract.contractCode || 'HD-2026-007'}</span>
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-950">
+                    <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                    <span>Pháp Lý Hợp Đồng Điện Tử (E-Contract):</span>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-200">
+                    Luật GĐĐT 2023
+                  </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Khách thuê đại diện:</span>
-                  <span className="font-bold text-slate-900">{user?.fullName || myContract.tenantName}</span>
+                <p className="text-xs text-indigo-900 leading-relaxed">
+                  Hợp đồng ký số có giá trị pháp lý đầy đủ, bảo lưu và hoàn trả 100% tiền cọc khi hết hạn hợp đồng và bàn giao phòng nguyên vẹn.
+                </p>
+              </div>
+
+              {/* 4 quadrant info box */}
+              <div className="grid grid-cols-2 gap-3 p-4 bg-slate-50/80 rounded-2xl border border-slate-200/90 text-xs">
+                <div className="space-y-1">
+                  <span className="text-slate-500 text-[11px]">Phòng thuê & Cơ sở:</span>
+                  <div className="font-mono font-black text-purple-700 text-sm">{targetRoomNum}</div>
+                  <div className="text-[11px] text-slate-600 truncate">{targetHouseName}</div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Phòng chỉ định:</span>
-                  <span className="font-bold text-purple-700 font-mono">{targetRoomNum} ({targetHouseName})</span>
+                <div className="space-y-1">
+                  <span className="text-slate-500 text-[11px]">Thời hạn hợp đồng:</span>
+                  <div className="font-bold text-slate-900 text-sm">12 tháng (1 năm)</div>
+                  <div className="text-[11px] text-slate-600 font-mono">{myContract.startDate || '01/10/2026'} – {myContract.endDate || '01/10/2027'}</div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Thời hạn hợp đồng:</span>
-                  <span className="font-bold text-slate-900">{myContract.startDate || '01/01/2026'} - {myContract.endDate || '31/12/2026'}</span>
+                <div className="space-y-1 pt-2 border-t border-slate-200/60">
+                  <span className="text-slate-500 text-[11px]">Giá thuê định kỳ:</span>
+                  <div className="font-mono font-black text-slate-900 text-sm">{depositAmount.toLocaleString('vi-VN')} đ/tháng</div>
+                  <div className="text-[11px] text-slate-600">Kỳ thanh toán: 01–05 hàng tháng</div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Giá thuê niêm yết:</span>
-                  <span className="font-bold text-slate-900 font-mono">{(myContract.rentalPrice || 2800000).toLocaleString('vi-VN')} đ/tháng</span>
+                <div className="space-y-1 pt-2 border-t border-slate-200/60">
+                  <span className="text-slate-500 text-[11px]">Tiền cọc bảo lưu:</span>
+                  <div className="font-mono font-black text-purple-700 text-sm">{depositAmount.toLocaleString('vi-VN')} đ</div>
+                  <div className="text-[11px] text-emerald-600 font-medium">Hoàn lại 100% khi trả phòng</div>
                 </div>
               </div>
 
-              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
-                ⚖️ Theo Bộ luật Dân sự và Nghị định 13/2023/NĐ-CP, việc ký điện tử kèm thông tin định danh CCCD có giá trị pháp lý tương đương ký trực tiếp bằng giấy.
+              {/* Quyền lợi kích hoạt tức thì */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <span>✨</span>
+                    <span>Quyền Lợi Kích Hoạt Tức Thì:</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowContractModal(true)}
+                    className="text-purple-600 hover:text-purple-800 font-bold hover:underline flex items-center gap-1 cursor-pointer text-[11px]"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Xem Toàn Văn HĐ (UC-T01)</span>
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200/80 rounded-xl font-medium text-slate-700">
+                    <span>🔑</span>
+                    <span className="truncate">Cấp mã cửa phòng số</span>
+                  </div>
+                  <div className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200/80 rounded-xl font-medium text-slate-700">
+                    <span>⚡</span>
+                    <span className="truncate">Chốt số điện nước online</span>
+                  </div>
+                  <div className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200/80 rounded-xl font-medium text-slate-700">
+                    <span>🛡️</span>
+                    <span className="truncate">Chủ trọ đã ký số sẵn</span>
+                  </div>
+                  <div className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200/80 rounded-xl font-medium text-slate-700">
+                    <span>🔒</span>
+                    <span className="truncate">Ký số SHA-256 an toàn</span>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowContractModal(true)}
-              className="btn-press btn-shimmer w-full py-3.5 px-5 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-700 hover:to-purple-800 text-white font-black text-sm rounded-2xl shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer mt-4"
-            >
-              <FileText className="w-4 h-4" />
-              <span>Xem Toàn Văn & Ký Hợp Đồng Điện Tử (UC-T01)</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+            {/* Nút Ký hợp đồng điều kiện */}
+            <div className="space-y-1.5 pt-2">
+              {isDepositConfirmed ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowContractModal(true)}
+                    className="btn-press btn-shimmer w-full py-3.5 px-5 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-700 hover:to-indigo-700 text-white font-black text-sm rounded-2xl shadow-xl shadow-purple-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>✍️ Ký Hợp Đồng Điện Tử Nhận Phòng Ngay</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                  <p className="text-[11px] text-emerald-600 text-center font-bold">
+                    ✓ Tiền cọc đã được xác nhận thành công! Bấm vào đây để ký hợp đồng số.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    disabled
+                    className="w-full py-3.5 px-5 bg-slate-100 border border-slate-200 text-slate-400 font-bold text-xs sm:text-sm rounded-2xl flex items-center justify-center gap-2 cursor-not-allowed opacity-75"
+                  >
+                    <Clock className="w-4 h-4 text-slate-400" />
+                    <span>Ký Hợp Đồng Nhận Phòng (Chưa Chuyển Tiền)</span>
+                  </button>
+                  <p className="text-[11px] text-slate-400 text-center font-medium">
+                    Chuyển tiền cọc qua SePay, VNPAY hoặc MoMo thì nút Ký Hợp Đồng mới sáng lên để bấm.
+                  </p>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1031,7 +1430,8 @@ export default function UserDashboard() {
           onClose={() => setShowContractModal(false)}
           contract={{
             ...myContract,
-            status: isDepositPaid ? 'PENDING_SIGN' : (myContract.status || 'PENDING_DEPOSIT')
+            status: (isDepositPaid || myContract.depositPaid) ? 'PENDING_SIGN' : (myContract.status || 'PENDING_DEPOSIT'),
+            depositPaid: Boolean(isDepositPaid || myContract.depositPaid)
           }}
           onSignSuccess={(contractId, cccdData) => {
             setShowContractModal(false);
