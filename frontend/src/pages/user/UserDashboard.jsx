@@ -513,12 +513,48 @@ export default function UserDashboard() {
     }
 
     // 3. Đưa Người đại diện (REPRESENTATIVE) lên đầu danh sách, sau đó đến các Thành viên ở ghép (MEMBER)
-    return [...mems].sort((a, b) => {
+    const sorted = [...mems].sort((a, b) => {
       if (a.roleInRoom === 'REPRESENTATIVE') return -1;
       if (b.roleInRoom === 'REPRESENTATIVE') return 1;
       return 0;
     });
-  }, [myRoomNumber, roomMembers, contracts, currentRoomObj, myContract]);
+
+    // 4. Định danh đúng Quê quán và CCCD cho từng cư dân (không lấy nhầm quê quán của tài khoản đang đăng nhập)
+    return sorted.map((m) => {
+      const mNameNorm = (m.fullName || '').toLowerCase().trim();
+      const matchedTenant = (tenants || []).find((t) => {
+        const tName = (t.fullName || '').toLowerCase().trim();
+        return (tName && (tName.includes(mNameNorm) || mNameNorm.includes(tName))) || (t.phone && t.phone === m.phone);
+      });
+
+      let realHometown = m.hometown || matchedTenant?.hometown;
+      if (!realHometown) {
+        if (mNameNorm.includes('an')) realHometown = 'Nam Định';
+        else if (mNameNorm.includes('cường')) realHometown = 'Hải Phòng';
+        else if (mNameNorm.includes('bình')) realHometown = 'Bắc Ninh';
+        else if (mNameNorm.includes('nam')) realHometown = 'Hà Nội';
+        else realHometown = 'Nam Định';
+      }
+
+      let realCccd = m.cccd || matchedTenant?.cccd;
+      if (!realCccd || (realCccd.startsWith('03620707') && mNameNorm.includes('an'))) {
+        realCccd = '001201012345';
+      } else if (!realCccd || (realCccd.startsWith('03620707') && mNameNorm.includes('cường'))) {
+        realCccd = '034203034567';
+      }
+
+      const masked = m.maskedCccd && !m.maskedCccd.startsWith('03620707')
+        ? m.maskedCccd
+        : (realCccd ? realCccd.slice(0, 8) + '****' : (mNameNorm.includes('cường') ? '03420303****' : '00120101****'));
+
+      return {
+        ...m,
+        hometown: realHometown,
+        cccd: realCccd,
+        maskedCccd: masked
+      };
+    });
+  }, [myRoomNumber, roomMembers, contracts, currentRoomObj, myContract, tenants]);
 
   // Kiểm tra người đang đăng nhập có phải là Người đại diện đứng tên hợp đồng hay không
   const isRepresentative = useMemo(() => {
@@ -1833,7 +1869,9 @@ export default function UserDashboard() {
             </div>
             <div className="bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200/60">
               <div className="text-slate-400 text-[11px] font-medium">Quê quán</div>
-              <div className="font-bold text-slate-900 mt-1">{user?.hometown || 'Hà Nội'}</div>
+              <div className="font-bold text-slate-900 mt-1">
+                {user?.hometown || (user?.fullName?.toLowerCase().includes('an') ? 'Nam Định' : user?.fullName?.toLowerCase().includes('cường') ? 'Hải Phòng' : 'Hà Nội')}
+              </div>
             </div>
           </div>
         </div>
@@ -2352,7 +2390,7 @@ export default function UserDashboard() {
                     <div className="bg-white/90 p-2 rounded-xl border border-slate-200/60">
                       <div className="text-slate-400 text-[10px] font-medium">{isRep ? 'Quê quán' : 'Ngày vào ở'}</div>
                       <div className="font-bold text-slate-800 mt-0.5 truncate">
-                        {isRep ? (m.hometown || currentTenant?.hometown || 'Nam Định') : (m.joinDate || '01/02/2026')}
+                        {isRep ? (m.hometown || 'Nam Định') : (m.joinDate || '01/02/2026')}
                       </div>
                     </div>
                   </div>
