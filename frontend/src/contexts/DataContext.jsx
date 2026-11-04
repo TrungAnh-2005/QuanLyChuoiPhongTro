@@ -2374,13 +2374,47 @@ export const DataProvider = ({ children }) => {
         return next;
       });
 
-      // 4. Thanh lý hợp đồng thuê (COMPLETED)
+      // 4. Thanh lý hợp đồng thuê (COMPLETED) & Hủy hợp đồng giữ chỗ
       setContracts((prev) => {
         const next = prev.map((c) => {
-          const isMatch = c.roomNumber === roomNum && (c.tenantName || '').toLowerCase().includes(tName.toLowerCase()) && c.status === 'ACTIVE';
-          return isMatch ? { ...c, status: 'COMPLETED', endDate: new Date().toLocaleDateString('vi-VN') } : c;
+          const isMatchRoom = c.roomNumber === roomNum;
+          const cName = (c.tenantName || '').toLowerCase();
+          const isMatchTenant = cName.includes(tName.toLowerCase()) || tName.toLowerCase().includes(cName);
+          if (isMatchRoom && isMatchTenant) {
+            if (c.status === 'ACTIVE') {
+              return { ...c, status: 'COMPLETED', endDate: new Date().toLocaleDateString('vi-VN') };
+            }
+            if (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN' || c.status === 'HOLDING') {
+              return { ...c, status: 'CANCELLED', endDate: new Date().toLocaleDateString('vi-VN') };
+            }
+          }
+          return c;
         });
         localStorage.setItem('rental_contracts', JSON.stringify(next));
+        return next;
+      });
+
+      // 4B. Cập nhật tất cả các đơn RENT / NEW_RENT / HOLD cũ của khách này đối với phòng này thành SETTLED
+      setRoomRequests((prev) => {
+        const next = prev.map((r) => {
+          if (r.id === requestId) return r;
+          const matchRoom = (r.targetRoom === roomNum || r.roomNumber === roomNum || r.currentRoom === roomNum);
+          const rTenant = (r.tenant || r.tenantName || '').toLowerCase();
+          const matchTenant = rTenant.includes(tName.toLowerCase()) || tName.toLowerCase().includes(rTenant);
+          const isRentType = r.type === 'RENT' || r.type === 'NEW_RENT' || r.type === 'RENTAL' || r.type === 'HOLD';
+          if (matchRoom && matchTenant && isRentType) {
+            return {
+              ...r,
+              status: 'SETTLED',
+              settledAt: new Date().toLocaleDateString('vi-VN'),
+              note: 'Đã hoàn tất trả phòng & thanh lý hợp đồng'
+            };
+          }
+          return r;
+        });
+        try {
+          localStorage.setItem('rental_room_requests', JSON.stringify(next));
+        } catch {}
         return next;
       });
 
@@ -2654,7 +2688,7 @@ export const DataProvider = ({ children }) => {
       localStorage.setItem('rental_tenant_rooms', JSON.stringify(trMap));
     } catch {}
 
-    // 4. Ghi nhận lịch sử đơn rời phòng
+    // 4. Ghi nhận lịch sử đơn rời phòng & Lưu trữ các đơn RENT cũ
     const newEntry = {
       id: Date.now(),
       date: new Date().toLocaleDateString('vi-VN'),
@@ -2670,7 +2704,22 @@ export const DataProvider = ({ children }) => {
       approvedAt: new Date().toLocaleDateString('vi-VN')
     };
     setRoomRequests((prev) => {
-      const next = [newEntry, ...prev];
+      const updated = prev.map((r) => {
+        const matchRoom = (r.targetRoom === roomNumber || r.roomNumber === roomNumber || r.currentRoom === roomNumber);
+        const rTenant = (r.tenant || r.tenantName || '').toLowerCase();
+        const matchTenant = rTenant.includes(tNorm) || tNorm.includes(rTenant);
+        const isRentType = r.type === 'RENT' || r.type === 'NEW_RENT' || r.type === 'RENTAL' || r.type === 'HOLD';
+        if (matchRoom && matchTenant && isRentType) {
+          return {
+            ...r,
+            status: 'SETTLED',
+            settledAt: new Date().toLocaleDateString('vi-VN'),
+            note: 'Đã hoàn tất rời phòng & thanh lý hợp đồng'
+          };
+        }
+        return r;
+      });
+      const next = [newEntry, ...updated];
       try {
         localStorage.setItem('rental_room_requests', JSON.stringify(next));
       } catch {}

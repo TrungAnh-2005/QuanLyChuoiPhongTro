@@ -130,12 +130,34 @@ export default function UserDashboard() {
   const hasApprovedRentalRequest = useMemo(() => {
     const uName = (user?.fullName || '').toLowerCase().trim();
     const uPhone = (user?.phone || '').trim();
-    return (roomRequests || []).find((r) =>
-      (r.type === 'RENT' || r.type === 'NEW_RENT') &&
-      r.status === 'APPROVED' &&
-      ((uName && r.tenant?.toLowerCase().includes(uName)) || (uPhone && r.phone === uPhone) || (user?.username === 'tenant_new'))
-    );
-  }, [user, roomRequests]);
+    return (roomRequests || []).find((r) => {
+      const isRent = (r.type === 'RENT' || r.type === 'NEW_RENT');
+      if (!isRent || r.status !== 'APPROVED') return false;
+      const matchUser = ((uName && r.tenant?.toLowerCase().includes(uName)) || (uPhone && r.phone === uPhone) || (user?.username === 'tenant_new'));
+      if (!matchUser) return false;
+
+      const targetRoom = r.targetRoom || r.roomNumber;
+
+      // 1. Nếu phòng này khách đã trả phòng (có đơn CHECKOUT/RETURN/LEAVE_ROOM đã duyệt) -> Bỏ qua
+      const hasCheckedOutThisRoom = (roomRequests || []).some(
+        req => (req.type === 'CHECKOUT' || req.type === 'RETURN' || req.type === 'LEAVE_ROOM') &&
+               (req.targetRoom === targetRoom || req.currentRoom === targetRoom) &&
+               req.status === 'APPROVED'
+      );
+      if (hasCheckedOutThisRoom) return false;
+
+      // 2. Nếu khách đã có hợp đồng ACTIVE tại phòng này -> Đã hoàn tất, không phải đang chờ cọc
+      const activeContract = (contracts || []).find(c => c.roomNumber === targetRoom && c.status === 'ACTIVE');
+      if (activeContract) return false;
+
+      // 3. Nếu hợp đồng đã kết thúc (COMPLETED / TERMINATED) mà không có hợp đồng mới PENDING_DEPOSIT -> Bỏ qua
+      const finishedContract = (contracts || []).find(c => c.roomNumber === targetRoom && (c.status === 'COMPLETED' || c.status === 'TERMINATED'));
+      const hasNewHoldingContract = (contracts || []).some(c => c.roomNumber === targetRoom && (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN'));
+      if (finishedContract && !hasNewHoldingContract) return false;
+
+      return true;
+    });
+  }, [user, roomRequests, contracts]);
 
   // Tìm hợp đồng của khách thuê
   const myContract = useMemo(() => {
