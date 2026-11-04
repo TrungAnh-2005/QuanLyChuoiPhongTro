@@ -271,6 +271,7 @@ export default function StaffRoomsPage() {
     removeRoomMember,
     updateTemporaryResidence,
     contracts = [],
+    tenants = [],
     landlords = []
   } = useData();
 
@@ -436,6 +437,83 @@ export default function StaffRoomsPage() {
       return true;
     });
   }, [staffRooms, selectedHouse, filterStatus, searchTerm]);
+
+  // Hàm tính toán và đối soát dữ liệu cư dân thực tế chuẩn xác của phòng theo cơ sở
+  const getRoomOccupancyInfo = useCallback(
+    (room, buildingHouseCode) => {
+      if (!room) return { count: 0, members: [], hasDrift: false };
+
+      // 1. Nếu phòng có trạng thái Còn trống (AVAILABLE), Tạm khóa (LOCKED), Bảo trì (MAINTENANCE)
+      // thì BẮT BUỘC số người ở phải là 0, không có cư dân
+      if (room.status === 'AVAILABLE' || room.status === 'LOCKED' || room.status === 'MAINTENANCE') {
+        return { count: 0, members: [], hasDrift: false };
+      }
+
+      const roomHouse = normalizeHouseCode(room.houseCode || buildingHouseCode || 'CS-01');
+      const normNum = normalizeRoomNumber(room.number);
+
+      // 2. Lấy danh sách thành viên hợp lệ từ roomMembers khớp cả số phòng VÀ cơ sở
+      const activeMembers = (roomMembers || []).filter((m) => {
+        if (m.status === 'MOVED_OUT') return false;
+        const memHouse = normalizeHouseCode(m.houseCode || 'CS-01');
+        const memRoom = normalizeRoomNumber(m.roomNumber);
+        return memRoom === normNum && isSameHouse(memHouse, roomHouse);
+      });
+
+      if (activeMembers.length > 0) {
+        return { count: activeMembers.length, members: activeMembers, hasDrift: false };
+      }
+
+      // 3. Fallback: Nếu roomMembers chưa có, kiểm tra hợp đồng ACTIVE khớp cả số phòng & cơ sở
+      const activeContracts = (contracts || []).filter((c) => {
+        if (c.status !== 'ACTIVE') return false;
+        const cHouse = normalizeHouseCode(c.houseCode || 'CS-01');
+        const cRoom = normalizeRoomNumber(c.roomNumber);
+        return cRoom === normNum && isSameHouse(cHouse, roomHouse);
+      });
+
+      if (activeContracts.length > 0) {
+        const contractMems = activeContracts.map((c, idx) => ({
+          id: `contract-mem-${c.id || idx}`,
+          fullName: c.tenantName || 'Khách thuê hợp đồng',
+          phone: c.tenantPhone || 'Chưa có SĐT',
+          cccd: c.tenantCccd || 'Chưa cung cấp',
+          role: 'HOST',
+          roleInRoom: 'REPRESENTATIVE',
+          temporaryResidenceStatus: 'REGISTERED',
+          contractCode: c.contractCode,
+          startDate: c.startDate
+        }));
+        return { count: contractMems.length, members: contractMems, hasDrift: false };
+      }
+
+      // 4. Fallback: Kiểm tra danh sách khách thuê tenants
+      const activeTenants = (tenants || []).filter((t) => {
+        if (t.status !== 'ACTIVE') return false;
+        const tHouse = normalizeHouseCode(t.houseCode || 'CS-01');
+        const inRooms = Array.isArray(t.rooms) ? t.rooms.map(normalizeRoomNumber) : [normalizeRoomNumber(t.room)];
+        return inRooms.includes(normNum) && isSameHouse(tHouse, roomHouse);
+      });
+
+      if (activeTenants.length > 0) {
+        const tenantMems = activeTenants.map((t) => ({
+          id: `tenant-mem-${t.id}`,
+          fullName: t.fullName,
+          phone: t.phone || 'Chưa có SĐT',
+          cccd: t.cccd || 'Chưa cung cấp',
+          role: 'HOST',
+          roleInRoom: 'REPRESENTATIVE',
+          temporaryResidenceStatus: 'REGISTERED'
+        }));
+        return { count: tenantMems.length, members: tenantMems, hasDrift: false };
+      }
+
+      // 5. Nếu phòng mang trạng thái OCCUPIED (Đang thuê) nhưng tuyệt đối không có khách nào
+      // -> Đây là hiện tượng lỗi lệch đồng bộ dữ liệu (phantom occupied)
+      return { count: 0, members: [], hasDrift: room.status === 'OCCUPIED' };
+    },
+    [roomMembers, contracts, tenants]
+  );
 
   // Nhóm theo tầng (dùng khi xem 1 cơ sở)
   const groupedByFloor = useMemo(() => {
@@ -1004,9 +1082,8 @@ export default function StaffRoomsPage() {
 
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                             {floorRooms.map((room) => {
-                              const occupantsCount = roomMembers.filter(
-                                (m) => m.roomNumber === room.number && m.status !== 'MOVED_OUT'
-                              ).length;
+                              const occInfo = getRoomOccupancyInfo(room, building.houseCode);
+                              const occupantsCount = occInfo.count;
 
                               return (
                                 <div
@@ -1100,7 +1177,11 @@ export default function StaffRoomsPage() {
                                   <div className="mt-3.5 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-1.5 text-xs">
                                     <button
                                       type="button"
-                                      onClick={() => setSelectedRoomForMembers(room)}
+                                      onClick={() => setSelectedRoomForMembers({
+                                        ...room,
+                                        houseCode: room.houseCode || building.houseCode,
+                                        houseName: building.houseName
+                                      })}
                                       className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold rounded-xl transition cursor-pointer flex items-center gap-1"
                                       title="Hồ sơ người ở"
                                     >
@@ -1559,41 +1640,110 @@ export default function StaffRoomsPage() {
       )}
 
       {/* Modal Hồ Sơ Khách & CCCD / Tạm Trú */}
-      {selectedRoomForMembers && (
-        <Modal isOpen={!!selectedRoomForMembers} onClose={() => setSelectedRoomForMembers(null)} maxWidth="max-w-md">
-          <div className="space-y-4 text-xs">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="font-bold text-slate-900 text-sm">Hồ Sơ Cư Dân Phòng {selectedRoomForMembers.number}</h3>
-              <button onClick={() => setSelectedRoomForMembers(null)} className="p-1 text-slate-400 hover:text-slate-700">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      {selectedRoomForMembers && (() => {
+        const occInfo = getRoomOccupancyInfo(
+          selectedRoomForMembers,
+          selectedRoomForMembers.houseCode
+        );
+        const isVacant =
+          selectedRoomForMembers.status === 'AVAILABLE' ||
+          selectedRoomForMembers.status === 'LOCKED' ||
+          selectedRoomForMembers.status === 'MAINTENANCE';
 
-            <div className="space-y-2">
-              {roomMembers.filter((m) => m.roomNumber === selectedRoomForMembers.number && m.status !== 'MOVED_OUT').length === 0 ? (
-                <p className="text-center py-6 text-slate-400">Phòng hiện chưa có thông tin thành viên nào</p>
+        return (
+          <Modal isOpen={!!selectedRoomForMembers} onClose={() => setSelectedRoomForMembers(null)} maxWidth="max-w-md">
+            <div className="space-y-4 text-xs">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">
+                    Hồ Sơ Cư Dân: Phòng {selectedRoomForMembers.number}
+                  </h3>
+                  <div className="text-[11px] text-slate-500 font-medium">
+                    [{selectedRoomForMembers.houseCode}] {selectedRoomForMembers.houseName || 'Cơ sở nhà trọ'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRoomForMembers(null)}
+                  className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {isVacant ? (
+                <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 text-center space-y-2">
+                  <div className="inline-flex p-2 bg-emerald-100 text-emerald-700 rounded-full">
+                    <Building2 className="w-6 h-6" />
+                  </div>
+                  <h4 className="font-bold text-emerald-900 text-sm">Phòng Hiện Đang Còn Trống</h4>
+                  <p className="text-slate-600 text-xs leading-relaxed">
+                    Phòng {selectedRoomForMembers.number} chưa có cư dân nào lưu trú. Bạn có thể đón khách thuê mới hoặc nhận giữ chỗ cọc cho khách.
+                  </p>
+                  <div className="pt-2 flex items-center justify-center gap-4 text-[11px] font-bold text-emerald-800">
+                    <span>Sức chứa: {selectedRoomForMembers.maxOccupants || 2} người</span>
+                    <span>•</span>
+                    <span>Giá: {(selectedRoomForMembers.price || 0).toLocaleString('vi-VN')} đ/tháng</span>
+                  </div>
+                </div>
+              ) : occInfo.members.length === 0 ? (
+                <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-center space-y-3">
+                  <div className="text-amber-800 font-bold text-sm">
+                    ⚠️ Phát Hiện Lỗi Bất Đồng Bộ Dữ Liệu
+                  </div>
+                  <p className="text-amber-900/90 text-xs leading-relaxed">
+                    Phòng {selectedRoomForMembers.number} tại [{selectedRoomForMembers.houseCode}] đang mang trạng thái <strong>Đang thuê</strong> nhưng hệ thống không tìm thấy bất kỳ hợp đồng hiệu lực hay hồ sơ cư dân nào tại cơ sở này.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (updateRoomStatus) {
+                        updateRoomStatus(selectedRoomForMembers.id, 'AVAILABLE');
+                      }
+                      setSelectedRoomForMembers(null);
+                      setActionToast(`Đã tự động đồng bộ & khôi phục phòng ${selectedRoomForMembers.number} về trạng thái Còn Trống!`);
+                      setTimeout(() => setActionToast(null), 3500);
+                    }}
+                    className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <span>⚡ Đồng Bộ & Khôi Phục Về Phòng Trống</span>
+                  </button>
+                </div>
               ) : (
-                roomMembers
-                  .filter((m) => m.roomNumber === selectedRoomForMembers.number && m.status !== 'MOVED_OUT')
-                  .map((mem) => (
-                    <div key={mem.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 font-semibold px-1">
+                    <span>Cư dân đang ở ({occInfo.members.length}/{selectedRoomForMembers.maxOccupants || 2} người):</span>
+                    <span className="text-purple-700 font-bold">🟣 Đang thuê</span>
+                  </div>
+                  {occInfo.members.map((mem) => (
+                    <div key={mem.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-900">{mem.fullName}</span>
+                        <span className="font-bold text-slate-900 text-xs">{mem.fullName}</span>
                         <span className="text-[10px] px-2 py-0.5 rounded bg-purple-100 text-purple-800 font-bold">
-                          {mem.role === 'HOST' ? 'Chủ hợp đồng' : 'Ở ghép'}
+                          {mem.role === 'HOST' || mem.roleInRoom === 'REPRESENTATIVE' ? 'Chủ hợp đồng' : 'Ở ghép'}
                         </span>
                       </div>
-                      <div className="text-slate-500">SĐT: {mem.phone} • CCCD: {mem.cccd || 'Chưa cung cấp'}</div>
-                      <div className="text-[11px] text-slate-600">
-                        Tạm trú: {mem.temporaryResidenceStatus === 'REGISTERED' ? '🟢 Đã ĐK tạm trú' : '🟡 Chưa đăng ký'}
+                      <div className="text-slate-600 text-xs">
+                        SĐT: <span className="font-semibold text-slate-800">{mem.phone || 'Chưa cập nhật'}</span> • CCCD: <span className="font-mono text-slate-700">{mem.maskedCccd || mem.cccd || 'Chưa cung cấp'}</span>
+                      </div>
+                      <div className="text-[11px] text-slate-600 flex items-center justify-between pt-1 border-t border-slate-200/60">
+                        <span>
+                          Tạm trú: {mem.temporaryResidenceStatus === 'REGISTERED' ? '🟢 Đã ĐK tạm trú' : '🟡 Chưa đăng ký'}
+                        </span>
+                        {mem.contractCode && (
+                          <span className="font-mono text-[10px] text-purple-700 font-bold">
+                            HĐ: {mem.contractCode}
+                          </span>
+                        )}
                       </div>
                     </div>
-                  ))
+                  ))}
+                </div>
               )}
             </div>
-          </div>
-        </Modal>
-      )}
+          </Modal>
+        );
+      })()}
 
       {/* Modal Cảnh Báo Chưa Có Cơ Sở / Cơ Sở Chưa Duyệt */}
       {noHouseWarningModal && (

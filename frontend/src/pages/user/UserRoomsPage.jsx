@@ -164,31 +164,37 @@ export function healBoardingHousesList(list) {
 const isZeroSandbox = typeof window === 'undefined' || localStorage.getItem('rental_is_zero_sandbox') !== 'false';
 
 export default function UserRoomsPage() {
-    // Hàm tính toán số cư dân thực tế trong phòng chuẩn xác theo roomMembers & hợp đồng ACTIVE
+  // Hàm tính toán số cư dân thực tế trong phòng chuẩn xác theo roomMembers & hợp đồng ACTIVE
   const getActualOccupants = (room) => {
-    if (!room || room.status === 'AVAILABLE') return 0;
-    const cleanNum = String(room.number || '').replace(/^P\.?/i, '').trim();
+    if (!room || room.status === 'AVAILABLE' || room.status === 'LOCKED' || room.status === 'MAINTENANCE') return 0;
+    const cleanNum = String(room.number || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase();
+    const roomHouse = String(room.houseCode || 'CS-01').trim().toUpperCase();
 
     // 1. Đếm số thành viên còn đang cư trú thực tế trong phòng
     const activeMems = (roomMembers || []).filter((m) => {
-      const mClean = String(m.roomNumber || '').replace(/^P\.?/i, '').trim();
+      const mClean = String(m.roomNumber || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase();
       const matchRoom = mClean === cleanNum;
-      const matchHouse = !room.houseCode || !m.houseCode || m.houseCode === room.houseCode;
+      const mHouse = String(m.houseCode || 'CS-01').trim().toUpperCase();
+      const matchHouse = mHouse === roomHouse;
       return matchRoom && matchHouse && m.status !== 'MOVED_OUT';
     });
     if (activeMems.length > 0) return activeMems.length;
 
     // 2. Nếu có hợp đồng ACTIVE tại phòng này
     const hasActiveContract = (contracts || []).some((c) => {
-      const cClean = String(c.roomNumber || '').replace(/^P\.?/i, '').trim();
+      const cClean = String(c.roomNumber || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase();
       const matchRoom = cClean === cleanNum;
-      const matchHouse = !room.houseCode || !c.houseCode || c.houseCode === room.houseCode;
+      const cHouse = String(c.houseCode || 'CS-01').trim().toUpperCase();
+      const matchHouse = cHouse === roomHouse;
       return matchRoom && matchHouse && c.status === 'ACTIVE';
     });
     if (hasActiveContract) return 1;
 
-    // 3. Fallback theo room.occupants
-    return typeof room.occupants === 'number' ? room.occupants : 1;
+    // 3. Fallback theo room.occupants nếu phòng OCCUPIED
+    if (room.status === 'OCCUPIED' && typeof room.occupants === 'number' && room.occupants > 0) {
+      return room.occupants;
+    }
+    return 0;
   };
 
 const { user, tenantRooms } = useAuth();
