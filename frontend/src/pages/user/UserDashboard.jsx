@@ -698,20 +698,33 @@ export default function UserDashboard() {
     if (!isContractPending || !myContract) return;
     let isMounted = true;
     const targetRoomNum = myContract.roomNumber || 'P.102';
-    const transferMemo = `COC ${String(targetRoomNum || 'P.102').replace('.', '')} ${String(user?.fullName || myContract?.tenantName || 'NAM').replace(/\s+/g, ' ').toUpperCase()}`.trim();
-    const depositAmount = myContract.depositAmount || 2800000;
+    const depositAmount = myContract.rentalPrice || myContract.depositAmount || 3500000;
+    const residenceFee = 50000; // Tiền đăng ký tạm trú tạm vắng 50k
+    const totalDepositAmount = depositAmount + residenceFee;
     const bankAccount = sepayConfig.accountNumber || '35825112005';
+
+    const cleanTenantName = (user?.fullName || myContract?.tenantName || 'KHACH')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'D')
+      .toUpperCase()
+      .replace(/[^A-Z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const cleanRoom = String(targetRoomNum || 'P.101').replace(/^P\.?/i, 'P').trim();
+    const transferMemo = `COC ${cleanRoom} + TAM TRU TAM VANG ${cleanTenantName}`.trim();
 
     const checkDeposit = async () => {
       try {
         const res = await checkSePayTransaction({
           invoiceCode: transferMemo,
-          amount: depositAmount,
+          amount: totalDepositAmount,
           accountNumber: bankAccount
         });
-        if (res.success && isMounted) {
+        if (res && res.success && isMounted) {
           setIsDepositPaid(true);
-          setPaySuccessToast(`⚡ SePay Xác Nhận: Đã nhận ${depositAmount.toLocaleString('vi-VN')} đ tiền cọc! Nút Ký Hợp Đồng đã sáng lên để bạn bấm.`);
+          setPaySuccessToast(`⚡ SePay Xác Nhận: Đã nhận ${totalDepositAmount.toLocaleString('vi-VN')} đ (Cọc + Phí Tạm Trú)! Nút Ký Hợp Đồng đã sáng lên để bạn bấm.`);
           setTimeout(() => setPaySuccessToast(null), 6000);
         }
       } catch {}
@@ -733,13 +746,26 @@ export default function UserDashboard() {
   // 1A. GIAO DIỆN BẮT BUỘC: NỘP TIỀN CỌC & KÝ HỢP ĐỒNG ĐIỆN TỬ (ONBOARDING GATE)
   // =========================================================================
   if (isContractPending && myContract) {
-    const depositAmount = myContract.depositAmount || 2800000;
+    const depositAmount = myContract.rentalPrice || myContract.depositAmount || 3500000;
+    const residenceFee = 50000; // Tiền đăng ký tạm trú tạm vắng 50k
+    const totalDepositAmount = depositAmount + residenceFee;
     const targetRoomNum = myContract.roomNumber || 'P.102';
     const targetHouseName = myContract.houseName || 'Nhà Trọ Bách Khoa - Cơ Sở 2';
     const bankAccount = sepayConfig.accountNumber || '35825112005';
     const bankName = sepayConfig.bank || 'MBBank';
     const accountHolder = sepayConfig.accountName || 'DAM TRUNG ANH';
-    const transferMemo = `COC ${String(targetRoomNum || 'P.102').replace('.', '')} ${String(user?.fullName || myContract?.tenantName || 'NAM').replace(/\s+/g, ' ').toUpperCase()}`.trim();
+
+    const cleanTenantName = (user?.fullName || myContract?.tenantName || 'KHACH')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'D')
+      .toUpperCase()
+      .replace(/[^A-Z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const cleanRoom = String(targetRoomNum || 'P.101').replace(/^P\.?/i, 'P').trim();
+    const transferMemo = `COC ${cleanRoom} + TAM TRU TAM VANG ${cleanTenantName}`.trim();
     
     const isDepositConfirmed = Boolean(
       isDepositPaid ||
@@ -760,7 +786,7 @@ export default function UserDashboard() {
       methodQrUrl = generateSePayQrUrl({
         accountNumber: bankAccount,
         bank: bankName,
-        amount: depositAmount,
+        amount: totalDepositAmount,
         content: transferMemo,
         template: 'compact'
       });
@@ -797,20 +823,22 @@ export default function UserDashboard() {
           contractCode: myContract.contractCode,
           room: targetRoomNum,
           houseCode: myContract.houseCode,
-          total: depositAmount,
+          total: totalDepositAmount,
+          depositAmount,
+          residenceFee,
           tenantName: user?.fullName || myContract?.tenantName,
           timestamp: Date.now()
         }));
         const payUrl = await createVNPayPaymentUrl({
           invoiceId: `COC_${String(targetRoomNum).replace('.', '')}_${Date.now()}`,
-          amount: depositAmount,
-          orderInfo: `Nop tien coc ${targetRoomNum} ${user?.fullName || myContract?.tenantName || ''}`.trim(),
+          amount: totalDepositAmount,
+          orderInfo: `Nop coc ${targetRoomNum} + Tam tru tam vang ${cleanTenantName}`.trim(),
           bankCode: 'NCB'
         });
         window.location.href = payUrl;
       } catch (err) {
         console.error('VNPay error:', err);
-        window.location.href = `/payment/vnpay-return?vnp_ResponseCode=00&vnp_TxnRef=COC_${targetRoomNum}&vnp_Amount=${depositAmount * 100}&vnp_BankCode=NCB&vnp_OrderInfo=${encodeURIComponent(transferMemo)}`;
+        window.location.href = `/payment/vnpay-return?vnp_ResponseCode=00&vnp_TxnRef=COC_${targetRoomNum}&vnp_Amount=${totalDepositAmount * 100}&vnp_BankCode=NCB&vnp_OrderInfo=${encodeURIComponent(transferMemo)}`;
       }
     };
 
@@ -822,23 +850,25 @@ export default function UserDashboard() {
           contractCode: myContract.contractCode,
           room: targetRoomNum,
           houseCode: myContract.houseCode,
-          total: depositAmount,
+          total: totalDepositAmount,
+          depositAmount,
+          residenceFee,
           tenantName: user?.fullName || myContract?.tenantName,
           timestamp: Date.now()
         }));
         const payUrl = await createMoMoPaymentUrl({
           invoiceId: `COC_${String(targetRoomNum).replace('.', '')}_${Date.now()}`,
-          amount: depositAmount,
-          orderInfo: `Nop tien coc ${targetRoomNum} ${user?.fullName || myContract?.tenantName || ''}`.trim()
+          amount: totalDepositAmount,
+          orderInfo: `Nop coc ${targetRoomNum} + Tam tru tam vang ${cleanTenantName}`.trim()
         });
         if (payUrl) {
           window.location.href = payUrl;
         } else {
-          window.location.href = `/payment/momo-return?resultCode=0&orderId=COC_${targetRoomNum}&amount=${depositAmount}&message=Giao%20dich%20thanh%20cong`;
+          window.location.href = `/payment/momo-return?resultCode=0&orderId=COC_${targetRoomNum}&amount=${totalDepositAmount}&message=Giao%20dich%20thanh%20cong`;
         }
       } catch (err) {
         console.error('MoMo error:', err);
-        window.location.href = `/payment/momo-return?resultCode=0&orderId=COC_${targetRoomNum}&amount=${depositAmount}&message=Giao%20dich%20thanh%20cong`;
+        window.location.href = `/payment/momo-return?resultCode=0&orderId=COC_${targetRoomNum}&amount=${totalDepositAmount}&message=Giao%20dich%20thanh%20cong`;
       }
     };
 
@@ -1105,7 +1135,7 @@ export default function UserDashboard() {
                   </span>
                 </div>
                 <p className="text-xs text-purple-900 leading-relaxed">
-                  Tiền cọc đúng bằng 1 tháng tiền phòng = <strong className="font-mono text-purple-950">{depositAmount.toLocaleString('vi-VN')} đ</strong>.{' '}
+                  Tiền cọc 1 tháng tiền phòng (<strong className="font-mono text-purple-950">{depositAmount.toLocaleString('vi-VN')} đ</strong>) + Lệ phí đăng ký tạm trú tạm vắng (<strong className="font-mono text-purple-950">50.000 đ</strong>). Tổng tiền cần chuyển = <strong className="font-mono text-purple-950 text-sm bg-purple-100 px-1.5 py-0.5 rounded">{totalDepositAmount.toLocaleString('vi-VN')} đ</strong>.{' '}
                   {depositPaymentMethod === 'SEPAY'
                     ? 'Quét mã VietQR SePay bên dưới để hệ thống tự động gạch nợ và mở khóa nút ký hợp đồng nhận phòng.'
                     : depositPaymentMethod === 'VNPAY'
@@ -1162,34 +1192,47 @@ export default function UserDashboard() {
                     </div>
                   </div>
 
-                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-                    <span className="text-slate-500">Số tiền cọc chính xác:</span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-black text-purple-700 text-sm font-mono">
-                        {depositAmount.toLocaleString('vi-VN')} đ
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => copyGate(depositAmount, 'amount')}
-                        className="text-slate-400 hover:text-purple-600 cursor-pointer"
-                        title="Sao chép"
-                      >
-                        {copiedGateField === 'amount' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
+                  {/* Chi tiết 3 khoản: Cọc 1 tháng, Tạm trú 50k, Tổng tiền */}
+                  <div className="p-3 bg-purple-50/50 rounded-2xl border border-purple-200/80 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-600 font-medium">1. Tiền cọc giữ phòng (1 tháng tiền phòng):</span>
+                      <span className="font-mono font-bold text-slate-900">{depositAmount.toLocaleString('vi-VN')} đ</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-600 font-medium">2. Lệ phí đăng ký tạm trú tạm vắng:</span>
+                      <span className="font-mono font-bold text-indigo-700">+ 50.000 đ</span>
+                    </div>
+                    <div className="flex items-center justify-between pt-1.5 border-t border-purple-200">
+                      <span className="font-black text-slate-900 text-xs uppercase tracking-tight">TỔNG TIỀN PHẢI CHUYỂN KHOẢN:</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-black text-purple-700 text-base font-mono">
+                          {totalDepositAmount.toLocaleString('vi-VN')} đ
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => copyGate(totalDepositAmount, 'amount')}
+                          className="text-slate-400 hover:text-purple-600 cursor-pointer"
+                          title="Sao chép tổng số tiền"
+                        >
+                          {copiedGateField === 'amount' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
                   <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-                    <span className="text-slate-500">
-                      {depositPaymentMethod === 'MOMO' ? 'Lời nhắn chuyển tiền MoMo:' : `Nội dung chuyển khoản chuẩn ${depositPaymentMethod}:`}
+                    <span className="text-slate-500 text-[11px] leading-tight font-medium">
+                      {depositPaymentMethod === 'MOMO' ? 'Lời nhắn chuyển tiền MoMo:' : 'Nội dung chuyển khoản chuẩn:'}
                     </span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-mono font-black text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200 text-xs">{transferMemo}</span>
+                    <div className="flex items-center gap-1.5 max-w-[62%]">
+                      <span className="font-mono font-black text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200 text-[11px] truncate" title={transferMemo}>
+                        {transferMemo}
+                      </span>
                       <button
                         type="button"
                         onClick={() => copyGate(transferMemo, 'memo')}
-                        className="text-slate-400 hover:text-purple-600 cursor-pointer"
-                        title="Sao chép"
+                        className="text-slate-400 hover:text-purple-600 cursor-pointer shrink-0"
+                        title="Sao chép nội dung chuyển khoản"
                       >
                         {copiedGateField === 'memo' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                       </button>
@@ -1214,7 +1257,7 @@ export default function UserDashboard() {
                       src={generateSePayQrUrl({
                         accountNumber: bankAccount,
                         bank: bankName,
-                        amount: depositAmount,
+                        amount: totalDepositAmount,
                         content: transferMemo,
                         template: 'compact'
                       })}
@@ -1399,10 +1442,20 @@ export default function UserDashboard() {
                   <div className="font-mono font-black text-slate-900 text-sm">{depositAmount.toLocaleString('vi-VN')} đ/tháng</div>
                   <div className="text-[11px] text-slate-600">Kỳ thanh toán: 01–05 hàng tháng</div>
                 </div>
-                <div className="space-y-1 pt-2 border-t border-slate-200/60">
-                  <span className="text-slate-500 text-[11px]">Tiền cọc bảo lưu:</span>
-                  <div className="font-mono font-black text-purple-700 text-sm">{depositAmount.toLocaleString('vi-VN')} đ</div>
-                  <div className="text-[11px] text-emerald-600 font-medium">Hoàn lại 100% khi trả phòng</div>
+                <div className="space-y-1.5 pt-2 border-t border-slate-200/60">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500 text-[11px]">Tiền cọc giữ phòng (1 tháng):</span>
+                    <span className="font-mono font-bold text-slate-800">{depositAmount.toLocaleString('vi-VN')} đ</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500 text-[11px]">Phí đăng ký tạm trú tạm vắng:</span>
+                    <span className="font-mono font-bold text-indigo-700">+ 50.000 đ</span>
+                  </div>
+                  <div className="flex items-center justify-between pt-1 border-t border-dashed border-slate-200">
+                    <span className="text-slate-700 font-bold text-xs">Tổng tiền thanh toán:</span>
+                    <span className="font-mono font-black text-purple-700 text-sm">{totalDepositAmount.toLocaleString('vi-VN')} đ</span>
+                  </div>
+                  <div className="text-[10px] text-emerald-600 font-medium">Tiền cọc được hoàn lại 100% khi hết HĐ & bàn giao phòng</div>
                 </div>
               </div>
 

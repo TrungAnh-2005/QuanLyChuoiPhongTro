@@ -130,10 +130,10 @@ export async function checkSePayTransaction({
   const cfg = getSePayConfig();
   if (!cfg.apiKey) return { success: false };
 
-  // Danh sÃ¡ch cÃ¡c giao dá»‹ch Ä‘Ã£ tá»«ng xá»­ lÃ½ (chá»‘ng gáº¡ch ná»£ trÃ¹ng)
+  // Danh sách các giao dịch đã từng xử lý (chống gạch nợ trùng)
   const processedSet = new Set(getProcessedSepayTxIds());
 
-  // 1. Ki?m tra n?u c SePay Webhook v?a b?n vo my ch?
+  // 1. Kiểm tra nếu có SePay Webhook vừa bắn vào máy chủ
   try {
     const whRes = await fetch('/api/payments/sepay/webhook');
     if (whRes.ok) {
@@ -148,16 +148,15 @@ export async function checkSePayTransaction({
           const amountIn = parseFloat(tx.amountIn || tx.transferAmount || tx.amount_in || 0);
 
           const matchAmount = Math.abs(amountIn - Number(amount)) < 50;
-          const matchCode =
-            (cleanCode && cleanContent.includes(cleanCode)) ||
-            cleanContent.includes('HDSAAS') ||
-            cleanContent.includes('SAAS') ||
-            rawContent.includes('HD-SAAS') ||
-            cleanContent.includes('HD20260901') ||
-            cleanContent.includes('P101') ||
-            cleanContent.includes('101') ||
-            rawContent.includes('HD-202609-01') ||
-            rawContent.includes('HD20260901');
+          let matchCode = false;
+          if (cleanCode && cleanContent.includes(cleanCode)) {
+            matchCode = true;
+          } else if (cleanCode) {
+            const parts = (invoiceCode || '').toUpperCase().split(/\s+/).filter(Boolean);
+            if (parts.length >= 2 && parts.every(p => cleanContent.includes(p.replace(/[^A-Za-z0-9]/g, '')))) {
+              matchCode = true;
+            }
+          }
 
           if (matchAmount && matchCode) {
             markSepayTxAsProcessed(txId, tx.referenceNumber || tx.referenceCode);
@@ -171,7 +170,8 @@ export async function checkSePayTransaction({
       }
     }
   } catch (e) {}
-  // Thá»­ láº§n lÆ°á»£t qua proxy Vite (/sepay-api) vÃ  gá»i trá»±c tiáº¿p
+
+  // 2. Thử lần lượt qua proxy Vite (/sepay-api) và gọi trực tiếp
   const endpoints = [
     '/sepay-api/userapi/transactions/list',
     'https://my.sepay.vn/userapi/transactions/list'
@@ -196,7 +196,7 @@ export async function checkSePayTransaction({
         const cleanCode = (invoiceCode || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 
         const matched = transactions.find((tx) => {
-          // 1. KhÃ´ng nháº­n láº¡i giao dá»‹ch cÅ© Ä‘Ã£ xá»­ lÃ½
+          // 1. Không nhận lại giao dịch cũ đã xử lý
           if (processedSet.has(String(tx.id)) || processedSet.has(String(tx.reference_number))) {
             return false;
           }
@@ -205,26 +205,25 @@ export async function checkSePayTransaction({
           const cleanContent = rawContent.replace(/[^A-Za-z0-9]/g, '');
           const amountIn = parseFloat(tx.amount_in || tx.amount || 0);
 
-          // Khá»›p sá»‘ tiá»n (chÃªnh lá»‡ch dÆ°á»›i 50Ä‘)
+          // Khớp số tiền (chênh lệch dưới 50đ)
           const matchAmount = Math.abs(amountIn - Number(amount)) < 50;
 
-          // Khá»›p ná»™i dung chuyá»ƒn khoáº£n
-          const matchCode =
-            (cleanCode && cleanContent.includes(cleanCode)) ||
-            cleanContent.includes('HDSAAS') ||
-            cleanContent.includes('SAAS') ||
-            rawContent.includes('HD-SAAS') ||
-            cleanContent.includes('HD20260901') ||
-            cleanContent.includes('P101') ||
-            cleanContent.includes('101') ||
-            rawContent.includes('HD-202609-01') ||
-            rawContent.includes('HD20260901');
+          // Khớp nội dung chuyển khoản chuẩn xác (không nhận bừa P101 hay 101)
+          let matchCode = false;
+          if (cleanCode && cleanContent.includes(cleanCode)) {
+            matchCode = true;
+          } else if (cleanCode) {
+            const parts = (invoiceCode || '').toUpperCase().split(/\s+/).filter(Boolean);
+            if (parts.length >= 2 && parts.every(p => cleanContent.includes(p.replace(/[^A-Za-z0-9]/g, '')))) {
+              matchCode = true;
+            }
+          }
 
           return matchAmount && matchCode;
         });
 
         if (matched) {
-          // LÆ°u ngay ID giao dá»‹ch nÃ y Ä‘á»ƒ láº§n sau khÃ´ng bá»‹ nháº­n diá»‡n láº¡i
+          // Lưu ngay ID giao dịch này để lần sau không bị nhận diện lại
           markSepayTxAsProcessed(matched.id, matched.reference_number);
           return {
             success: true,
@@ -233,9 +232,7 @@ export async function checkSePayTransaction({
           };
         }
       }
-    } catch (err) {
-      // thá»­ endpoint tiáº¿p theo
-    }
+    } catch (e) {}
   }
 
   return { success: false };
