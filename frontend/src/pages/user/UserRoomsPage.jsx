@@ -11,6 +11,8 @@ import {
   Search,
   Filter,
   Users,
+  UserPlus,
+  CheckCircle2,
   CheckCircle,
   Clock,
   Sparkles,
@@ -329,6 +331,53 @@ export default function UserRoomsPage() {
   const [showMoveOutModal, setShowMoveOutModal] = useState(false);
   const [showRequestsHistory, setShowRequestsHistory] = useState(false);
   const [actionToast, setActionToast] = useState(null);
+
+  // State cho Modal Xin Vào Ở Ghép (Phòng có người nhưng chưa đầy)
+  const [joinRoomModalData, setJoinRoomModalData] = useState(null);
+  const [joinNote, setJoinNote] = useState('');
+  const [joinPhone, setJoinPhone] = useState('');
+  const [joinCccd, setJoinCccd] = useState('');
+  const [joinHometown, setJoinHometown] = useState('');
+
+  const handleConfirmJoinRoom = (e) => {
+    e.preventDefault();
+    if (!joinRoomModalData) return;
+
+    // Kiểm tra xem khách có đang đứng tên Hợp đồng phòng khác chưa thanh lý không
+    const userNameNorm = (user?.fullName || '').toLowerCase().trim();
+    const repContract = (contracts || []).find(
+      (c) =>
+        c.status === 'ACTIVE' &&
+        (c.tenantName || '').toLowerCase().trim().includes(userNameNorm) &&
+        c.roomNumber !== joinRoomModalData.number
+    );
+    if (repContract) {
+      alert(`Bạn đang là Người đại diện đứng tên Hợp đồng của phòng ${repContract.roomNumber}. Bạn bắt buộc phải thanh lý / trả phòng này trước khi xin sang ở ghép phòng khác!`);
+      return;
+    }
+
+    const res = submitRoomRequest({
+      type: 'ROOMMATE',
+      targetRoom: joinRoomModalData.number,
+      houseCode: joinRoomModalData.houseCode || 'CS-01',
+      house: joinRoomModalData.house || (joinRoomModalData.houseCode === 'CS-02' ? 'Nhà Trọ Bách Khoa - Cơ Sở 2' : 'Nhà Trọ Cầu Giấy - Cơ Sở 1'),
+      tenant: user?.fullName || 'Khách tìm ở ghép',
+      phone: joinPhone || user?.phone || '0987.654.321',
+      cccd: joinCccd || user?.cccd || '001201012345',
+      hometown: joinHometown || 'Hà Nội',
+      note: joinNote,
+      status: 'WAITING_ROOMMATES'
+    });
+
+    if (res?.error) {
+      alert(res.message);
+      return;
+    }
+
+    setJoinRoomModalData(null);
+    setActionToast(`🎉 Đã gửi đơn xin vào ở ghép phòng ${joinRoomModalData.number}! Đang chờ các bạn cùng phòng biểu quyết đồng ý.`);
+    setTimeout(() => setActionToast(null), 5000);
+  };
 
 
   const getLandlordDisplayName = useCallback((house) => {
@@ -1120,9 +1169,20 @@ export default function UserRoomsPage() {
                                 </span>
                               );
                             }
+                            const curOccupants = room.occupants || 1;
+                            const maxOcc = room.maxOccupants || 2;
+                            const freeSlots = maxOcc - curOccupants;
+                            if (freeSlots > 0) {
+                              return (
+                                <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white backdrop-blur-md shadow-md flex items-center gap-1">
+                                  <Users className="w-3 h-3" />
+                                  <span>Ở ghép (Còn {freeSlots} chỗ)</span>
+                                </span>
+                              );
+                            }
                             return (
                               <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-slate-900/80 text-white backdrop-blur-md shadow-md">
-                                Đang thuê
+                                Đã đủ người ({curOccupants}/{maxOcc})
                               </span>
                             );
                           })()}
@@ -1151,6 +1211,17 @@ export default function UserRoomsPage() {
                           <p className="text-xs text-slate-500 font-semibold mt-0.5">
                             {room.house || room.houseCode}
                           </p>
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200/80">
+                              <Users className="w-3 h-3 text-indigo-600" />
+                              <span>{room.occupants || (room.status === 'AVAILABLE' ? 0 : 1)}/{room.maxOccupants || 2} người</span>
+                            </span>
+                            {room.status === 'OCCUPIED' && (room.occupants || 1) < (room.maxOccupants || 2) && (
+                              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                Còn trống {(room.maxOccupants || 2) - (room.occupants || 1)} chỗ
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         <div className="text-right">
@@ -1239,6 +1310,132 @@ export default function UserRoomsPage() {
                               className="text-xs text-white font-bold px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 rounded-xl shadow-xs transition-all flex-1 text-center btn-press cursor-pointer"
                             >
                               Giữ Trọ Đặt Cọc
+                            </button>
+                          );
+                        })()
+                      )}
+
+                      {/* 2. Nếu phòng OCCUPIED (Đang thuê) */}
+                      {room.status !== 'AVAILABLE' && (
+                        (() => {
+                          const curOcc = room.occupants || 1;
+                          const maxOcc = room.maxOccupants || 2;
+                          const isFull = curOcc >= maxOcc;
+
+                          if (isMyRented) {
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => navigate('/')}
+                                className="text-xs text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 font-bold px-3 py-2 rounded-xl transition-all flex-1 text-center btn-press cursor-pointer flex items-center justify-center gap-1"
+                              >
+                                <span>Phòng Của Bạn</span>
+                              </button>
+                            );
+                          }
+
+                          if (isFull) {
+                            return (
+                              <button
+                                type="button"
+                                disabled
+                                className="text-[11px] text-slate-400 bg-slate-100 border border-slate-200 font-bold px-2 py-2 rounded-xl opacity-75 flex-1 text-center cursor-not-allowed flex items-center justify-center gap-1"
+                              >
+                                <span>Đã Kín Chỗ ({curOcc}/{maxOcc})</span>
+                              </button>
+                            );
+                          }
+
+                          // Phòng chưa đầy (ví dụ 1/2 người): Có thể xin vào ở ghép
+                          const uName = (user?.fullName || '').toLowerCase().trim();
+                          const uPhone = (user?.phone || '').trim();
+                          const myRoommateReq = (roomRequests || []).find((req) => {
+                            if (req.type !== 'ROOMMATE') return false;
+                            const reqRoom = String(req.targetRoom || req.roomNumber || '').replace(/^P\.?/i, '').trim();
+                            const currRoom = String(room.number || '').replace(/^P\.?/i, '').trim();
+                            if (reqRoom !== currRoom) return false;
+                            if (req.houseCode && room.houseCode && req.houseCode !== room.houseCode) return false;
+                            const rTenant = (req.tenant || req.tenantName || '').toLowerCase().trim();
+                            const rPhone = (req.phone || '').trim();
+                            return (uName && (rTenant.includes(uName) || uName.includes(rTenant))) || (uPhone && rPhone === uPhone);
+                          });
+
+                          if (myRoommateReq) {
+                            if (myRoommateReq.status === 'WAITING_ROOMMATES') {
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActionToast('⏳ Đơn xin ở ghép phòng ' + room.number + ' đang chờ các bạn cùng phòng biểu quyết.');
+                                    setTimeout(() => setActionToast(null), 4000);
+                                  }}
+                                  className="text-[11px] text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 font-bold px-2 py-2 rounded-xl shadow-xs transition-all flex-1 text-center cursor-pointer flex items-center justify-center gap-1"
+                                >
+                                  <Clock className="w-3.5 h-3.5" />
+                                  <span>Chờ Phòng Duyệt</span>
+                                </button>
+                              );
+                            }
+
+                            if (myRoommateReq.status === 'ROOMMATES_APPROVED') {
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActionToast('🎉 100% cư dân phòng đã đồng ý! Đang chờ Quản lý duyệt hồ sơ pháp lý CCCD.');
+                                    setTimeout(() => setActionToast(null), 4000);
+                                  }}
+                                  className="text-[11px] text-purple-800 bg-purple-100 hover:bg-purple-200 border border-purple-300 font-bold px-2 py-2 rounded-xl shadow-xs transition-all flex-1 text-center cursor-pointer flex items-center justify-center gap-1"
+                                >
+                                  <Clock className="w-3.5 h-3.5 text-purple-700" />
+                                  <span>Chờ Quản Lý Duyệt</span>
+                                </button>
+                              );
+                            }
+
+                            if (myRoommateReq.status === 'APPROVED') {
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => navigate('/')}
+                                  className="text-xs text-white font-bold px-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-xl shadow-xs transition-all flex-1 text-center btn-press cursor-pointer flex items-center justify-center gap-1 animate-pulse"
+                                >
+                                  <CheckCircle className="w-3.5 h-3.5" />
+                                  <span>Đã Duyệt - Vào Phòng</span>
+                                </button>
+                              );
+                            }
+
+                            if (myRoommateReq.status === 'REJECTED_BY_ROOMMATES') {
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActionToast('❌ Thành viên trong phòng đã từ chối đơn xin ở ghép này.');
+                                    setTimeout(() => setActionToast(null), 4000);
+                                  }}
+                                  className="text-[11px] text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 font-bold px-2 py-2 rounded-xl transition-all flex-1 text-center cursor-pointer flex items-center justify-center gap-1"
+                                >
+                                  <span>Phòng Từ Chối</span>
+                                </button>
+                              );
+                            }
+                          }
+
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setJoinRoomModalData(room);
+                                setJoinPhone(user?.phone || '0987.654.321');
+                                setJoinCccd(user?.cccd || '001201012345');
+                                setJoinHometown(user?.hometown || 'Hà Nội');
+                                setJoinNote('Em muốn xin vào ở ghép cùng các bạn trong phòng, tính tình gọn gàng sạch sẽ, chia đều chi phí phòng.');
+                              }}
+                              className="text-xs text-white font-bold px-3 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 rounded-xl shadow-xs transition-all flex-1 text-center btn-press cursor-pointer flex items-center justify-center gap-1"
+                            >
+                              <UserPlus className="w-3.5 h-3.5" />
+                              <span>Xin Vào Ở Ghép</span>
                             </button>
                           );
                         })()
@@ -1333,6 +1530,24 @@ export default function UserRoomsPage() {
                   className="px-5 py-2 font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl shadow-md cursor-pointer"
                 >
                   Giữ Trọ Đặt Cọc (1 Tháng Tiền Trọ)
+                </button>
+              )}
+              {selectedRoomDetails.status !== 'AVAILABLE' && (selectedRoomDetails.occupants || 1) < (selectedRoomDetails.maxOccupants || 2) && !((user?.rooms || []).includes(selectedRoomDetails.number) || user?.room === selectedRoomDetails.number) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const r = selectedRoomDetails;
+                    setSelectedRoomDetails(null);
+                    setJoinRoomModalData(r);
+                    setJoinPhone(user?.phone || '0987.654.321');
+                    setJoinCccd(user?.cccd || '001201012345');
+                    setJoinHometown(user?.hometown || 'Hà Nội');
+                    setJoinNote('Em muốn xin vào ở ghép cùng các bạn trong phòng, tính tình gọn gàng sạch sẽ, chia đều chi phí phòng.');
+                  }}
+                  className="px-5 py-2 font-bold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>Xin Vào Ở Ghép</span>
                 </button>
               )}
             </div>
@@ -1503,6 +1718,167 @@ export default function UserRoomsPage() {
                 ))
               )}
             </div>
+          </div>
+        </Modal>
+      )}
+
+
+      {/* Modal Xin Vào Ở Ghép (Phòng có người nhưng chưa đầy) */}
+      {joinRoomModalData && (
+        <Modal isOpen={!!joinRoomModalData} onClose={() => setJoinRoomModalData(null)} maxWidth="max-w-lg">
+          <div className="space-y-4 text-xs">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900">
+                    Xin Vào Ở Ghép - Phòng {joinRoomModalData.number}
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    {joinRoomModalData.house || joinRoomModalData.houseCode}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setJoinRoomModalData(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Thông tin phòng & Cư dân hiện tại */}
+            <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Giá phòng gốc:</span>
+                <span className="font-bold text-purple-700">
+                  {(joinRoomModalData.price || 0).toLocaleString('vi-VN')} đ/tháng
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Sức chứa & Hiện tại:</span>
+                <span className="font-bold text-slate-800">
+                  {joinRoomModalData.occupants || 1}/{joinRoomModalData.maxOccupants || 2} người (Còn trống {(joinRoomModalData.maxOccupants || 2) - (joinRoomModalData.occupants || 1)} chỗ)
+                </span>
+              </div>
+              <div className="pt-2 border-t border-slate-200/60">
+                <div className="text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                  <Users className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Cư dân đang cư trú trong phòng:</span>
+                </div>
+                <div className="space-y-1 pl-1">
+                  {(roomMembers || [])
+                    .filter((m) => m.roomNumber === joinRoomModalData.number && m.status !== 'MOVED_OUT' && (!joinRoomModalData.houseCode || m.houseCode === joinRoomModalData.houseCode))
+                    .map((m) => (
+                      <div key={m.id || m.fullName} className="flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-slate-800">• {m.fullName}</span>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700">
+                          {m.roleInRoom === 'REPRESENTATIVE' ? 'Đại diện HĐ' : 'Thành viên'}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Hộp quy trình 2 vòng kiểm soát chuẩn BA */}
+            <div className="p-3 bg-gradient-to-r from-indigo-50/80 to-purple-50/80 rounded-2xl border border-indigo-200/80 text-[11px] text-indigo-950 space-y-1.5">
+              <div className="font-bold text-indigo-900 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span>Quy Trình 2 Vòng Kiểm Soát Xin Vào Ở Ghép:</span>
+              </div>
+              <p className="leading-relaxed">
+                <strong>Vòng 1 (Dân chủ nội bộ):</strong> Sau khi bạn gửi đơn, <strong>toàn bộ thành viên đang ở trong phòng</strong> sẽ nhận được thông báo để biểu quyết. Yêu cầu <strong>100% thành viên đồng thuận</strong> thì đơn mới được thông qua.
+              </p>
+              <p className="leading-relaxed">
+                <strong>Vòng 2 (Pháp lý Quản lý):</strong> Khi phòng đã đồng ý, <strong>Ban Quản Lý / Chủ trọ</strong> sẽ thẩm định hồ sơ CCCD, duyệt tiếp nhận và cấp quyền cư dân chính thức cho bạn.
+              </p>
+            </div>
+
+            {/* Form thông tin người xin */}
+            <form onSubmit={handleConfirmJoinRoom} className="space-y-3 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Họ và tên của bạn:</label>
+                  <input
+                    type="text"
+                    disabled
+                    value={user?.fullName || 'Khách tìm ở ghép'}
+                    className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl font-semibold text-slate-600 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Số điện thoại liên hệ:</label>
+                  <input
+                    type="text"
+                    required
+                    value={joinPhone}
+                    onChange={(e) => setJoinPhone(e.target.value)}
+                    placeholder="0987.xxx.xxx"
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-semibold text-slate-800 text-xs focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Số CCCD (12 số):</label>
+                  <input
+                    type="text"
+                    required
+                    value={joinCccd}
+                    onChange={(e) => setJoinCccd(e.target.value)}
+                    placeholder="001201012345"
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-semibold text-slate-800 text-xs focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Quê quán / Tỉnh thành:</label>
+                  <input
+                    type="text"
+                    value={joinHometown}
+                    onChange={(e) => setJoinHometown(e.target.value)}
+                    placeholder="Hà Nội, Nam Định, ..."
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-semibold text-slate-800 text-xs focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Lời nhắn gửi các bạn cùng phòng (Giới thiệu bản thân):
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={joinNote}
+                  onChange={(e) => setJoinNote(e.target.value)}
+                  placeholder="Ví dụ: Mình là sinh viên Bách Khoa năm 3, ngoan ngoãn sạch sẽ, muốn xin vào ở ghép chia đều tiền phòng..."
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-medium text-slate-800 text-xs focus:ring-2 focus:ring-purple-500 focus:outline-none resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setJoinRoomModalData(null)}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 font-bold rounded-xl cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold rounded-xl shadow-md transition-all btn-press cursor-pointer flex items-center gap-1.5"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>Gửi Đơn Xin Vào Ở Ghép</span>
+                </button>
+              </div>
+            </form>
           </div>
         </Modal>
       )}

@@ -1471,9 +1471,15 @@ export default function StaffRoomsPage() {
                           )}
                         </div>
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          req.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                          req.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' :
+                          req.status === 'ROOMMATES_APPROVED' ? 'bg-purple-100 text-purple-800' :
+                          req.status === 'REJECTED_BY_ROOMMATES' ? 'bg-rose-100 text-rose-800' :
+                          'bg-amber-100 text-amber-800'
                         }`}>
-                          {req.status === 'APPROVED' ? 'Đã duyệt' : 'Chờ duyệt'}
+                          {req.status === 'APPROVED' ? 'Đã duyệt' :
+                           req.status === 'ROOMMATES_APPROVED' ? 'Phòng đã duyệt 100%' :
+                           req.status === 'REJECTED_BY_ROOMMATES' ? 'Phòng đã từ chối' :
+                           req.status === 'WAITING_ROOMMATES' ? 'Chờ phòng biểu quyết' : 'Chờ duyệt'}
                         </span>
                       </div>
 
@@ -1483,30 +1489,53 @@ export default function StaffRoomsPage() {
                       {req.note && <div className="text-slate-500 italic">"{req.note}"</div>}
                     </div>
 
-                    {req.status === 'PENDING' && (
-                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (rejectRoomRequest) rejectRoomRequest(req.id);
-                            setActionToast('Đã từ chối đơn!');
-                            setTimeout(() => setActionToast(null), 3000);
-                          }}
-                          className="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg cursor-pointer"
-                        >
-                          Từ chối
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (approveRoomRequest) approveRoomRequest(req.id);
-                            setActionToast('🎉 Đã phê duyệt đơn! Đã kích hoạt giữ chỗ 15 phút và mở cổng nộp cọc, ký HĐ cho khách.');
-                            setTimeout(() => setActionToast(null), 3000);
-                          }}
-                          className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer"
-                        >
-                          Phê duyệt
-                        </button>
+                    {/* Trạng thái đơn ROOMMATE đang chờ biểu quyết */}
+                    {req.type === 'ROOMMATE' && req.status === 'WAITING_ROOMMATES' && (
+                      <div className="pt-2 border-t border-slate-200 text-[11px] text-amber-800 font-semibold flex items-center justify-between">
+                        <span>⏳ Đang chờ cư dân phòng {req.targetRoom} biểu quyết ({req.roommateVotes?.filter(v => v.approved)?.length || 0} phiếu đồng ý)...</span>
+                        <span className="text-[10px] text-slate-500 italic">Cần 100% phòng đồng thuận</span>
+                      </div>
+                    )}
+
+                    {/* Trạng thái đơn ROOMMATE bị phòng từ chối */}
+                    {req.type === 'ROOMMATE' && req.status === 'REJECTED_BY_ROOMMATES' && (
+                      <div className="pt-2 border-t border-slate-200 text-[11px] text-rose-700 font-semibold flex items-center justify-between">
+                        <span>❌ Có thành viên trong phòng từ chối yêu cầu ở ghép này.</span>
+                      </div>
+                    )}
+
+                    {/* Có thể phê duyệt khi PENDING hoặc ROOMMATES_APPROVED */}
+                    {(req.status === 'PENDING' || req.status === 'ROOMMATES_APPROVED') && (
+                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200 flex-wrap">
+                        {req.status === 'ROOMMATES_APPROVED' && (
+                          <span className="text-[11px] font-bold text-emerald-700 flex items-center gap-1">
+                            <span>✅</span> 100% cư dân phòng đã đồng ý!
+                          </span>
+                        )}
+                        <div className="flex items-center gap-2 ml-auto">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (rejectRoomRequest) rejectRoomRequest(req.id);
+                              setActionToast('Đã từ chối đơn!');
+                              setTimeout(() => setActionToast(null), 3000);
+                            }}
+                            className="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg cursor-pointer"
+                          >
+                            Từ chối
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (approveRoomRequest) approveRoomRequest(req.id);
+                              setActionToast(req.type === 'ROOMMATE' ? '🎉 Đã phê duyệt nhận bạn vào ở ghép!' : '🎉 Đã phê duyệt đơn!');
+                              setTimeout(() => setActionToast(null), 3000);
+                            }}
+                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer"
+                          >
+                            Phê duyệt
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
