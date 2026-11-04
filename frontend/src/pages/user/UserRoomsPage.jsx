@@ -207,7 +207,7 @@ export default function UserRoomsPage() {
 
   // Hàm tính toán số cư dân thực tế trong phòng chuẩn xác theo roomMembers & hợp đồng ACTIVE
   const getActualOccupants = (room) => {
-    if (!room || room.status === 'AVAILABLE' || room.status === 'LOCKED' || room.status === 'MAINTENANCE') return 0;
+    if (!room || room.status === 'LOCKED' || room.status === 'MAINTENANCE') return 0;
     const cleanNum = String(room.number || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase();
     const roomHouse = String(room.houseCode || 'CS-01').trim().toUpperCase();
 
@@ -706,15 +706,47 @@ export default function UserRoomsPage() {
     if (currentTenant?.status === 'INACTIVE' || currentTenant?.status === 'WAITING_ROOM') return [];
     const checkedOutRooms = (roomRequests || [])
       .filter(r => (r.type === 'CHECKOUT' || r.type === 'LEAVE_ROOM' || r.type === 'RETURN') &&
+                   (r.status === 'APPROVED' || r.status === 'CHECKOUT_SETTLED' || r.settledAt) &&
                    ((uName && (r.tenant?.toLowerCase().includes(uName) || r.tenantName?.toLowerCase().includes(uName))) || (uPhone && r.phone === uPhone)))
       .map(r => r.targetRoom || r.currentRoom || r.roomNumber);
 
     let list = [];
-    if (currentTenant?.rooms && currentTenant.rooms.length > 0) list = currentTenant.rooms;
+    if (currentTenant?.rooms && currentTenant.rooms.length > 0) list = [...currentTenant.rooms];
     else if (currentTenant?.room) list = [currentTenant.room];
-    else if (userRoom) list = [userRoom];
+    else if (userRoom) list = Array.isArray(userRoom) ? [...userRoom] : [userRoom];
+
+    // Bổ sung phòng từ hợp đồng ACTIVE của user (giống hệt UserDashboard)
+    (contracts || []).forEach((c) => {
+      if (c.status === 'ACTIVE' && c.roomNumber) {
+        const cName = (c.tenantName || '').toLowerCase().trim();
+        const cPhone = (c.tenantPhone || '').trim();
+        const isMyContract = (uName && (cName.includes(uName) || uName.includes(cName))) ||
+          (uPhone && cPhone === uPhone) ||
+          (user?.username === 'tenant1' && cName.includes('an')) ||
+          (user?.username === 'tenant2' && cName.includes('cường'));
+        if (isMyContract && !list.includes(c.roomNumber)) {
+          list.push(c.roomNumber);
+        }
+      }
+    });
+
+    // Bổ sung phòng từ roomMembers mà user đang cư trú (status !== 'MOVED_OUT')
+    (roomMembers || []).forEach((m) => {
+      if (m.roomNumber && m.status !== 'MOVED_OUT') {
+        const mName = (m.fullName || '').toLowerCase().trim();
+        const mPhone = (m.phone || '').trim();
+        const isMyMember = (uName && (mName.includes(uName) || uName.includes(mName))) ||
+          (uPhone && mPhone === uPhone) ||
+          (user?.username === 'tenant1' && mName.includes('an')) ||
+          (user?.username === 'tenant2' && mName.includes('cường'));
+        if (isMyMember && !list.includes(m.roomNumber)) {
+          list.push(m.roomNumber);
+        }
+      }
+    });
+
     return list.filter(r => !checkedOutRooms.includes(r));
-  }, [isTenantNew, currentTenant, userRoom, roomRequests, uName, uPhone]);
+  }, [isTenantNew, currentTenant, userRoom, roomRequests, uName, uPhone, contracts, roomMembers, user]);
 
   const myRentedRoom = myRentedRooms[0] || null;
 
@@ -729,9 +761,10 @@ export default function UserRoomsPage() {
         const h = visibleHousesForUser.find((house) => house.code === room.houseCode);
         if (!h || getHouseDistrict(h) !== tenantLocation) return false;
       }
-      if (filterStatus === 'AVAILABLE' && room.status !== 'AVAILABLE') return false;
+      const actualOcc = getActualOccupants(room);
+      if (filterStatus === 'AVAILABLE' && (room.status !== 'AVAILABLE' || actualOcc > 0)) return false;
       if (filterStatus === 'HOLDING' && room.status !== 'HOLDING') return false;
-      if (filterStatus === 'OCCUPIED' && room.status !== 'OCCUPIED') return false;
+      if (filterStatus === 'OCCUPIED' && room.status !== 'OCCUPIED' && actualOcc === 0) return false;
 
       if (priceRange === 'UNDER_3M' && room.price >= 3000000) return false;
       if (priceRange === '3M_5M' && (room.price < 3000000 || room.price > 5000000)) return false;
@@ -1242,7 +1275,7 @@ export default function UserRoomsPage() {
               </div>
             ) : (
               filteredRooms.map((room) => {
-                const isMyRented = myRentedRoom === room.number;
+                const isMyRented = myRentedRooms.includes(room.number);
 
                 return (
                   <div
@@ -1265,21 +1298,27 @@ export default function UserRoomsPage() {
                         <div className="absolute top-2.5 right-2.5 z-10">
                           {(() => {
                             const isPendingOther = isRoomPendingApproval(room.number, room.houseCode);
-                            if (room.status === 'AVAILABLE') {
-                              if (isPendingOther) {
+                            const curOccupants = getActualOccupants(room);
+                            const maxOcc = room.maxOccupants || 2;
+                            const freeSlots = maxOcc - curOccupants;
+
+                            // NẾU PHÒNG THỰC TẾ ĐANG CÓ NGƯỜI Ở
+                            if (curOccupants > 0 || room.status === 'OCCUPIED') {
+                              if (freeSlots > 0) {
                                 return (
-                                  <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-amber-500/95 text-white backdrop-blur-md shadow-md flex items-center gap-1 animate-pulse">
-                                    <span>⏳</span>
-                                    <span>Chờ duyệt</span>
+                                  <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white backdrop-blur-md shadow-md flex items-center gap-1">
+                                    <Users className="w-3 h-3" />
+                                    <span>Ở ghép (Còn {freeSlots} chỗ)</span>
                                   </span>
                                 );
                               }
                               return (
-                                <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-emerald-500/90 text-white backdrop-blur-md shadow-md">
-                                  🟢 Còn trống
+                                <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-slate-900/80 text-white backdrop-blur-md shadow-md">
+                                  Đã đủ người ({curOccupants}/{maxOcc})
                                 </span>
                               );
                             }
+
                             if (room.status === 'HOLDING') {
                               return (
                                 <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-amber-500/95 text-white backdrop-blur-md shadow-md animate-pulse">
@@ -1287,20 +1326,19 @@ export default function UserRoomsPage() {
                                 </span>
                               );
                             }
-                            const curOccupants = getActualOccupants(room);
-                            const maxOcc = room.maxOccupants || 2;
-                            const freeSlots = maxOcc - curOccupants;
-                            if (freeSlots > 0) {
+
+                            if (isPendingOther) {
                               return (
-                                <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white backdrop-blur-md shadow-md flex items-center gap-1">
-                                  <Users className="w-3 h-3" />
-                                  <span>Ở ghép (Còn {freeSlots} chỗ)</span>
+                                <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-amber-500/95 text-white backdrop-blur-md shadow-md flex items-center gap-1 animate-pulse">
+                                  <span>⏳</span>
+                                  <span>Chờ duyệt</span>
                                 </span>
                               );
                             }
+
                             return (
-                              <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-slate-900/80 text-white backdrop-blur-md shadow-md">
-                                Đã đủ người ({curOccupants}/{maxOcc})
+                              <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-emerald-500/90 text-white backdrop-blur-md shadow-md">
+                                🟢 Còn trống
                               </span>
                             );
                           })()}
@@ -1334,7 +1372,7 @@ export default function UserRoomsPage() {
                               <Users className="w-3 h-3 text-indigo-600" />
                               <span>{getActualOccupants(room)}/{room.maxOccupants || 2} người</span>
                             </span>
-                            {room.status !== 'AVAILABLE' && getActualOccupants(room) < (room.maxOccupants || 2) && (
+                            {getActualOccupants(room) > 0 && getActualOccupants(room) < (room.maxOccupants || 2) && (
                               <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                 Còn trống {(room.maxOccupants || 2) - getActualOccupants(room)} chỗ
                               </span>
@@ -1371,7 +1409,8 @@ export default function UserRoomsPage() {
                         Chi Tiết
                       </button>
 
-                      {room.status === 'AVAILABLE' && (
+                      {/* 1. Nếu phòng thực sự còn trống (không có ai ở và status là AVAILABLE) */}
+                      {room.status === 'AVAILABLE' && getActualOccupants(room) === 0 && !isMyRented && (
                         (() => {
                           const isThisApproved = myApprovedRequest && (myApprovedRequest.targetRoom === room.number || myApprovedRequest.roomNumber === room.number);
                           const isThisPending = myPendingRequest && (myPendingRequest.targetRoom === room.number || myPendingRequest.roomNumber === room.number);
@@ -1433,8 +1472,8 @@ export default function UserRoomsPage() {
                         })()
                       )}
 
-                      {/* 2. Nếu phòng OCCUPIED (Đang thuê) */}
-                      {room.status !== 'AVAILABLE' && (
+                      {/* 2. Nếu phòng ĐANG CÓ NGƯỜI Ở HOẶC LÀ PHÒNG CỦA BẠN (OCCUPIED hoặc getActualOccupants > 0) */}
+                      {(room.status !== 'AVAILABLE' || getActualOccupants(room) > 0 || isMyRented) && (
                         (() => {
                           const curOcc = getActualOccupants(room);
                           const maxOcc = room.maxOccupants || 2;
@@ -1613,7 +1652,9 @@ export default function UserRoomsPage() {
               <div>
                 <span className="text-slate-500">Trạng thái:</span>
                 <span className="font-bold ml-1 text-emerald-600">
-                  {selectedRoomDetails.status === 'AVAILABLE' ? 'Còn trống' : 'Đang ở'}
+                  {getActualOccupants(selectedRoomDetails) > 0 || selectedRoomDetails.status === 'OCCUPIED'
+                    ? `Đang ở (${getActualOccupants(selectedRoomDetails)}/${selectedRoomDetails.maxOccupants || 2} người)`
+                    : 'Còn trống'}
                 </span>
               </div>
             </div>
@@ -1637,7 +1678,7 @@ export default function UserRoomsPage() {
               >
                 Đóng
               </button>
-              {selectedRoomDetails.status === 'AVAILABLE' && (
+              {selectedRoomDetails.status === 'AVAILABLE' && getActualOccupants(selectedRoomDetails) === 0 && !myRentedRooms.includes(selectedRoomDetails.number) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1650,7 +1691,7 @@ export default function UserRoomsPage() {
                   Giữ Trọ Đặt Cọc (1 Tháng Tiền Trọ)
                 </button>
               )}
-              {selectedRoomDetails.status !== 'AVAILABLE' && getActualOccupants(selectedRoomDetails) < (selectedRoomDetails.maxOccupants || 2) && !((user?.rooms || []).includes(selectedRoomDetails.number) || user?.room === selectedRoomDetails.number) && (
+              {(selectedRoomDetails.status !== 'AVAILABLE' || getActualOccupants(selectedRoomDetails) > 0) && getActualOccupants(selectedRoomDetails) < (selectedRoomDetails.maxOccupants || 2) && !myRentedRooms.includes(selectedRoomDetails.number) && (
                 <button
                   type="button"
                   onClick={() => {

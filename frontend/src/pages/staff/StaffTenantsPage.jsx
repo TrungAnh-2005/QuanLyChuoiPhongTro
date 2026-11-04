@@ -459,7 +459,7 @@ export default function TenantsPage() {
     return { total, registered, pending, unregistered };
   }, [combinedResidents]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL'); // ALL | ACTIVE | INACTIVE
+  const [statusFilter, setStatusFilter] = useState('ACTIVE'); // ACTIVE | INACTIVE | ALL
   const [showModal, setShowModal] = useState(false);
   const [showAiTenantModal, setShowAiTenantModal] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState(null);
@@ -1049,16 +1049,6 @@ export default function TenantsPage() {
         {/* Status Filter Tabs */}
         <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-bold shrink-0">
           <button
-            onClick={() => setStatusFilter('ALL')}
-            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-              statusFilter === 'ALL'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-600 hover:text-purple-700'
-            }`}
-          >
-            Tất cả ({scopedTenants.length})
-          </button>
-          <button
             onClick={() => setStatusFilter('ACTIVE')}
             className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
               statusFilter === 'ACTIVE'
@@ -1077,6 +1067,16 @@ export default function TenantsPage() {
             }`}
           >
             Đã trả phòng ({scopedTenants.filter((t) => !getTenantActiveInfo(t).isActuallyActive).length})
+          </button>
+          <button
+            onClick={() => setStatusFilter('ALL')}
+            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+              statusFilter === 'ALL'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600 hover:text-purple-700'
+            }`}
+          >
+            Tất cả ({scopedTenants.length})
           </button>
         </div>
       </div>

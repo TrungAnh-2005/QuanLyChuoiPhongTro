@@ -1386,7 +1386,7 @@ export const DataProvider = ({ children }) => {
         const normNum = normalizeRoomNumber(r.number);
         const rHouse = normalizeHouseCode(r.houseCode || 'CS-01');
 
-        // 1. Kiểm tra đơn CHECKOUT / LEAVE_ROOM / RETURN
+        // 1. Kiểm tra đơn CHECKOUT / LEAVE_ROOM / RETURN đã được duyệt (APPROVED)
         const hasCheckout = Array.isArray(pReq) && pReq.some((req) =>
           (req.type === 'CHECKOUT' || req.type === 'LEAVE_ROOM' || req.type === 'RETURN') &&
           normalizeRoomNumber(req.targetRoom || req.currentRoom || req.roomNumber) === normNum &&
@@ -1394,19 +1394,7 @@ export const DataProvider = ({ children }) => {
           (req.status === 'APPROVED' || req.status === 'CHECKOUT_SETTLED' || req.settledAt)
         );
 
-        // 2. Kiểm tra theo rental_tenant_rooms
-        let hasNoTenantInStore = false;
-        if (pTR) {
-          if (normNum === '101' && isSameHouse(rHouse, 'CS-01')) {
-            const anRooms = pTR.tenant1 || pTR['Nguyễn Văn An'] || [];
-            if (!anRooms.some((rm) => normalizeRoomNumber(rm) === '101')) hasNoTenantInStore = true;
-          } else if (normNum === '103' && isSameHouse(rHouse, 'CS-01')) {
-            const cuongRooms = pTR.tenant2 || pTR['Phạm Minh Cường'] || [];
-            if (!cuongRooms.some((rm) => normalizeRoomNumber(rm) === '103')) hasNoTenantInStore = true;
-          }
-        }
-
-        // 3. Kiểm tra thành viên phòng khớp cả số phòng & cơ sở
+        // 2. Kiểm tra thành viên phòng khớp cả số phòng & cơ sở
         let activeCount = 0;
         let hasRoomMembers = false;
         if (Array.isArray(pMembers)) {
@@ -1418,7 +1406,7 @@ export const DataProvider = ({ children }) => {
           activeCount = roomMems.filter((m) => m.status !== 'MOVED_OUT').length;
         }
 
-        // 4. Kiểm tra hợp đồng ACTIVE khớp cả số phòng & cơ sở
+        // 3. Kiểm tra hợp đồng ACTIVE khớp cả số phòng & cơ sở
         let hasActiveContract = false;
         if (Array.isArray(pContracts)) {
           hasActiveContract = pContracts.some((c) =>
@@ -1428,31 +1416,43 @@ export const DataProvider = ({ children }) => {
           );
         }
 
-        // 5. Nếu phòng mang trạng thái Còn trống (AVAILABLE), Khóa (LOCKED), Bảo trì (MAINTENANCE)
-        // thì BẮT BUỘC số người ở phải là 0
-        if (r.status === 'AVAILABLE' || r.status === 'LOCKED' || r.status === 'MAINTENANCE') {
+        // 4. Nếu có thành viên đang ở thực tế HOẶC có hợp đồng ACTIVE -> BẮT BUỘC là OCCUPIED
+        if (activeCount > 0 || hasActiveContract) {
+          const actualOcc = Math.min(
+            Math.max(1, activeCount, r.occupants > 0 ? r.occupants : 1),
+            r.maxOccupants || 2
+          );
+          return {
+            ...r,
+            status: 'OCCUPIED',
+            occupants: actualOcc
+          };
+        }
+
+        // 5. Nếu phòng mang trạng thái Khóa (LOCKED), Bảo trì (MAINTENANCE)
+        if (r.status === 'LOCKED' || r.status === 'MAINTENANCE') {
           return { ...r, occupants: 0 };
         }
 
-        // 6. Nếu phòng đã có đơn trả phòng hoặc tất cả thành viên đã dọn ra
-        if (hasCheckout || hasNoTenantInStore || (hasRoomMembers && activeCount === 0 && !hasActiveContract)) {
+        // 6. Nếu phòng mang trạng thái Đang giữ chỗ (HOLDING)
+        if (r.status === 'HOLDING') {
+          return r;
+        }
+
+        // 7. Nếu phòng đã có đơn trả phòng hoặc tất cả thành viên đã dọn ra
+        if (hasCheckout || (hasRoomMembers && activeCount === 0 && !hasActiveContract)) {
           return { ...r, status: 'AVAILABLE', occupants: 0 };
         }
 
-        // 7. Nếu có thành viên đang ở thực tế
-        if (activeCount > 0) {
-          return { ...r, status: 'OCCUPIED', occupants: activeCount };
-        }
-
-        // 8. Nếu có hợp đồng ACTIVE
-        if (hasActiveContract) {
-          return { ...r, status: 'OCCUPIED', occupants: Math.max(1, r.occupants || 1) };
-        }
-
-        // 9. Nếu phòng mang trạng thái OCCUPIED nhưng không có bất kỳ cư dân hay hợp đồng nào tại cơ sở này
+        // 8. Nếu phòng mang trạng thái OCCUPIED nhưng không có bất kỳ cư dân hay hợp đồng nào tại cơ sở này
         // (Khắc phục triệt để lỗi phòng ma lệch đồng bộ)
         if (r.status === 'OCCUPIED' && activeCount === 0 && !hasActiveContract) {
           return { ...r, status: 'AVAILABLE', occupants: 0 };
+        }
+
+        // 9. Nếu phòng mang trạng thái Còn trống (AVAILABLE)
+        if (r.status === 'AVAILABLE') {
+          return { ...r, occupants: 0 };
         }
 
         return r;
@@ -1777,54 +1777,6 @@ export const DataProvider = ({ children }) => {
     window.addEventListener('storage', handleSyncHouseNames);
     return () => window.removeEventListener('storage', handleSyncHouseNames);
   }, []);
-
-  // Tự động giải phóng trạng thái phòng (status: 'AVAILABLE', occupants: 0) khi khách đã trả phòng / rời phòng
-  useEffect(() => {
-    try {
-      const sTR = localStorage.getItem('rental_tenant_rooms');
-      const pTR = sTR ? JSON.parse(sTR) : null;
-      const sReq = localStorage.getItem('rental_room_requests');
-      const pReq = sReq ? JSON.parse(sReq) : null;
-
-      setRooms((prev) => {
-        let changed = false;
-        const next = prev.map((r) => {
-          const hasCheckoutReq = Array.isArray(pReq) && pReq.some((req) =>
-            (req.type === 'CHECKOUT' || req.type === 'LEAVE_ROOM' || req.type === 'RETURN') &&
-            (req.targetRoom === r.number || req.currentRoom === r.number || req.roomNumber === r.number) &&
-            (!req.houseCode || req.houseCode === r.houseCode)
-          );
-
-          let hasNoTenant = false;
-          if (pTR) {
-            if (r.number === 'P.101' && (r.houseCode === 'CS-01' || !r.houseCode)) {
-              const anRooms = pTR.tenant1 || pTR['Nguyễn Văn An'] || [];
-              if (!anRooms.includes('P.101')) hasNoTenant = true;
-            } else if (r.number === 'P.103' && (r.houseCode === 'CS-01' || !r.houseCode)) {
-              const cuongRooms = pTR.tenant2 || pTR['Phạm Minh Cường'] || [];
-              if (!cuongRooms.includes('P.103')) hasNoTenant = true;
-            }
-          }
-
-          if ((hasCheckoutReq || hasNoTenant) && (r.status !== 'AVAILABLE' || r.occupants > 0)) {
-            changed = true;
-            return {
-              ...r,
-              occupants: 0,
-              status: 'AVAILABLE'
-            };
-          }
-          return r;
-        });
-
-        if (changed) {
-          try { localStorage.setItem('rental_rooms', JSON.stringify(next)); } catch {}
-          return next;
-        }
-        return prev;
-      });
-    } catch {}
-  }, [roomRequests]);
 
   // ACTIONS
 
@@ -4907,6 +4859,85 @@ export const DataProvider = ({ children }) => {
       return isZeroSandbox ? [] : DEFAULT_CONTRACTS;
     }
   });
+
+  // Tự động giải phóng trạng thái phòng khi khách đã trả phòng / rời phòng
+  // Đồng thời đồng bộ trạng thái OCCUPIED khi có hợp đồng ACTIVE hoặc cư dân thực tế
+  useEffect(() => {
+    try {
+      const sReq = localStorage.getItem('rental_room_requests');
+      const pReq = sReq ? JSON.parse(sReq) : null;
+      const sContracts = localStorage.getItem('rental_contracts');
+      const pContracts = sContracts ? JSON.parse(sContracts) : null;
+      const sMembers = localStorage.getItem('rental_room_members');
+      const pMembers = sMembers ? JSON.parse(sMembers) : null;
+
+      setRooms((prev) => {
+        let changed = false;
+        const next = prev.map((r) => {
+          const normNum = normalizeRoomNumber(r.number);
+          const rHouse = normalizeHouseCode(r.houseCode || 'CS-01');
+
+          // 1. Kiểm tra hợp đồng ACTIVE khớp cả số phòng & cơ sở
+          const hasActiveContract = Array.isArray(pContracts) && pContracts.some((c) =>
+            normalizeRoomNumber(c.roomNumber) === normNum &&
+            isSameHouse(c.houseCode || 'CS-01', rHouse) &&
+            c.status === 'ACTIVE'
+          );
+
+          // 2. Kiểm tra cư dân thực tế trong roomMembers
+          let activeMembersCount = 0;
+          if (Array.isArray(pMembers)) {
+            activeMembersCount = pMembers.filter((m) =>
+              normalizeRoomNumber(m.roomNumber) === normNum &&
+              isSameHouse(m.houseCode || 'CS-01', rHouse) &&
+              m.status !== 'MOVED_OUT'
+            ).length;
+          }
+
+          // 3. Nếu có hợp đồng ACTIVE hoặc cư dân đang ở thực tế -> BẮT BUỘC là OCCUPIED
+          if (hasActiveContract || activeMembersCount > 0) {
+            const actualOcc = Math.min(
+              Math.max(1, activeMembersCount, r.occupants > 0 ? r.occupants : 1),
+              r.maxOccupants || 2
+            );
+            if (r.status !== 'OCCUPIED' || r.occupants !== actualOcc) {
+              changed = true;
+              return {
+                ...r,
+                status: 'OCCUPIED',
+                occupants: actualOcc
+              };
+            }
+            return r;
+          }
+
+          // 4. Nếu phòng có đơn CHECKOUT/LEAVE_ROOM đã được DUYỆT (APPROVED)
+          const hasCheckoutReq = Array.isArray(pReq) && pReq.some((req) =>
+            (req.type === 'CHECKOUT' || req.type === 'LEAVE_ROOM' || req.type === 'RETURN') &&
+            normalizeRoomNumber(req.targetRoom || req.currentRoom || req.roomNumber) === normNum &&
+            isSameHouse(req.houseCode || 'CS-01', rHouse) &&
+            (req.status === 'APPROVED' || req.status === 'CHECKOUT_SETTLED' || req.settledAt)
+          );
+
+          if (hasCheckoutReq && (r.status !== 'AVAILABLE' || r.occupants > 0)) {
+            changed = true;
+            return {
+              ...r,
+              occupants: 0,
+              status: 'AVAILABLE'
+            };
+          }
+          return r;
+        });
+
+        if (changed) {
+          try { localStorage.setItem('rental_rooms', JSON.stringify(next)); } catch {}
+          return next;
+        }
+        return prev;
+      });
+    } catch {}
+  }, [roomRequests, contracts, roomMembers]);
 
   // 5B. Nộp tiền cọc và ký hợp đồng điện tử để nhận phòng (Onboarding Gate)
     // Xác nhận nộp tiền cọc (bước 1 Onboarding, chưa ký hợp đồng)
