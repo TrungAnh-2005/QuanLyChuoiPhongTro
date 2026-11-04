@@ -1242,8 +1242,8 @@ export default function UserDashboard() {
 
                 {/* Khung Phải: SePay hiển thị QR To, VNPAY & MoMo chuyển hướng Sandbox */}
                 {depositPaymentMethod === 'SEPAY' ? (
-                  <div className="w-full sm:w-56 shrink-0 flex flex-col items-center bg-white p-3.5 rounded-3xl border-2 border-purple-200 shadow-md text-center">
-                    <div className="w-full flex items-center justify-between mb-1.5 px-1">
+                  <div className="w-full sm:w-56 shrink-0 flex flex-col items-center bg-white p-3 rounded-2xl text-center">
+                    <div className="w-full flex items-center justify-between mb-1 px-1">
                       <span className="text-[11px] font-black tracking-wide text-purple-700 flex items-center gap-1">
                         <QrCode className="w-3.5 h-3.5" />
                         <span>SePay VietQR</span>
@@ -1262,10 +1262,10 @@ export default function UserDashboard() {
                         template: 'compact'
                       })}
                       alt="Mã QR SePay Nộp Cọc"
-                      className="w-44 h-44 sm:w-48 sm:h-48 object-contain rounded-2xl border border-slate-200 p-1.5 shadow-sm bg-white"
+                      className="w-44 h-44 sm:w-48 sm:h-48 object-contain rounded-xl bg-white"
                     />
 
-                    <div className="text-[10px] text-slate-400 font-mono font-bold mt-1.5">
+                    <div className="text-[10px] text-slate-400 font-mono font-bold mt-1">
                       NAPAS 247 • MBBANK • VIETQR
                     </div>
                     <p className="text-[11px] font-bold text-slate-700 mt-0.5 leading-tight">
@@ -1278,10 +1278,10 @@ export default function UserDashboard() {
                       type="button"
                       onClick={handleCheckDepositPayment}
                       disabled={isCheckingSepayDeposit || isDepositConfirmed}
-                      className={`w-full mt-2 py-2 px-2.5 font-bold text-xs rounded-xl border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      className={`w-full mt-2 py-2 px-2.5 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                         isDepositConfirmed
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200 cursor-default'
-                          : 'bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default'
+                          : 'bg-purple-600 hover:bg-purple-700 text-white shadow-xs'
                       }`}
                     >
                       <RefreshCw className={`w-3.5 h-3.5 ${isCheckingSepayDeposit ? 'animate-spin' : ''}`} />

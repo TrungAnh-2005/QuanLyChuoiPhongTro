@@ -730,8 +730,8 @@ export default function PaymentModal({
                   </div>
 
                   {/* QR Code Container */}
-                  <div className="bg-gradient-to-b from-teal-50/60 to-white border border-teal-200 rounded-2xl p-4 flex flex-col items-center">
-                    <div className="w-52 bg-white p-3 rounded-2xl border-2 border-teal-300 shadow-md flex flex-col items-center justify-between space-y-2">
+                  <div className="bg-gradient-to-b from-teal-50/60 to-white border border-slate-100 rounded-2xl p-4 flex flex-col items-center">
+                    <div className="w-52 bg-white p-3 rounded-2xl shadow-xs flex flex-col items-center justify-between space-y-2">
                       <div className="w-full flex items-center justify-between border-b border-slate-100 pb-1.5 text-[10px] font-bold text-slate-600">
                         <span className="text-teal-700 font-black flex items-center gap-1">
                           <Sparkles className="w-3 h-3 text-amber-500" />
