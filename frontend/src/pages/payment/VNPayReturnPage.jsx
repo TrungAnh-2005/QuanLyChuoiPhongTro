@@ -6,7 +6,7 @@ import { useData } from '../../contexts/DataContext';
 export default function VNPayReturnPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { payInvoice, invoices, paySaasInvoice, updateLandlordPackage } = useData();
+  const { payInvoice, invoices, paySaasInvoice, updateLandlordPackage, confirmDepositPaid } = useData();
 
   const [processed, setProcessed] = useState(false);
 
@@ -74,29 +74,38 @@ export default function VNPayReturnPage() {
         }
       } else {
         if (pendingInfo?.type === 'DEPOSIT') {
-        try {
-          const s = localStorage.getItem('rental_contracts');
-          const list = s ? JSON.parse(s) : [];
-          const updated = list.map(c => {
-            const match = (pendingInfo.contractId && c.id === pendingInfo.contractId) ||
-                          (pendingInfo.contractCode && c.contractCode === pendingInfo.contractCode) ||
-                          (pendingInfo.room && c.roomNumber === pendingInfo.room);
-            if (match) {
-              return {
-                ...c,
-                depositPaid: true,
-                depositPaidAt: new Date().toLocaleString('vi-VN'),
-                depositPaymentMethod: `VNPay Sandbox (${bankCode})`,
-                status: c.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING_SIGN'
-              };
-            }
-            return c;
-          });
-          localStorage.setItem('rental_contracts', JSON.stringify(updated));
-          if (pendingInfo.contractId) localStorage.setItem(`rental_deposit_paid_${pendingInfo.contractId}`, 'true');
-          if (pendingInfo.room) localStorage.setItem(`rental_deposit_paid_${pendingInfo.room}`, 'true');
-        } catch {}
-      } else {
+          if (typeof confirmDepositPaid === 'function') {
+            confirmDepositPaid({
+              contractId: pendingInfo.contractId,
+              contractCode: pendingInfo.contractCode,
+              room: pendingInfo.room,
+              paymentMethod: `VNPay Sandbox (${bankCode})`
+            });
+          }
+          try {
+            const s = localStorage.getItem('rental_contracts');
+            const list = s ? JSON.parse(s) : [];
+            const updated = list.map(c => {
+              const match = (pendingInfo.contractId && c.id === pendingInfo.contractId) ||
+                            (pendingInfo.contractCode && c.contractCode === pendingInfo.contractCode) ||
+                            (pendingInfo.room && c.roomNumber === pendingInfo.room);
+              if (match) {
+                return {
+                  ...c,
+                  depositPaid: true,
+                  depositPaidAt: new Date().toLocaleString('vi-VN'),
+                  depositPaymentMethod: `VNPay Sandbox (${bankCode})`,
+                  status: c.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING_SIGN'
+                };
+              }
+              return c;
+            });
+            localStorage.setItem('rental_contracts', JSON.stringify(updated));
+            if (pendingInfo.contractId) localStorage.setItem(`rental_deposit_paid_${pendingInfo.contractId}`, 'true');
+            if (pendingInfo.room) localStorage.setItem(`rental_deposit_paid_${pendingInfo.room}`, 'true');
+            localStorage.setItem('rental_deposit_paid_current', 'true');
+          } catch {}
+        } else {
         keysToPay.forEach((key) => {
           payInvoice(key, `VNPay Sandbox (${bankCode})`);
         });
@@ -223,13 +232,14 @@ export default function VNPayReturnPage() {
                 <span>Về Hóa Đơn Nộp Tiền (Admin)</span>
               </Link>
             ) : (
-              <Link
-                to="/"
-                className="w-full sm:flex-1 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all text-center flex items-center justify-center gap-1.5 btn-press"
+              <button
+                type="button"
+                onClick={() => navigate('/', { replace: true })}
+                className="w-full sm:flex-1 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all text-center flex items-center justify-center gap-1.5 btn-press cursor-pointer"
               >
                 <Home className="w-4 h-4" />
                 <span>Về Trang Cổng Khách Thuê</span>
-              </Link>
+              </button>
             )}
           </div>
         </div>

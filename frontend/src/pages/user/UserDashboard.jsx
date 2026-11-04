@@ -243,17 +243,18 @@ export default function UserDashboard() {
   // Đếm ngược thời hạn nộp cọc giữ phòng (Countdown Timer cho Onboarding Gate)
   // Reset trạng thái nộp cọc khi đổi hợp đồng / tài khoản
   useEffect(() => {
-    setIsDepositPaid(Boolean(myContract?.depositPaid && myContract?.status !== 'PENDING_DEPOSIT'));
+    const hasPaid = Boolean(
+      myContract?.depositPaid ||
+      myContract?.status === 'PENDING_SIGN' ||
+      (myContract?.id && localStorage.getItem(`rental_deposit_paid_${myContract.id}`) === 'true') ||
+      (myContract?.roomNumber && localStorage.getItem(`rental_deposit_paid_${myContract.roomNumber}`) === 'true') ||
+      localStorage.getItem('rental_deposit_paid_current') === 'true'
+    );
+    if (hasPaid) {
+      setIsDepositPaid(true);
+    }
     setSepayDepositStatusMsg(null);
-    try {
-      const keys = Object.keys(localStorage);
-      keys.forEach((k) => {
-        if (k.startsWith('rental_deposit_paid_')) {
-          localStorage.removeItem(k);
-        }
-      });
-    } catch {}
-  }, [myContract?.id, myContract?.status, user?.username]);
+  }, [myContract?.id, myContract?.status, myContract?.depositPaid]);
 
   const [holdingSecondsLeft, setHoldingSecondsLeft] = useState(15 * 60);
 
@@ -799,8 +800,12 @@ export default function UserDashboard() {
     
     const isDepositConfirmed = Boolean(
       isDepositPaid ||
-      (myContract?.status === 'PENDING_SIGN' && myContract?.depositPaid) ||
-      (myContract?.status === 'ACTIVE' && myContract?.depositPaid)
+      myContract?.depositPaid ||
+      myContract?.status === 'PENDING_SIGN' ||
+      (myContract?.status === 'ACTIVE' && myContract?.depositPaid) ||
+      (myContract?.id && localStorage.getItem(`rental_deposit_paid_${myContract.id}`) === 'true') ||
+      (targetRoomNum && localStorage.getItem(`rental_deposit_paid_${targetRoomNum}`) === 'true') ||
+      localStorage.getItem('rental_deposit_paid_current') === 'true'
     );
 
     let methodBankDisplay = `${bankName} ${bankAccount}`;
@@ -998,8 +1003,32 @@ export default function UserDashboard() {
           </div>
         </div>
 
-        {/* BANNER ĐẾM NGƯỢC THỜI HẠN NỘP CỌC GIỮ PHÒNG (TTL 15 PHÚT) */}
-        <div className={`p-5 rounded-3xl border shadow-xl transition-all ${
+        {/* BANNER ĐẾM NGƯỢC HOẶC ĐÃ NỘP CỌC THÀNH CÔNG */}
+        {isDepositConfirmed ? (
+          <div className="p-5 rounded-3xl border border-emerald-500/40 bg-gradient-to-r from-emerald-950/90 via-slate-900 to-teal-950/90 text-emerald-100 shadow-xl shadow-emerald-900/20 animate-fadeIn">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-start sm:items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 font-black text-xl shadow-lg bg-emerald-600 text-white">
+                  ✓
+                </div>
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-black uppercase tracking-wider text-emerald-300">
+                      ĐÃ NỘP TIỀN CỌC THÀNH CÔNG • GIỮ CHỖ ĐỘC QUYỀN HOÀN TẤT
+                    </span>
+                    <span className="font-mono font-bold text-xs bg-emerald-600 text-white px-2.5 py-0.5 rounded-lg flex items-center gap-1">
+                      <span>🔒</span> Đã Khóa Độc Quyền Cho Bạn
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Hệ thống đã xác nhận khoản tiền cọc <strong className="text-emerald-300 font-mono">{(depositAmount + residenceFee).toLocaleString('vi-VN')} ₫</strong> cho phòng <strong className="text-amber-300 font-mono">{targetRoomNum}</strong> ({targetHouseName}). Quyền giữ phòng của bạn đã được bảo lưu an toàn (không bị giới hạn thời gian). Vui lòng hoàn tất <strong>Bước 2: Ký Hợp Đồng Điện Tử</strong> bên cạnh để nhận phòng ngay!
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className={`p-5 rounded-3xl border shadow-xl transition-all ${
           holdingSecondsLeft === 0
             ? 'bg-rose-950/80 border-rose-500/50 text-rose-200'
             : holdingSecondsLeft <= 120
@@ -1071,6 +1100,7 @@ export default function UserDashboard() {
             </div>
           </div>
         </div>
+        )}
 
         {/* 2 Bước Onboarding Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">

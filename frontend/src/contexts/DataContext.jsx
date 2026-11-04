@@ -4689,6 +4689,38 @@ export const DataProvider = ({ children }) => {
   });
 
   // 5B. Nộp tiền cọc và ký hợp đồng điện tử để nhận phòng (Onboarding Gate)
+    // Xác nhận nộp tiền cọc (bước 1 Onboarding, chưa ký hợp đồng)
+  const confirmDepositPaid = ({ contractId, contractCode, room, paymentMethod = 'VNPay' } = {}) => {
+    const nowStr = new Date().toLocaleString('vi-VN');
+    let matched = false;
+    setContracts((prev) => {
+      const next = prev.map((c) => {
+        const match =
+          (contractId && c.id === contractId) ||
+          (contractCode && c.contractCode === contractCode) ||
+          (room && c.roomNumber === room);
+        if (!match) return c;
+        matched = true;
+        return {
+          ...c,
+          depositPaid: true,
+          depositPaidAt: nowStr,
+          depositPaymentMethod: paymentMethod,
+          status: c.status === 'PENDING_DEPOSIT' ? 'PENDING_SIGN' : c.status
+        };
+      });
+      try {
+        localStorage.setItem('rental_contracts', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    if (contractId) localStorage.setItem(`rental_deposit_paid_${contractId}`, 'true');
+    if (room) localStorage.setItem(`rental_deposit_paid_${room}`, 'true');
+    localStorage.setItem('rental_deposit_paid_current', 'true');
+    return { success: true };
+  };
+
   const payDepositAndSignContract = (contractId, options = {}) => {
     const { paymentMethod = 'VIETQR' } = options;
     const nowStr = new Date().toLocaleString('vi-VN');
@@ -5667,6 +5699,7 @@ export const DataProvider = ({ children }) => {
         updateResidentCccd,
         contracts,
         signContractElectronically,
+        confirmDepositPaid,
         payDepositAndSignContract,
         transferRoom,
         meterDisputes,
