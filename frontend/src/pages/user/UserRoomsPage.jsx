@@ -536,11 +536,18 @@ export default function UserRoomsPage() {
 
   const myRentedRooms = useMemo(() => {
     if (isTenantNew) return [];
-    if (currentTenant?.rooms && currentTenant.rooms.length > 0) return currentTenant.rooms;
-    if (currentTenant?.room) return [currentTenant.room];
-    if (userRoom) return [userRoom];
-    return [];
-  }, [isTenantNew, currentTenant, userRoom]);
+    if (currentTenant?.status === 'INACTIVE' || currentTenant?.status === 'WAITING_ROOM') return [];
+    const checkedOutRooms = (roomRequests || [])
+      .filter(r => (r.type === 'CHECKOUT' || r.type === 'LEAVE_ROOM' || r.type === 'RETURN') &&
+                   ((uName && (r.tenant?.toLowerCase().includes(uName) || r.tenantName?.toLowerCase().includes(uName))) || (uPhone && r.phone === uPhone)))
+      .map(r => r.targetRoom || r.currentRoom || r.roomNumber);
+
+    let list = [];
+    if (currentTenant?.rooms && currentTenant.rooms.length > 0) list = currentTenant.rooms;
+    else if (currentTenant?.room) list = [currentTenant.room];
+    else if (userRoom) list = [userRoom];
+    return list.filter(r => !checkedOutRooms.includes(r));
+  }, [isTenantNew, currentTenant, userRoom, roomRequests, uName, uPhone]);
 
   const myRentedRoom = myRentedRooms[0] || null;
 

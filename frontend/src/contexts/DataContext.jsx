@@ -1358,19 +1358,53 @@ export const DataProvider = ({ children }) => {
       list = isZeroSandbox ? [] : ALL_ROOMS;
     }
 
-    // Tự động cập nhật số người dựa trên rental_room_members và rental_room_requests
+    // Tự động cập nhật số người và giải phóng phòng khi khách đã trả phòng / rời phòng
     try {
       const sMembers = localStorage.getItem('rental_room_members');
       const pMembers = sMembers ? JSON.parse(sMembers) : null;
-      if (Array.isArray(pMembers)) {
-        list = list.map((r) => {
-          const activeCount = pMembers.filter((m) => m.roomNumber === r.number && (!m.houseCode || m.houseCode === r.houseCode) && m.status !== 'MOVED_OUT').length;
-          if (activeCount > 0) {
-            return { ...r, occupants: Math.max(r.occupants || 0, activeCount), status: 'OCCUPIED' };
+      const sTR = localStorage.getItem('rental_tenant_rooms');
+      const pTR = sTR ? JSON.parse(sTR) : null;
+      const sReq = localStorage.getItem('rental_room_requests');
+      const pReq = sReq ? JSON.parse(sReq) : null;
+
+      list = list.map((r) => {
+        // 1. Kiểm tra đơn CHECKOUT / LEAVE_ROOM / RETURN
+        const hasCheckout = Array.isArray(pReq) && pReq.some((req) =>
+          (req.type === 'CHECKOUT' || req.type === 'LEAVE_ROOM' || req.type === 'RETURN') &&
+          (req.targetRoom === r.number || req.currentRoom === r.number || req.roomNumber === r.number) &&
+          (!req.houseCode || req.houseCode === r.houseCode)
+        );
+
+        // 2. Kiểm tra theo rental_tenant_rooms
+        let hasNoTenantInStore = false;
+        if (pTR) {
+          if (r.number === 'P.101' && (r.houseCode === 'CS-01' || !r.houseCode)) {
+            const anRooms = pTR.tenant1 || pTR['Nguyễn Văn An'] || [];
+            if (!anRooms.includes('P.101')) hasNoTenantInStore = true;
+          } else if (r.number === 'P.103' && (r.houseCode === 'CS-01' || !r.houseCode)) {
+            const cuongRooms = pTR.tenant2 || pTR['Phạm Minh Cường'] || [];
+            if (!cuongRooms.includes('P.103')) hasNoTenantInStore = true;
           }
-          return r;
-        });
-      }
+        }
+
+        // 3. Kiểm tra thành viên phòng
+        let activeCount = 0;
+        let hasCheckedOutMembers = false;
+        if (Array.isArray(pMembers)) {
+          const roomMems = pMembers.filter((m) => m.roomNumber === r.number && (!m.houseCode || m.houseCode === r.houseCode));
+          activeCount = roomMems.filter((m) => m.status !== 'MOVED_OUT').length;
+          hasCheckedOutMembers = roomMems.length > 0 && activeCount === 0;
+        }
+
+        if (hasCheckout || hasNoTenantInStore || hasCheckedOutMembers) {
+          return { ...r, occupants: 0, status: 'AVAILABLE' };
+        }
+
+        if (activeCount > 0) {
+          return { ...r, occupants: Math.max(r.occupants || 0, activeCount), status: 'OCCUPIED' };
+        }
+        return r;
+      });
     } catch {}
 
     // Tự động chuẩn hóa & giải quyết triệt để các phòng bị trùng lặp số phòng trong cùng 1 cơ sở
@@ -1691,6 +1725,54 @@ export const DataProvider = ({ children }) => {
     window.addEventListener('storage', handleSyncHouseNames);
     return () => window.removeEventListener('storage', handleSyncHouseNames);
   }, []);
+
+  // Tự động giải phóng trạng thái phòng (status: 'AVAILABLE', occupants: 0) khi khách đã trả phòng / rời phòng
+  useEffect(() => {
+    try {
+      const sTR = localStorage.getItem('rental_tenant_rooms');
+      const pTR = sTR ? JSON.parse(sTR) : null;
+      const sReq = localStorage.getItem('rental_room_requests');
+      const pReq = sReq ? JSON.parse(sReq) : null;
+
+      setRooms((prev) => {
+        let changed = false;
+        const next = prev.map((r) => {
+          const hasCheckoutReq = Array.isArray(pReq) && pReq.some((req) =>
+            (req.type === 'CHECKOUT' || req.type === 'LEAVE_ROOM' || req.type === 'RETURN') &&
+            (req.targetRoom === r.number || req.currentRoom === r.number || req.roomNumber === r.number) &&
+            (!req.houseCode || req.houseCode === r.houseCode)
+          );
+
+          let hasNoTenant = false;
+          if (pTR) {
+            if (r.number === 'P.101' && (r.houseCode === 'CS-01' || !r.houseCode)) {
+              const anRooms = pTR.tenant1 || pTR['Nguyễn Văn An'] || [];
+              if (!anRooms.includes('P.101')) hasNoTenant = true;
+            } else if (r.number === 'P.103' && (r.houseCode === 'CS-01' || !r.houseCode)) {
+              const cuongRooms = pTR.tenant2 || pTR['Phạm Minh Cường'] || [];
+              if (!cuongRooms.includes('P.103')) hasNoTenant = true;
+            }
+          }
+
+          if ((hasCheckoutReq || hasNoTenant) && (r.status !== 'AVAILABLE' || r.occupants > 0)) {
+            changed = true;
+            return {
+              ...r,
+              occupants: 0,
+              status: 'AVAILABLE'
+            };
+          }
+          return r;
+        });
+
+        if (changed) {
+          try { localStorage.setItem('rental_rooms', JSON.stringify(next)); } catch {}
+          return next;
+        }
+        return prev;
+      });
+    } catch {}
+  }, [roomRequests]);
 
   // ACTIONS
 
@@ -2541,6 +2623,59 @@ export const DataProvider = ({ children }) => {
     const occupants = targetRoomObj ? targetRoomObj.occupants : 1;
     const hasMultiplePeople = occupants > 1;
 
+    // Khi khách ở 1 mình thực hiện trả phòng: Tự động giải phóng phòng về AVAILABLE, cập nhật hợp đồng và gỡ phòng
+    if (!hasMultiplePeople) {
+      setRooms((prev) => {
+        const updated = prev.map((r) => {
+          const isMatch = r.number === room && (!targetRoomObj?.houseCode || r.houseCode === targetRoomObj.houseCode);
+          return isMatch ? { ...r, occupants: 0, status: 'AVAILABLE' } : r;
+        });
+        try { localStorage.setItem('rental_rooms', JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+
+      setContracts((prev) => {
+        const updated = prev.map((c) => {
+          const isMatch = c.roomNumber === room && (!targetRoomObj?.houseCode || c.houseCode === targetRoomObj.houseCode);
+          return isMatch && c.status === 'ACTIVE'
+            ? { ...c, status: 'TERMINATED', terminatedAt: new Date().toLocaleDateString('vi-VN'), endReason: 'Khách đã trả phòng' }
+            : c;
+        });
+        try { localStorage.setItem('rental_contracts', JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+
+      setRoomMembers((prev) => {
+        const updated = prev.map((m) => {
+          return m.roomNumber === room ? { ...m, status: 'MOVED_OUT', leaveDate: new Date().toLocaleDateString('vi-VN') } : m;
+        });
+        try { localStorage.setItem('rental_room_members', JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+
+      if (updateTenantRoom) {
+        updateTenantRoom(tenantName, room, 'REMOVE');
+      }
+
+      try {
+        const sTR = localStorage.getItem('rental_tenant_rooms');
+        const trMap = sTR ? JSON.parse(sTR) : {};
+        const tNorm = (tenantName || '').toLowerCase();
+        if (tNorm.includes('an')) {
+          trMap.tenant1 = [];
+          trMap['Nguyễn Văn An'] = [];
+        } else if (tNorm.includes('cường')) {
+          trMap.tenant2 = [];
+          trMap['Phạm Minh Cường'] = [];
+        } else if (tNorm.includes('nam')) {
+          trMap.tenant_new = [];
+          trMap['Hoàng Văn Nam'] = [];
+        }
+        trMap[tenantName] = [];
+        localStorage.setItem('rental_tenant_rooms', JSON.stringify(trMap));
+      } catch {}
+    }
+
     return submitRoomRequest({
       type: 'CHECKOUT',
       targetRoom: room,
@@ -2557,7 +2692,7 @@ export const DataProvider = ({ children }) => {
       refundAccountName,
       refundQrCode,
       isContractExpired,
-      status: hasMultiplePeople ? 'WAITING_ROOMMATES' : 'PENDING'
+      status: 'APPROVED'
     });
   };
 
