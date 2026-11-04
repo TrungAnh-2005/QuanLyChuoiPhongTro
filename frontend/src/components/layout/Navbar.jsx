@@ -76,6 +76,7 @@ function cleanPersonName(name) {
  */
 function generateNotifications(user, data = {}, readSet = new Set()) {
   const {
+    contracts = [],
     invoices = [],
     tickets = [],
     roomRequests = [],
@@ -538,15 +539,49 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
               link: '/rooms'
             });
           } else if (req.status === 'APPROVED') {
-            addNotif({
-              id: `my-rent-approved-${req.id}`,
-              type: 'URGENT',
-              title: `🎉 Đơn thuê phòng ${req.targetRoom} đã được duyệt!`,
-              desc: `Quản lý đã phê duyệt hồ sơ của bạn. Cổng nộp tiền cọc SePay và ký hợp đồng giữ chỗ đã mở trong 15 phút. Hãy vào Trang Chủ hoàn tất nhận phòng!`,
-              time: req.approvedAt || 'Vừa xong',
-              defaultRead: false,
-              link: '/'
+            const targetRoom = req.targetRoom || req.roomNumber;
+            const cleanTargetRoom = String(targetRoom || '').replace(/^P\.?/i, '').trim();
+
+            // 1. Kiểm tra xem khách đã rời phòng / trả phòng này chưa
+            const hasCheckedOut = (roomRequests || []).some((r) => {
+              const isOut = (r.type === 'CHECKOUT' || r.type === 'RETURN' || r.type === 'LEAVE_ROOM');
+              if (!isOut || r.status !== 'APPROVED') return false;
+              const rRoom = String(r.targetRoom || r.currentRoom || '').replace(/^P\.?/i, '').trim();
+              return rRoom && cleanTargetRoom && rRoom === cleanTargetRoom;
             });
+
+            // 2. Kiểm tra xem khách đã cư trú chính thức ở phòng này chưa
+            const isLivingHere = userRooms.some(r => String(r || '').replace(/^P\.?/i, '').trim() === cleanTargetRoom);
+
+            // 3. Phải có hợp đồng giữ chỗ PENDING_DEPOSIT / PENDING_SIGN còn hạn
+            const hasHoldingContract = (contracts || []).some((c) => {
+              if (c.status !== 'PENDING_DEPOSIT' && c.status !== 'PENDING_SIGN') return false;
+              const cRoom = String(c.roomNumber || '').replace(/^P\.?/i, '').trim();
+              if (cleanTargetRoom && cRoom !== cleanTargetRoom) return false;
+              if (c.holdingUntil && Date.now() > c.holdingUntil) return false;
+              return true;
+            });
+
+            // 4. Hoặc phòng trong rooms đang HOLDING bởi khách này
+            const isRoomHolding = (rooms || []).some((rm) => {
+              const rmClean = String(rm.number || '').replace(/^P\.?/i, '').trim();
+              if (rmClean !== cleanTargetRoom) return false;
+              if (rm.status !== 'HOLDING') return false;
+              if (rm.holdingUntil && Date.now() > rm.holdingUntil) return false;
+              return true;
+            });
+
+            if (!hasCheckedOut && !isLivingHere && (hasHoldingContract || isRoomHolding)) {
+              addNotif({
+                id: `my-rent-approved-${req.id}`,
+                type: 'URGENT',
+                title: `🎉 Đơn thuê phòng ${req.targetRoom} đã được duyệt!`,
+                desc: `Quản lý đã phê duyệt hồ sơ của bạn. Cổng nộp tiền cọc SePay và ký hợp đồng giữ chỗ đã mở trong 15 phút. Hãy vào Trang Chủ hoàn tất nhận phòng!`,
+                time: req.approvedAt || 'Vừa xong',
+                defaultRead: false,
+                link: '/'
+              });
+            }
           }
         } else if (req.type === 'TRANSFER') {
           addNotif({
@@ -680,6 +715,7 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
     return generateNotifications(
       user,
       {
+        contracts: dataContext.contracts || [],
         invoices: dataContext.invoices || [],
         tickets: dataContext.tickets || [],
         roomRequests: dataContext.roomRequests || [],

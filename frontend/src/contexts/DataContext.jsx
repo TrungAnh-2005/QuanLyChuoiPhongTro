@@ -1442,6 +1442,13 @@ export const DataProvider = ({ children }) => {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
+          // Đọc danh sách hợp đồng để đối soát
+          let storedContracts = [];
+          try {
+            const sC = localStorage.getItem('rental_contracts');
+            if (sC) storedContracts = JSON.parse(sC);
+          } catch {}
+
           return parsed.map((req) => {
             let hCode = req.houseCode;
             let hName = req.house;
@@ -1456,6 +1463,33 @@ export const DataProvider = ({ children }) => {
               hCode = matchRoom?.houseCode || 'CS-01';
               hName = matchRoom?.house || 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
             }
+
+            // AUTO-SANITIZE: Nếu đơn là RENT mang status APPROVED nhưng không còn hợp đồng PENDING_DEPOSIT / PENDING_SIGN nào
+            const isRentType = req.type === 'RENT' || req.type === 'NEW_RENT' || req.type === 'RENTAL';
+            if (isRentType && req.status === 'APPROVED') {
+              const reqRoomClean = String(req.targetRoom || req.roomNumber || '').replace(/^P\.?/i, '').trim();
+              const hasHoldingContract = storedContracts.some((c) => {
+                const cRoomClean = String(c.roomNumber || '').replace(/^P\.?/i, '').trim();
+                return (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN') &&
+                       (!reqRoomClean || cRoomClean === reqRoomClean);
+              });
+              const hasCheckedOut = parsed.some((other) => {
+                const isOut = other.type === 'CHECKOUT' || other.type === 'RETURN' || other.type === 'LEAVE_ROOM';
+                const otherRoomClean = String(other.targetRoom || other.currentRoom || '').replace(/^P\.?/i, '').trim();
+                return isOut && other.status === 'APPROVED' && (!reqRoomClean || otherRoomClean === reqRoomClean);
+              });
+
+              if (!hasHoldingContract || hasCheckedOut) {
+                return {
+                  ...req,
+                  houseCode: hCode || 'CS-01',
+                  house: hName || (hCode === 'CS-02' ? 'Nhà Trọ Bách Khoa - Cơ Sở 2' : 'Nhà Trọ Cầu Giấy - Cơ Sở 1'),
+                  status: 'SETTLED',
+                  note: 'Đã hoàn tất trả phòng & thanh lý hợp đồng'
+                };
+              }
+            }
+
             return {
               ...req,
               houseCode: hCode || 'CS-01',

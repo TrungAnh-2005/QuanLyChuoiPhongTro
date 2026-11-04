@@ -203,6 +203,48 @@ export default function UserRoomsPage() {
 
   // Đơn đăng ký giữ trọ của khách đã được Quản lý phê duyệt (chờ nộp cọc & ký HĐ)
   const myApprovedRequest = useMemo(() => {
+    if (!user) return null;
+
+    // 1. BẮT BUỘC: Phải tồn tại một hợp đồng đang chờ nộp cọc / ký HĐ còn hiệu lực giữ chỗ
+    const validPendingContract = (contracts || []).find((c) => {
+      if (c.status !== 'PENDING_DEPOSIT' && c.status !== 'PENDING_SIGN') return false;
+      const cName = (c.tenantName || '').toLowerCase().trim();
+      const cPhone = (c.tenantPhone || '').trim();
+      const matchUser = ((uName && (cName.includes(uName) || uName.includes(cName))) ||
+                         (uPhone && cPhone === uPhone) ||
+                         (user?.username === 'tenant_new'));
+      if (!matchUser) return false;
+      if (c.holdingUntil && Date.now() > c.holdingUntil) return false;
+      return true;
+    });
+
+    // 2. Hoặc phòng trong danh mục rooms đang được giữ chỗ bởi chính khách này còn hạn
+    const holdingRoom = (rooms || []).find((r) => {
+      if (r.status !== 'HOLDING') return false;
+      const matchUser = ((uName && (r.holdingBy?.toLowerCase().includes(uName) || uName.includes(r.holdingBy?.toLowerCase()))) ||
+                         (uPhone && r.holdingPhone === uPhone));
+      if (!matchUser) return false;
+      if (r.holdingUntil && Date.now() > r.holdingUntil) return false;
+      return true;
+    });
+
+    // NẾU KHÔNG CÓ HỢP ĐỒNG GIỮ CHỖ CÒN HẠN VÀ KHÔNG CÓ PHÒNG ĐANG GIỮ CHỖ -> TUYỆT ĐỐI KHÔNG CÓ ĐƠN GIỮ TRỌ NÀO!
+    if (!validPendingContract && !holdingRoom) {
+      return null;
+    }
+
+    const targetRoomClean = String(validPendingContract?.roomNumber || holdingRoom?.number || '').replace(/^P\.?/i, '').trim();
+
+    // 3. Nếu khách đã trả phòng / rời phòng này rồi -> Không hiển thị
+    const hasCheckedOut = (roomRequests || []).some((req) => {
+      const isOut = (req.type === 'CHECKOUT' || req.type === 'RETURN' || req.type === 'LEAVE_ROOM');
+      if (!isOut || req.status !== 'APPROVED') return false;
+      const rRoomClean = String(req.targetRoom || req.currentRoom || '').replace(/^P\.?/i, '').trim();
+      return rRoomClean && targetRoomClean && rRoomClean === targetRoomClean;
+    });
+    if (hasCheckedOut) return null;
+
+    // 4. Tìm đơn RENT/NEW_RENT tương ứng đang APPROVED
     return (roomRequests || []).find((r) => {
       const isRent = (r.type === 'RENT' || r.type === 'NEW_RENT' || r.type === 'RENTAL');
       if (!isRent || r.status !== 'APPROVED') return false;
@@ -210,35 +252,17 @@ export default function UserRoomsPage() {
                          (uPhone && r.phone === uPhone) ||
                          (user?.username === 'tenant_new'));
       if (!matchUser) return false;
-
-      const targetRoom = r.targetRoom || r.roomNumber;
-
-      // 1. Nếu phòng này khách đã trả phòng (có đơn CHECKOUT/RETURN/LEAVE_ROOM đã duyệt) -> Bỏ qua
-      const hasCheckedOutThisRoom = (roomRequests || []).some(
-        req => (req.type === 'CHECKOUT' || req.type === 'RETURN' || req.type === 'LEAVE_ROOM') &&
-               (req.targetRoom === targetRoom || req.currentRoom === targetRoom) &&
-               req.status === 'APPROVED'
-      );
-      if (hasCheckedOutThisRoom) return false;
-
-      // 2. Nếu khách đã có hợp đồng ACTIVE tại phòng này (đang là cư dân chính thức) -> Đơn giữ trọ đã hoàn thành
-      const activeContract = (contracts || []).find(c => c.roomNumber === targetRoom && c.status === 'ACTIVE');
-      if (activeContract) return false;
-
-      // 3. Nếu hợp đồng đã kết thúc (COMPLETED / TERMINATED) mà không có hợp đồng mới PENDING_DEPOSIT -> Bỏ qua
-      const finishedContract = (contracts || []).find(c => c.roomNumber === targetRoom && (c.status === 'COMPLETED' || c.status === 'TERMINATED'));
-      const hasNewHoldingContract = (contracts || []).some(c => c.roomNumber === targetRoom && (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN'));
-      if (finishedContract && !hasNewHoldingContract) return false;
-
-      // 4. Kiểm tra hợp đồng PENDING_DEPOSIT / PENDING_SIGN tương ứng (nếu có hạn holdingUntil thì phải còn hạn)
-      const pendingContract = (contracts || []).find(c => c.roomNumber === targetRoom && (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN'));
-      if (pendingContract && pendingContract.holdingUntil && Date.now() > pendingContract.holdingUntil) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [user, roomRequests, contracts, uName, uPhone]);
+      const rClean = String(r.targetRoom || r.roomNumber || '').replace(/^P\.?/i, '').trim();
+      return !targetRoomClean || rClean === targetRoomClean;
+    }) || (validPendingContract ? {
+      targetRoom: validPendingContract.roomNumber,
+      roomNumber: validPendingContract.roomNumber,
+      house: validPendingContract.houseName,
+      houseCode: validPendingContract.houseCode,
+      tenant: validPendingContract.tenantName,
+      status: 'APPROVED'
+    } : null);
+  }, [user, roomRequests, contracts, rooms, uName, uPhone]);
 
   // Đơn đăng ký giữ trọ của khách đang chờ Quản lý duyệt
   // Kiểm tra xem phòng có đơn PENDING từ bất kỳ ai đang chờ Quản lý duyệt hay không
