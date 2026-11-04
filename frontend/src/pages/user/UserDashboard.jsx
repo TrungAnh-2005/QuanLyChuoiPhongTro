@@ -79,6 +79,8 @@ export default function UserDashboard() {
     leaveRoom,
     submitCheckoutRequest,
     transferContractHolder,
+    proposeContractTransfer,
+    respondContractTransfer,
     voteRoommateRequest,
     cancelRoomHold
   } = useData();
@@ -144,8 +146,8 @@ export default function UserDashboard() {
       // 1. Nếu phòng này khách đã trả phòng (có đơn CHECKOUT/RETURN/LEAVE_ROOM đã duyệt) -> Bỏ qua
       const hasCheckedOutThisRoom = (roomRequests || []).some(
         req => (req.type === 'CHECKOUT' || req.type === 'RETURN' || req.type === 'LEAVE_ROOM') &&
-               (req.targetRoom === targetRoom || req.currentRoom === targetRoom) &&
-               req.status === 'APPROVED'
+          (req.targetRoom === targetRoom || req.currentRoom === targetRoom) &&
+          req.status === 'APPROVED'
       );
       if (hasCheckedOutThisRoom) return false;
 
@@ -172,8 +174,8 @@ export default function UserDashboard() {
     const pendingContract = list.find((c) =>
       (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN') &&
       ((uName && c.tenantName?.toLowerCase().includes(uName)) ||
-       (uPhone && c.tenantPhone === uPhone) ||
-       (user?.username === 'tenant_new' && (c.tenantName?.toLowerCase().includes('nam') || c.contractCode === 'HD-2026-007')))
+        (uPhone && c.tenantPhone === uPhone) ||
+        (user?.username === 'tenant_new' && (c.tenantName?.toLowerCase().includes('nam') || c.contractCode === 'HD-2026-007')))
     );
     if (pendingContract) return pendingContract;
 
@@ -263,7 +265,7 @@ export default function UserDashboard() {
   useEffect(() => {
     if (!isContractPending || !myContract) return;
     const targetRoomNum = myContract.roomNumber || 'P.102';
-    const holdingUntil = myContract.holdingUntil || 
+    const holdingUntil = myContract.holdingUntil ||
       rooms?.find(r => r.number === targetRoomNum && (!myContract.houseCode || r.houseCode === myContract.houseCode))?.holdingUntil ||
       (Date.now() + 15 * 60 * 1000);
 
@@ -326,7 +328,7 @@ export default function UserDashboard() {
           parsed['Phạm Minh Cường'] = [];
         }
         localStorage.setItem('rental_tenant_rooms', JSON.stringify(parsed));
-      } catch {}
+      } catch { }
 
       setPaySuccessToast(`Đã hủy giữ chỗ phòng ${roomNum} thành công! Phòng đã được mở lại trên hệ thống.`);
       setTimeout(() => {
@@ -507,6 +509,7 @@ export default function UserDashboard() {
           cccd: activeContract.tenantCccd || '001201012345',
           maskedCccd: activeContract.tenantCccd ? activeContract.tenantCccd.slice(0, 8) + '****' : '00120101****',
           roleInRoom: 'REPRESENTATIVE',
+          hometown: 'Nam Định',
           joinDate: activeContract.startDate || '01/01/2026',
           temporaryResidenceStatus: 'REGISTERED',
           status: 'ACTIVE'
@@ -529,13 +532,17 @@ export default function UserDashboard() {
         return (tName && (tName.includes(mNameNorm) || mNameNorm.includes(tName))) || (t.phone && t.phone === m.phone);
       });
 
-      let realHometown = m.hometown || matchedTenant?.hometown;
-      if (!realHometown) {
-        if (mNameNorm.includes('an')) realHometown = 'Nam Định';
-        else if (mNameNorm.includes('cường')) realHometown = 'Hải Phòng';
-        else if (mNameNorm.includes('bình')) realHometown = 'Bắc Ninh';
-        else if (mNameNorm.includes('nam')) realHometown = 'Hà Nội';
-        else realHometown = 'Nam Định';
+      let realHometown = m.hometown;
+      if (mNameNorm.includes('an')) {
+        realHometown = 'Nam Định';
+      } else if (mNameNorm.includes('cường')) {
+        realHometown = 'Hải Phòng';
+      } else if (mNameNorm.includes('bình')) {
+        realHometown = 'Hà Nam';
+      } else if (mNameNorm.includes('nam')) {
+        realHometown = 'Hà Nội';
+      } else if (!realHometown) {
+        realHometown = matchedTenant?.hometown || 'Nam Định';
       }
 
       let realCccd = m.cccd || matchedTenant?.cccd;
@@ -708,13 +715,13 @@ export default function UserDashboard() {
         const endD = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
         return endD <= new Date();
       }
-    } catch {}
+    } catch { }
     return false;
   }, [myActiveContract]);
 
 
 
-    // Đơn trả phòng bị bạn cùng phòng từ chối vì muốn ở tiếp
+  // Đơn trả phòng bị bạn cùng phòng từ chối vì muốn ở tiếp
   const rejectedCheckoutRequest = useMemo(() => {
     if (!myRoomNumber) return null;
     return (roomRequests || []).find((req) => {
@@ -722,6 +729,39 @@ export default function UserDashboard() {
       return isTarget && req.type === 'CHECKOUT' && req.status === 'REJECTED_BY_ROOMMATES';
     });
   }, [myRoomNumber, roomRequests]);
+
+  // 1. Đề xuất bàn giao hợp đồng đang gửi đến tài khoản này (Cần tài khoản này Đồng Ý hoặc Từ Chối)
+  const pendingIncomingTransferProposal = useMemo(() => {
+    if (!myRoomNumber) return null;
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    return (roomRequests || []).find((req) => {
+      const isTarget = req.targetRoom === myRoomNumber || req.currentRoom === myRoomNumber;
+      const isToMe = (req.toTenant || '').toLowerCase().trim().includes(uName) || uName.includes((req.toTenant || '').toLowerCase().trim());
+      return isTarget && req.type === 'TRANSFER_CONTRACT' && req.status === 'PENDING_ACCEPTANCE' && isToMe;
+    });
+  }, [myRoomNumber, roomRequests, user]);
+
+  // 2. Đề xuất bàn giao hợp đồng do chính người này gửi đi (Đang chờ bạn cùng phòng phản hồi)
+  const pendingOutgoingTransferProposal = useMemo(() => {
+    if (!myRoomNumber) return null;
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    return (roomRequests || []).find((req) => {
+      const isTarget = req.targetRoom === myRoomNumber || req.currentRoom === myRoomNumber;
+      const isFromMe = (req.fromTenant || '').toLowerCase().trim().includes(uName) || uName.includes((req.fromTenant || '').toLowerCase().trim());
+      return isTarget && req.type === 'TRANSFER_CONTRACT' && req.status === 'PENDING_ACCEPTANCE' && isFromMe;
+    });
+  }, [myRoomNumber, roomRequests, user]);
+
+  // 3. Đề xuất bàn giao hợp đồng bị bạn cùng phòng TỪ CHỐI (Kích hoạt cơ chế Deadlock-Breaker mở quyền Trả phòng khẩn cấp không cần biểu quyết)
+  const rejectedTransferProposal = useMemo(() => {
+    if (!myRoomNumber) return null;
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    return (roomRequests || []).find((req) => {
+      const isTarget = req.targetRoom === myRoomNumber || req.currentRoom === myRoomNumber;
+      const isFromMe = (req.fromTenant || '').toLowerCase().trim().includes(uName) || uName.includes((req.fromTenant || '').toLowerCase().trim());
+      return isTarget && req.type === 'TRANSFER_CONTRACT' && req.status === 'REJECTED_BY_TRANSFEREE' && isFromMe;
+    });
+  }, [myRoomNumber, roomRequests, user]);
 
   // Đơn trả phòng đang chờ bạn cùng phòng biểu quyết
   const waitingCheckoutRequest = useMemo(() => {
@@ -792,7 +832,8 @@ export default function UserDashboard() {
       refundBank,
       refundAccountNumber,
       refundAccountName: refundAccountName || user?.fullName || 'Khách thuê',
-      isContractExpired
+      isContractExpired,
+      bypassRoommateVoting: Boolean(rejectedTransferProposal)
     });
     setCheckoutSuccess(true);
   };
@@ -832,7 +873,7 @@ export default function UserDashboard() {
           setPaySuccessToast(`⚡ SePay Xác Nhận: Đã nhận ${totalDepositAmount.toLocaleString('vi-VN')} đ (Cọc + Phí Tạm Trú)! Nút Ký Hợp Đồng đã sáng lên để bạn bấm.`);
           setTimeout(() => setPaySuccessToast(null), 6000);
         }
-      } catch {}
+      } catch { }
     };
 
     const timer = setInterval(checkDeposit, 5000);
@@ -871,7 +912,7 @@ export default function UserDashboard() {
       .trim();
     const cleanRoom = String(targetRoomNum || 'P.101').replace(/^P\.?/i, 'P').trim();
     const transferMemo = `COC ${cleanRoom} + TAM TRU TAM VANG ${cleanTenantName}`.trim();
-    
+
     const isDepositConfirmed = Boolean(
       isDepositPaid ||
       myContract?.depositPaid ||
@@ -924,7 +965,7 @@ export default function UserDashboard() {
       setTimeout(() => setCopiedGateField(null), 2000);
     };
 
-        const handleOpenVNPayDeposit = async () => {
+    const handleOpenVNPayDeposit = async () => {
       try {
         localStorage.setItem('rental_pending_payment', JSON.stringify({
           type: 'DEPOSIT',
@@ -1102,78 +1143,75 @@ export default function UserDashboard() {
             </div>
           </div>
         ) : (
-          <div className={`p-5 rounded-3xl border shadow-xl transition-all ${
-          holdingSecondsLeft === 0
-            ? 'bg-rose-950/80 border-rose-500/50 text-rose-200'
-            : holdingSecondsLeft <= 120
-              ? 'bg-gradient-to-r from-rose-950 via-slate-900 to-rose-950 border-rose-500/60 text-rose-100 shadow-rose-900/30'
-              : holdingSecondsLeft <= 300
-                ? 'bg-gradient-to-r from-amber-950/90 via-slate-900 to-amber-950/90 border-amber-500/60 text-amber-100 shadow-amber-900/20'
-                : 'bg-gradient-to-r from-purple-950/90 via-slate-900 to-indigo-950/90 border-purple-500/50 text-purple-100 shadow-purple-900/20'
-        }`}>
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-start sm:items-center gap-3.5">
-              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 font-black text-xl shadow-lg ${
-                holdingSecondsLeft === 0
-                  ? 'bg-rose-600 text-white'
-                  : holdingSecondsLeft <= 120
-                    ? 'bg-rose-600 text-white animate-pulse'
-                    : holdingSecondsLeft <= 300
-                      ? 'bg-amber-500 text-slate-950'
-                      : 'bg-purple-600 text-white'
-              }`}>
-                {holdingSecondsLeft === 0 ? '⚠️' : '⏳'}
-              </div>
-              <div className="space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-black uppercase tracking-wider text-white">
-                    {holdingSecondsLeft === 0 ? 'Đã Hết Hạn Giữ Phòng' : 'Thời Hạn Nộp Cọc Giữ Phòng Còn Lại:'}
-                  </span>
-                  {holdingSecondsLeft > 0 ? (
-                    <span className={`font-mono font-black text-base px-3 py-0.5 rounded-xl shadow-sm ${
-                      holdingSecondsLeft <= 120
-                        ? 'bg-rose-600 text-white animate-bounce'
-                        : holdingSecondsLeft <= 300
-                          ? 'bg-amber-400 text-slate-950'
-                          : 'bg-purple-500/30 text-purple-200 border border-purple-400/40'
-                    }`}>
-                      {formatCountdown(holdingSecondsLeft)}
-                    </span>
-                  ) : (
-                    <span className="font-mono font-bold text-xs bg-rose-600 text-white px-2.5 py-0.5 rounded-lg">
-                      00:00 (Đã kết thúc)
-                    </span>
-                  )}
-                  <span className="text-[11px] font-semibold text-slate-300">
-                    • Hạn chót: <strong className="text-white font-mono">{getDeadlineString(myContract.holdingUntil || (Date.now() + holdingSecondsLeft * 1000))}</strong>
-                  </span>
+          <div className={`p-5 rounded-3xl border shadow-xl transition-all ${holdingSecondsLeft === 0
+              ? 'bg-rose-950/80 border-rose-500/50 text-rose-200'
+              : holdingSecondsLeft <= 120
+                ? 'bg-gradient-to-r from-rose-950 via-slate-900 to-rose-950 border-rose-500/60 text-rose-100 shadow-rose-900/30'
+                : holdingSecondsLeft <= 300
+                  ? 'bg-gradient-to-r from-amber-950/90 via-slate-900 to-amber-950/90 border-amber-500/60 text-amber-100 shadow-amber-900/20'
+                  : 'bg-gradient-to-r from-purple-950/90 via-slate-900 to-indigo-950/90 border-purple-500/50 text-purple-100 shadow-purple-900/20'
+            }`}>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-start sm:items-center gap-3.5">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 font-black text-xl shadow-lg ${holdingSecondsLeft === 0
+                    ? 'bg-rose-600 text-white'
+                    : holdingSecondsLeft <= 120
+                      ? 'bg-rose-600 text-white animate-pulse'
+                      : holdingSecondsLeft <= 300
+                        ? 'bg-amber-500 text-slate-950'
+                        : 'bg-purple-600 text-white'
+                  }`}>
+                  {holdingSecondsLeft === 0 ? '⚠️' : '⏳'}
                 </div>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  {holdingSecondsLeft > 0 ? (
-                    <>
-                      Phòng <strong className="text-amber-300 font-mono">{targetRoomNum}</strong> ({targetHouseName}) đang được tạm khóa giữ chỗ độc quyền cho bạn. Vui lòng chuyển khoản nộp cọc <strong className="text-purple-300 font-mono">{depositAmount.toLocaleString('vi-VN')} ₫</strong> trước hạn chót. <span className="text-amber-200 font-medium">Sau thời hạn này nếu chưa nộp cọc, phòng sẽ tự động mở lại cho khách khác thuê!</span>
-                    </>
-                  ) : (
-                    <>
-                      Rất tiếc! Đã quá thời hạn 15 phút nộp tiền cọc. Lệnh giữ phòng <strong className="text-white font-mono">{targetRoomNum}</strong> đã kết thúc và phòng đã được hệ thống tự động mở lại trên sàn cho khách khác.
-                    </>
-                  )}
-                </p>
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-black uppercase tracking-wider text-white">
+                      {holdingSecondsLeft === 0 ? 'Đã Hết Hạn Giữ Phòng' : 'Thời Hạn Nộp Cọc Giữ Phòng Còn Lại:'}
+                    </span>
+                    {holdingSecondsLeft > 0 ? (
+                      <span className={`font-mono font-black text-base px-3 py-0.5 rounded-xl shadow-sm ${holdingSecondsLeft <= 120
+                          ? 'bg-rose-600 text-white animate-bounce'
+                          : holdingSecondsLeft <= 300
+                            ? 'bg-amber-400 text-slate-950'
+                            : 'bg-purple-500/30 text-purple-200 border border-purple-400/40'
+                        }`}>
+                        {formatCountdown(holdingSecondsLeft)}
+                      </span>
+                    ) : (
+                      <span className="font-mono font-bold text-xs bg-rose-600 text-white px-2.5 py-0.5 rounded-lg">
+                        00:00 (Đã kết thúc)
+                      </span>
+                    )}
+                    <span className="text-[11px] font-semibold text-slate-300">
+                      • Hạn chót: <strong className="text-white font-mono">{getDeadlineString(myContract.holdingUntil || (Date.now() + holdingSecondsLeft * 1000))}</strong>
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    {holdingSecondsLeft > 0 ? (
+                      <>
+                        Phòng <strong className="text-amber-300 font-mono">{targetRoomNum}</strong> ({targetHouseName}) đang được tạm khóa giữ chỗ độc quyền cho bạn. Vui lòng chuyển khoản nộp cọc <strong className="text-purple-300 font-mono">{depositAmount.toLocaleString('vi-VN')} ₫</strong> trước hạn chót. <span className="text-amber-200 font-medium">Sau thời hạn này nếu chưa nộp cọc, phòng sẽ tự động mở lại cho khách khác thuê!</span>
+                      </>
+                    ) : (
+                      <>
+                        Rất tiếc! Đã quá thời hạn 15 phút nộp tiền cọc. Lệnh giữ phòng <strong className="text-white font-mono">{targetRoomNum}</strong> đã kết thúc và phòng đã được hệ thống tự động mở lại trên sàn cho khách khác.
+                      </>
+                    )}
+                  </p>
+                </div>
               </div>
-            </div>
 
-            <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
-              <button
-                type="button"
-                onClick={() => handleCancelHoldRoom(targetRoomNum, myContract.houseCode)}
-                className="btn-press-ghost px-3.5 py-2 rounded-xl text-xs font-bold text-rose-300 hover:text-white hover:bg-rose-900/40 border border-rose-500/40 transition-all flex items-center gap-1.5 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-                <span>Hủy Giữ Chỗ Phòng</span>
-              </button>
+              <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                <button
+                  type="button"
+                  onClick={() => handleCancelHoldRoom(targetRoomNum, myContract.houseCode)}
+                  className="btn-press-ghost px-3.5 py-2 rounded-xl text-xs font-bold text-rose-300 hover:text-white hover:bg-rose-900/40 border border-rose-500/40 transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                  <span>Hủy Giữ Chỗ Phòng</span>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
         )}
 
         {/* 2 Bước Onboarding Grid */}
@@ -1201,11 +1239,10 @@ export default function UserDashboard() {
                     <Settings className="w-3.5 h-3.5" />
                     <span>SePay Của Tôi</span>
                   </button>
-                  <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
-                    isDepositConfirmed
+                  <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${isDepositConfirmed
                       ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
                       : 'bg-amber-100 text-amber-800 border border-amber-200'
-                  }`}>
+                    }`}>
                     {isDepositConfirmed ? 'Đã Nộp Cọc' : 'Chờ Nộp Cọc'}
                   </span>
                 </div>
@@ -1216,11 +1253,10 @@ export default function UserDashboard() {
                 <button
                   type="button"
                   onClick={() => { setDepositPaymentMethod('SEPAY'); setSepayDepositStatusMsg(null); }}
-                  className={`py-2 px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                    depositPaymentMethod === 'SEPAY'
+                  className={`py-2 px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${depositPaymentMethod === 'SEPAY'
                       ? 'bg-purple-600 text-white shadow-md'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                  }`}
+                    }`}
                 >
                   <Zap className="w-3.5 h-3.5" />
                   <span>⚡ SePay (Mã VietQR)</span>
@@ -1228,11 +1264,10 @@ export default function UserDashboard() {
                 <button
                   type="button"
                   onClick={() => { setDepositPaymentMethod('VNPAY'); setSepayDepositStatusMsg(null); }}
-                  className={`py-2 px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                    depositPaymentMethod === 'VNPAY'
+                  className={`py-2 px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${depositPaymentMethod === 'VNPAY'
                       ? 'bg-blue-600 text-white shadow-md'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                  }`}
+                    }`}
                 >
                   <CreditCard className="w-3.5 h-3.5" />
                   <span>🔷 Cổng VNPAY</span>
@@ -1240,11 +1275,10 @@ export default function UserDashboard() {
                 <button
                   type="button"
                   onClick={() => { setDepositPaymentMethod('MOMO'); setSepayDepositStatusMsg(null); }}
-                  className={`py-2 px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                    depositPaymentMethod === 'MOMO'
+                  className={`py-2 px-3 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${depositPaymentMethod === 'MOMO'
                       ? 'bg-pink-600 text-white shadow-md'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                  }`}
+                    }`}
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   <span>👛 Ví MoMo</span>
@@ -1412,11 +1446,10 @@ export default function UserDashboard() {
                       type="button"
                       onClick={handleCheckDepositPayment}
                       disabled={isCheckingSepayDeposit || isDepositConfirmed}
-                      className={`w-full mt-2 py-2 px-2.5 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                        isDepositConfirmed
+                      className={`w-full mt-2 py-2 px-2.5 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${isDepositConfirmed
                           ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default'
                           : 'bg-purple-600 hover:bg-purple-700 text-white shadow-xs'
-                      }`}
+                        }`}
                     >
                       <RefreshCw className={`w-3.5 h-3.5 ${isCheckingSepayDeposit ? 'animate-spin' : ''}`} />
                       <span className="text-[11px]">{isDepositConfirmed ? '✓ Đã Nhận Tiền Cọc' : isCheckingSepayDeposit ? 'Đang kiểm tra SePay...' : 'Kiểm Tra Tiền Cọc'}</span>
@@ -1534,11 +1567,10 @@ export default function UserDashboard() {
                     <p className="text-[11px] text-slate-500 font-mono">Mã hợp đồng: {myContract.contractCode || 'HD-2026-007'}</p>
                   </div>
                 </div>
-                <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
-                  myContract.signedElectronically
+                <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${myContract.signedElectronically
                     ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
                     : 'bg-purple-100 text-purple-700 border border-purple-200'
-                }`}>
+                  }`}>
                   {myContract.signedElectronically ? 'Đã Ký HĐ' : 'Chờ Ký HĐ'}
                 </span>
               </div>
@@ -1911,6 +1943,134 @@ export default function UserDashboard() {
         </div>
       )}
 
+      {/* BANNER 0A: ĐỀ XUẤT BÀN GIAO HỢP ĐỒNG GỬI ĐẾN TÀI KHOẢN NÀY (TWO-WAY HANDSHAKE) */}
+      {pendingIncomingTransferProposal && (
+        <div className="p-5 bg-gradient-to-r from-purple-500/15 via-indigo-500/10 to-purple-500/15 border-2 border-purple-400 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-md animate-fadeIn">
+          <div className="flex items-start gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-purple-600 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
+              👑
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="font-extrabold text-sm text-purple-950">
+                  Yêu Cầu Bàn Giao Quyền Đại Diện Hợp Đồng Phòng {pendingIncomingTransferProposal.targetRoom}
+                </h4>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-200 text-purple-900 border border-purple-300">
+                  Cần Bạn Xác Nhận
+                </span>
+              </div>
+              <p className="text-xs text-purple-950 mt-1 font-semibold leading-relaxed">
+                Người đại diện <strong>{pendingIncomingTransferProposal.fromTenant}</strong> muốn bàn giao toàn bộ quyền và nghĩa vụ đứng tên <strong>Hợp Đồng phòng {pendingIncomingTransferProposal.targetRoom}</strong> cho bạn để dọn ra ngoài.
+              </p>
+              {pendingIncomingTransferProposal.note && (
+                <p className="text-[11px] text-purple-800 mt-0.5 italic">
+                  Lời nhắn: "{pendingIncomingTransferProposal.note}"
+                </p>
+              )}
+              <p className="text-[11px] text-slate-600 mt-1">
+                💡 <em>Nếu Đồng Ý: Bạn sẽ trở thành Người đại diện chính thức đứng tên HĐ. Nếu Bạn Từ Chối: Bạn từ chối gánh vác trách nhiệm HĐ và hệ thống sẽ mở quyền Trả toàn bộ phòng cho người đại diện.</em>
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                if (respondContractTransfer) {
+                  respondContractTransfer(pendingIncomingTransferProposal.id, false);
+                  setPaySuccessToast('Bạn đã từ chối nhận tiếp quản Hợp đồng phòng.');
+                  setTimeout(() => setPaySuccessToast(null), 4000);
+                }
+              }}
+              className="px-4 py-2 bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 font-bold rounded-xl text-xs transition-colors cursor-pointer shadow-xs btn-press"
+            >
+              ❌ Tôi Từ Chối Nhận HĐ
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (respondContractTransfer) {
+                  respondContractTransfer(pendingIncomingTransferProposal.id, true);
+                  setPaySuccessToast('Chúc mừng! Bạn đã tiếp quản Hợp đồng thành công và trở thành Người đại diện phòng.');
+                  setTimeout(() => setPaySuccessToast(null), 5000);
+                }
+              }}
+              className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-purple-600/20 btn-press cursor-pointer flex items-center gap-1.5"
+            >
+              <span>✅ Đồng Ý Tiếp Quản HĐ</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* BANNER 0B: ĐỀ XUẤT BÀN GIAO HỢP ĐỒNG ĐANG CHỜ BẠN CÙNG PHÒNG ĐỒNG Ý */}
+      {pendingOutgoingTransferProposal && (
+        <div className="p-5 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 border-2 border-amber-400 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-md animate-fadeIn">
+          <div className="flex items-start gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
+              ⏳
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="font-extrabold text-sm text-amber-950">
+                  Đang Chờ Bạn Cùng Phòng Xác Nhận Tiếp Quản Hợp Đồng
+                </h4>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900 border border-amber-300">
+                  Two-Way Handshake
+                </span>
+              </div>
+              <p className="text-xs text-amber-900 mt-1 font-medium leading-relaxed">
+                Bạn đã gửi đề xuất chuyển giao quyền đại diện Hợp Đồng phòng {pendingOutgoingTransferProposal.targetRoom} cho bạn cùng phòng <strong>{pendingOutgoingTransferProposal.toTenant}</strong>.
+              </p>
+              <p className="text-[11px] text-amber-800 mt-0.5">
+                Theo quy định, bạn cùng phòng phải bấm <strong>[Đồng Ý Tiếp Quản HĐ]</strong> thì Hợp đồng mới được sang tên và bạn mới chính thức hoàn tất thủ tục rời phòng.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BANNER 0C: BẾ TẮC BÀN GIAO (DEADLOCK-BREAKER: BẠN CÙNG PHÒNG ĐÃ TỪ CHỐI NHẬN HỢP ĐỒNG) */}
+      {rejectedTransferProposal && (
+        <div className="p-5 bg-gradient-to-r from-rose-500/15 via-red-500/10 to-rose-500/15 border-2 border-rose-500 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg animate-fadeIn">
+          <div className="flex items-start gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-md">
+              🚨
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="font-extrabold text-sm text-rose-950">
+                  Bế Tắc Bàn Giao: Bạn Cùng Phòng ĐÃ TỪ CHỐI Tiếp Quản Hợp Đồng!
+                </h4>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-200 text-rose-900 border border-rose-300">
+                  ⚡ Deadlock-Breaker Kích Hoạt
+                </span>
+              </div>
+              <p className="text-xs text-rose-900 mt-1 font-semibold leading-relaxed">
+                Bạn cùng phòng <strong>"{rejectedTransferProposal.rejectedBy || rejectedTransferProposal.toTenant}"</strong> đã từ chối nhận chuyển giao quyền đứng tên Hợp đồng phòng {rejectedTransferProposal.targetRoom}.
+              </p>
+              <p className="text-[11px] text-rose-800 mt-0.5 leading-relaxed">
+                👉 <strong>Nguyên tắc công bằng:</strong> Bạn cùng phòng không thể vừa từ chối nhận trách nhiệm Hợp đồng, vừa ép bạn phải ở lại gánh phòng. Do đó, hệ thống đã <strong>MỞ KHÓA quyền nộp đơn Trả Toàn Bộ Phòng gửi thẳng Ban Quản Lý nghiệm thu mà KHÔNG CẦN bạn cùng phòng biểu quyết!</strong>
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setCheckoutModal(myRoomNumber);
+                setAgreedForfeitDeposit(false);
+                setCheckoutReason('Do bạn cùng phòng từ chối tiếp quản hợp đồng, đại diện tiến hành trả toàn bộ phòng');
+                setCheckoutSuccess(false);
+              }}
+              className="px-4 py-2.5 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white font-extrabold rounded-xl text-xs transition-all shadow-md shadow-rose-600/30 btn-press cursor-pointer flex items-center gap-1.5"
+            >
+              <span>⚡ Trả Toàn Bộ Phòng (Gửi BQL Ngay)</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* BANNER THÔNG BÁO BIỂU QUYẾT ĐANG CHỜ PHÒNG NÀY PHÊ DUYỆT */}
       {pendingRoommateRequests.length > 0 && (
         <div className="space-y-3">
@@ -2092,7 +2252,7 @@ export default function UserDashboard() {
         </div>
       )}
 
-{/* Hero Banner Khách Thuê */}
+      {/* Hero Banner Khách Thuê */}
       <div className="bg-white relative overflow-hidden p-6 sm:p-7 rounded-3xl border border-slate-100 shadow-sm">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
           <div className="space-y-2">
@@ -2141,6 +2301,25 @@ export default function UserDashboard() {
               </button>
             )}
 
+            {/* Nút 'Bàn Giao HĐ & Rời Phòng': Dành cho Người đại diện khi phòng có bạn ở ghép */}
+            {isRepresentative && hasRoommatesInRoom && (
+              <button
+                type="button"
+                onClick={() => {
+                  setLeaveModal(myRoomNumber);
+                  setAgreedForfeitLeave(false);
+                  setLeaveReason('');
+                  setLeaveSuccess(false);
+                  setSelectedSuccessor('');
+                }}
+                className="btn-press px-4 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold rounded-2xl text-xs border border-amber-200/80 transition-all flex items-center gap-2 cursor-pointer shadow-xs"
+                title="Đề xuất chuyển giao quyền đại diện Hợp đồng cho bạn cùng phòng để dọn ra ngoài"
+              >
+                <LogOut className="w-4 h-4 text-amber-600" />
+                <span>Bàn Giao HĐ & Rời Phòng</span>
+              </button>
+            )}
+
             {/* Nút 'Trả Toàn Bộ Phòng (HĐ)': CHỈ Người đại diện đứng tên Hợp đồng mới có quyền thanh lý & trả phòng */}
             {isRepresentative && (
               <button
@@ -2153,17 +2332,16 @@ export default function UserDashboard() {
                   setCheckoutReason('');
                   setCheckoutSuccess(false);
                 }}
-                className={`btn-press px-4 py-2.5 font-bold rounded-2xl text-xs border transition-all flex items-center gap-2 shadow-xs ${
-                  hasUnpaidBillsForCheckout || hasPendingCheckoutRequest
+                className={`btn-press px-4 py-2.5 font-bold rounded-2xl text-xs border transition-all flex items-center gap-2 shadow-xs ${hasUnpaidBillsForCheckout || hasPendingCheckoutRequest
                     ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60 pointer-events-none'
                     : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200/80 cursor-pointer'
-                }`}
+                  }`}
                 title={
                   hasPendingCheckoutRequest
                     ? 'Đơn trả phòng của bạn đang chờ Ban Quản Lý phê duyệt & nghiệm thu. Nút đã bị khóa để tránh gửi trùng lặp!'
                     : hasUnpaidBillsForCheckout
-                    ? 'Nút trả phòng đang bị mờ do phòng còn hóa đơn chưa thanh toán. Vui lòng thanh toán hết tiền phòng/điện nước để mở khóa!'
-                    : 'Báo trả toàn bộ phòng & Quyết toán hoàn cọc (Chỉ Người đại diện ký HĐ mới có quyền)'
+                      ? 'Nút trả phòng đang bị mờ do phòng còn hóa đơn chưa thanh toán. Vui lòng thanh toán hết tiền phòng/điện nước để mở khóa!'
+                      : 'Báo trả toàn bộ phòng & Quyết toán hoàn cọc (Chỉ Người đại diện ký HĐ mới có quyền)'
                 }
               >
                 <LogOut className="w-4 h-4 text-rose-600" />
@@ -2403,11 +2581,10 @@ export default function UserDashboard() {
               return (
                 <div
                   key={m.id || m.fullName}
-                  className={`rounded-2xl shadow-xs space-y-2.5 transition-colors ${
-                    isRep
+                  className={`rounded-2xl shadow-xs space-y-2.5 transition-colors ${isRep
                       ? 'p-4 bg-gradient-to-br from-indigo-50/50 via-white to-purple-50/30 border border-indigo-200/80'
                       : 'p-3.5 bg-slate-50/80 border border-slate-200/80 hover:bg-slate-100/60'
-                  }`}
+                    }`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-1">
@@ -2524,31 +2701,56 @@ export default function UserDashboard() {
           <div>
             {leaveSuccess ? (
               <div className="text-center py-6">
-                <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4 success-pop-icon">
+                <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 success-pop-icon ${
+                  isRepresentative && otherRoommates.length > 0 ? 'bg-purple-100 text-purple-600' : 'bg-emerald-100 text-emerald-600'
+                }`}>
                   <CheckCircle2 className="w-8 h-8 stroke-[2.5]" />
                 </div>
                 <h3 className="text-lg font-bold text-slate-900 mb-1">
-                  Đã Rời Phòng Thành Công!
+                  {isRepresentative && otherRoommates.length > 0 ? 'Đã Gửi Đề Xuất Bàn Giao Hợp Đồng!' : 'Đã Rời Phòng Thành Công!'}
                 </h3>
                 <p className="text-xs text-slate-500 mb-4 max-w-xs mx-auto">
-                  Bạn đã rút tên khỏi <strong className="text-emerald-700">Phòng {typeof leaveModal === 'string' ? leaveModal : leaveModal?.number}</strong>. Cổng khách thuê đã được cập nhật về trạng thái chưa thuê phòng.
+                  {isRepresentative && otherRoommates.length > 0 ? (
+                    <>
+                      Hệ thống đã gửi yêu cầu tiếp quản Hợp đồng phòng <strong className="text-purple-700">Phòng {typeof leaveModal === 'string' ? leaveModal : leaveModal?.number}</strong> đến bạn <strong className="text-slate-900">{selectedSuccessor}</strong>. Bạn ấy cần bấm [Đồng Ý] để hoàn tất thủ tục bàn giao.
+                    </>
+                  ) : (
+                    <>
+                      Bạn đã rút tên khỏi <strong className="text-emerald-700">Phòng {typeof leaveModal === 'string' ? leaveModal : leaveModal?.number}</strong>. Cổng khách thuê đã được cập nhật về trạng thái chưa thuê phòng.
+                    </>
+                  )}
                 </p>
 
-                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-5 text-left text-xs space-y-2">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-5 text-left text-xs space-y-2">
                   <div className="flex justify-between">
-                    <span className="text-slate-600">Phòng đã rời:</span>
+                    <span className="text-slate-600">Phòng:</span>
                     <span className="font-bold text-slate-900">
                       {typeof leaveModal === 'string' ? leaveModal : leaveModal?.number}
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-600">Tình trạng:</span>
-                    <span className="font-bold text-emerald-700">Đã cập nhật cổng khách thuê</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-600">Bạn cùng phòng:</span>
-                    <span className="font-semibold text-slate-800">Không bị ảnh hưởng</span>
-                  </div>
+                  {isRepresentative && otherRoommates.length > 0 ? (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Người nhận bàn giao:</span>
+                        <span className="font-bold text-purple-700">{selectedSuccessor}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Trạng thái:</span>
+                        <span className="font-semibold text-amber-700">Chờ bạn cùng phòng đồng ý</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Tình trạng:</span>
+                        <span className="font-bold text-emerald-700">Đã cập nhật cổng khách thuê</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Bạn cùng phòng:</span>
+                        <span className="font-semibold text-slate-800">Không bị ảnh hưởng</span>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <button
@@ -2558,6 +2760,7 @@ export default function UserDashboard() {
                     setLeaveSuccess(false);
                     setAgreedForfeitLeave(false);
                     setLeaveReason('');
+                    setSelectedSuccessor('');
                   }}
                   className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-md btn-press cursor-pointer"
                 >
@@ -2573,7 +2776,7 @@ export default function UserDashboard() {
                     </div>
                     <div>
                       <h3 className="font-bold text-base text-slate-900">
-                        Rời Khỏi Phòng Thuê (Cá Nhân)
+                        {isRepresentative && otherRoommates.length > 0 ? 'Bàn Giao HĐ & Rời Phòng' : 'Rời Khỏi Phòng Thuê (Cá Nhân)'}
                       </h3>
                       <p className="text-[11px] text-slate-500">
                         Phòng {typeof leaveModal === 'string' ? leaveModal : leaveModal?.number}
@@ -2685,8 +2888,12 @@ export default function UserDashboard() {
                       alert('Vui lòng chọn 1 bạn cùng phòng để bàn giao quyền đại diện Hợp đồng trước khi rời phòng!');
                       return;
                     }
-                    if (transferContractHolder) {
-                      transferContractHolder(myRoomNumber, user?.fullName, selectedSuccessor);
+                    if (proposeContractTransfer) {
+                      const res = proposeContractTransfer(myRoomNumber, user?.fullName, selectedSuccessor, leaveReason);
+                      if (res?.error) {
+                        alert(res.message);
+                        return;
+                      }
                       setLeaveSuccess(true);
                     }
                   } else {
@@ -2764,13 +2971,12 @@ export default function UserDashboard() {
                     <button
                       type="submit"
                       disabled={!agreedForfeitLeave || hasUnpaidBillsForLeave || (isRepresentative && otherRoommates.length > 0 && !selectedSuccessor)}
-                      className={`px-5 py-2.5 font-bold rounded-xl shadow-md transition-all btn-press flex items-center gap-1.5 cursor-pointer ${
-                        agreedForfeitLeave && !hasUnpaidBillsForLeave && (!isRepresentative || otherRoommates.length === 0 || selectedSuccessor)
+                      className={`px-5 py-2.5 font-bold rounded-xl shadow-md transition-all btn-press flex items-center gap-1.5 cursor-pointer ${agreedForfeitLeave && !hasUnpaidBillsForLeave && (!isRepresentative || otherRoommates.length === 0 || selectedSuccessor)
                           ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/30'
                           : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
-                      }`}
+                        }`}
                     >
-                      <span>{isRepresentative && otherRoommates.length > 0 ? 'Bàn Giao HĐ & Rời Phòng' : 'Xác Nhận Rời Phòng'}</span>
+                      <span>{isRepresentative && otherRoommates.length > 0 ? 'Gửi Đề Xuất Bàn Giao HĐ' : 'Xác Nhận Rời Phòng'}</span>
                     </button>
                   </div>
                 </form>
@@ -2799,10 +3005,16 @@ export default function UserDashboard() {
                   <CheckCircle2 className="w-8 h-8 stroke-[2.5]" />
                 </div>
                 <h3 className="text-lg font-bold text-slate-900 mb-1">
-                  {isCheckoutRoomMulti ? 'Đã Gửi Yêu Cầu Biểu Quyết Trả Phòng!' : 'Đã Gửi Yêu Cầu Trả Phòng!'}
+                  {rejectedTransferProposal
+                    ? 'Đã Gửi Yêu Cầu Trả Phòng Lên Ban Quản Lý!'
+                    : (isCheckoutRoomMulti ? 'Đã Gửi Yêu Cầu Biểu Quyết Trả Phòng!' : 'Đã Gửi Yêu Cầu Trả Phòng!')}
                 </h3>
                 <p className="text-xs text-slate-500 mb-4 max-w-xs mx-auto">
-                  {isCheckoutRoomMulti ? (
+                  {rejectedTransferProposal ? (
+                    <>
+                      Do bạn cùng phòng đã từ chối tiếp quản hợp đồng, cơ chế <strong>Deadlock-Breaker</strong> đã kích hoạt: Yêu cầu trả toàn bộ <strong className="text-rose-600">Phòng {typeof checkoutModal === 'string' ? checkoutModal : checkoutModal?.number}</strong> đã được chuyển thẳng tới Ban Quản Lý nghiệm thu mà không cần chờ bạn cùng phòng biểu quyết.
+                    </>
+                  ) : isCheckoutRoomMulti ? (
                     <>
                       Do phòng <strong className="text-rose-600">Phòng {typeof checkoutModal === 'string' ? checkoutModal : checkoutModal?.number}</strong> hiện có {selectedCheckoutRoomObj?.occupants || 2} người ở, yêu cầu trả phòng đã được gửi tới tất cả bạn cùng phòng để biểu quyết. Khi tất cả cùng đồng ý, đơn sẽ tự động chuyển tới Ban Quản Lý phê duyệt.
                     </>
@@ -2856,7 +3068,17 @@ export default function UserDashboard() {
                   </button>
                 </div>
 
-                {isCheckoutRoomMulti && (
+                {rejectedTransferProposal ? (
+                  <div className="my-3 p-3.5 bg-rose-50 border-2 border-rose-300 rounded-2xl text-xs space-y-1.5 text-rose-950">
+                    <div className="flex items-center gap-1.5 font-extrabold text-rose-900">
+                      <span>⚡</span>
+                      <span>Cơ Chế Deadlock-Breaker: Gửi Thẳng Lên Ban Quản Lý</span>
+                    </div>
+                    <p className="text-[11px] text-rose-800 leading-relaxed font-medium">
+                      Bạn cùng phòng <strong>{rejectedTransferProposal.rejectedBy || rejectedTransferProposal.toTenant}</strong> đã từ chối nhận tiếp quản Hợp đồng. Do đó, đơn trả toàn bộ phòng này sẽ <strong>bỏ qua bước biểu quyết</strong> và được gửi thẳng tới Ban Quản Lý để xếp lịch nghiệm thu bàn giao.
+                    </p>
+                  </div>
+                ) : isCheckoutRoomMulti ? (
                   <div className="my-3 p-3.5 bg-indigo-50 border border-indigo-200 rounded-2xl text-xs space-y-1.5 text-indigo-900">
                     <div className="flex items-center gap-1.5 font-bold">
                       <span>👥</span>
@@ -2866,10 +3088,10 @@ export default function UserDashboard() {
                       Phòng này hiện có <strong>{selectedCheckoutRoomObj?.occupants} người</strong>. Vì việc trả phòng ảnh hưởng đến toàn bộ cư dân trong phòng, hệ thống sẽ gửi thông báo biểu quyết tới <strong>tất cả các bạn cùng phòng</strong>. Đơn chỉ được chuyển tới Ban Quản Lý khi <strong>tất cả mọi người đều đồng ý</strong>.
                     </p>
                     <p className="text-[11px] text-amber-900 font-semibold pt-1 border-t border-indigo-200/60">
-                      💡 Mẹo: Nếu bạn chỉ muốn dọn ra ngoài một mình và để các bạn khác tiếp tục ở, vui lòng chọn <strong>[Rời phòng]</strong> (không cần biểu quyết).
+                      💡 Mẹo: Nếu bạn muốn dọn ra ngoài và để các bạn khác tiếp tục ở, vui lòng chọn <strong>[Bàn Giao HĐ & Rời Phòng]</strong> để chuyển giao quyền đại diện HĐ.
                     </p>
                   </div>
-                )}
+                ) : null}
 
                 {isContractExpired ? (
                   <div className="my-3.5 p-3.5 bg-emerald-50 rounded-2xl border-2 border-emerald-300 text-xs space-y-2">
@@ -2985,11 +3207,10 @@ export default function UserDashboard() {
                     <button
                       type="submit"
                       disabled={!agreedForfeitDeposit}
-                      className={`px-5 py-2.5 font-bold rounded-xl shadow-md transition-all btn-press flex items-center gap-1.5 cursor-pointer ${
-                        agreedForfeitDeposit
+                      className={`px-5 py-2.5 font-bold rounded-xl shadow-md transition-all btn-press flex items-center gap-1.5 cursor-pointer ${agreedForfeitDeposit
                           ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/30'
                           : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
-                      }`}
+                        }`}
                     >
                       <span>
                         {isCheckoutRoomMulti
