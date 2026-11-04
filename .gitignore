@@ -92,3 +92,10 @@ replay_pid*
 docs/
 tests/
     
+
+# ==========================================
+# 9. Stitch & Local MCP Credentials
+# ==========================================
+.agents/skills/stitch/
+.stitch-mcp/
+*stitch*
