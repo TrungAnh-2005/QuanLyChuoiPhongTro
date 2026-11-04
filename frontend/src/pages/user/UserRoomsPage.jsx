@@ -188,6 +188,23 @@ export function healBoardingHousesList(list) {
 const isZeroSandbox = typeof window === 'undefined' || localStorage.getItem('rental_is_zero_sandbox') !== 'false';
 
 export default function UserRoomsPage() {
+  const { user, tenantRooms } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+
+  const {
+    rooms = [],
+    contracts = [],
+    roomRequests = [],
+    tenants = [],
+    roomMembers = [],
+    landlords = [],
+    submitRoomRequest,
+    cancelRoomHold,
+    signContractElectronically,
+    voteRoommateRequest
+  } = useData();
+
   // Hàm tính toán số cư dân thực tế trong phòng chuẩn xác theo roomMembers & hợp đồng ACTIVE
   const getActualOccupants = (room) => {
     if (!room || room.status === 'AVAILABLE' || room.status === 'LOCKED' || room.status === 'MAINTENANCE') return 0;
@@ -220,23 +237,6 @@ export default function UserRoomsPage() {
     }
     return 0;
   };
-
-const { user, tenantRooms } = useAuth();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
-
-  const {
-    rooms = [],
-    contracts = [],
-    roomRequests = [],
-    tenants = [],
-    roomMembers = [],
-    landlords = [],
-    submitRoomRequest,
-    cancelRoomHold,
-    signContractElectronically,
-    voteRoommateRequest
-  } = useData();
 
   // State cho Modal Đăng ký Giữ trọ đặt cọc chờ Staff duyệt
   const [rentModalRoom, setRentModalRoom] = useState(null);
