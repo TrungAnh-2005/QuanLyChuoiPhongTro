@@ -411,10 +411,18 @@ export default function UserDashboard() {
         setLeaveSuccess(false);
       }
     } else if (action === 'leave' && myRoomNumber) {
-      setLeaveModal(myRoomNumber);
-      setAgreedForfeitLeave(false);
-      setLeaveReason('');
-      setLeaveSuccess(false);
+      if (hasRoommatesInRoom) {
+        setLeaveModal(myRoomNumber);
+        setAgreedForfeitLeave(false);
+        setLeaveReason('');
+        setLeaveSuccess(false);
+      } else {
+        // Phòng ở 1 mình: tự động mở Modal Trả Toàn Bộ Phòng
+        setCheckoutModal(myRoomNumber);
+        setAgreedForfeitDeposit(false);
+        setCheckoutReason('');
+        setCheckoutSuccess(false);
+      }
     }
   }, [myRoomNumber, isRepresentative]);
 
@@ -499,6 +507,9 @@ export default function UserDashboard() {
         !(m.fullName || '').toLowerCase().trim().includes(uName)
     );
   }, [myRoomNumber, roomMembers, user]);
+
+  // Phòng có bạn cùng phòng khác đang ở hay không (Nếu không có ai khác -> phòng ở 1 mình)
+  const hasRoommatesInRoom = otherRoommates.length > 0;
 
   const pendingRoommateRequests = useMemo(() => {
     if (!myRoomNumber) return [];
@@ -1752,20 +1763,23 @@ export default function UserDashboard() {
               <Wrench className="w-4 h-4 text-purple-600" />
               <span>Báo Sự Cố</span>
             </Link>
-            <button
-              type="button"
-              onClick={() => {
-                setLeaveModal(myRoomNumber);
-                setAgreedForfeitLeave(false);
-                setLeaveReason('');
-                setLeaveSuccess(false);
-              }}
-              className="btn-press px-4 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded-2xl text-xs border border-amber-200/80 transition-all flex items-center gap-2 cursor-pointer shadow-xs"
-              title="Cá nhân dọn ra ngoài, không bắt buộc bạn cùng phòng phải trả theo"
-            >
-              <LogOut className="w-4 h-4 text-amber-600" />
-              <span>Rời Phòng (Dọn Ra Ngoài)</span>
-            </button>
+            {/* Chỉ hiển thị nút 'Rời Phòng' khi phòng có từ 2 người trở lên (ở ghép). Nếu ở 1 mình thì chỉ có quyền 'Trả Toàn Bộ Phòng' */}
+            {hasRoommatesInRoom && (
+              <button
+                type="button"
+                onClick={() => {
+                  setLeaveModal(myRoomNumber);
+                  setAgreedForfeitLeave(false);
+                  setLeaveReason('');
+                  setLeaveSuccess(false);
+                }}
+                className="btn-press px-4 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded-2xl text-xs border border-amber-200/80 transition-all flex items-center gap-2 cursor-pointer shadow-xs"
+                title="Cá nhân dọn ra ngoài, không bắt buộc bạn cùng phòng phải trả theo"
+              >
+                <LogOut className="w-4 h-4 text-amber-600" />
+                <span>Rời Phòng (Dọn Ra Ngoài)</span>
+              </button>
+            )}
 
             {isRepresentative && (
               <button
@@ -2227,18 +2241,46 @@ export default function UserDashboard() {
                   </button>
                 </div>
 
-                <div className="my-3 p-3.5 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 space-y-1.5">
-                  <div className="flex items-center gap-1.5 font-bold text-amber-950">
-                    <span>🚪</span>
-                    <span>Quyền lợi Rời phòng cá nhân</span>
+                {!hasRoommatesInRoom ? (
+                  <div className="my-3 p-4 bg-amber-50 rounded-2xl border-2 border-amber-300 text-xs text-amber-950 space-y-2.5">
+                    <div className="flex items-center gap-2 font-bold text-amber-900 text-sm">
+                      <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                      <span>Phòng hiện chỉ có 1 mình bạn đang thuê!</span>
+                    </div>
+                    <p className="text-xs text-amber-800 leading-relaxed">
+                      Nghiệp vụ <strong>"Rời phòng"</strong> chỉ dành cho trường hợp ở ghép có từ 2 người trở lên (rút tên cá nhân để các bạn khác tiếp tục ở). Vì bạn đang ở 1 mình, khi dọn đi bạn cần chọn chức năng <strong>"Trả Toàn Bộ Phòng"</strong> để hoàn tất thủ tục bàn giao và thanh lý cọc với Chủ trọ/BQL.
+                    </p>
+                    <div className="pt-2 flex items-center justify-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLeaveModal(null);
+                          setCheckoutModal(myRoomNumber);
+                          setAgreedForfeitDeposit(false);
+                          setCheckoutReason('');
+                          setCheckoutSuccess(false);
+                        }}
+                        className="px-4 py-2 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white font-bold rounded-xl shadow-md text-xs transition-all flex items-center gap-1.5 cursor-pointer btn-press"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Chuyển Sang Trả Toàn Bộ Phòng</span>
+                      </button>
+                    </div>
                   </div>
-                  <p className="text-[11px] text-amber-800 leading-relaxed">
-                    Bạn đang thực hiện rời khỏi phòng <strong>{typeof leaveModal === 'string' ? leaveModal : leaveModal?.number}</strong>. Thao tác này chỉ rút tên riêng của bạn khỏi phòng này, <strong>không yêu cầu bạn cùng phòng biểu quyết</strong> và <strong>không làm gián đoạn hợp đồng của các bạn cùng phòng khác</strong>.
-                  </p>
-                  <p className="text-[11px] text-rose-700 font-semibold pt-1 border-t border-amber-200/60">
-                    ⚠️ Lưu ý: Tự nguyện rời phòng trước hạn sẽ không được hoàn lại tiền cọc cá nhân.
-                  </p>
-                </div>
+                ) : (
+                  <div className="my-3 p-3.5 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 space-y-1.5">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-950">
+                      <span>🚪</span>
+                      <span>Quyền lợi Rời phòng cá nhân (Ở ghép)</span>
+                    </div>
+                    <p className="text-[11px] text-amber-800 leading-relaxed">
+                      Bạn đang thực hiện rời khỏi phòng <strong>{typeof leaveModal === 'string' ? leaveModal : leaveModal?.number}</strong>. Thao tác này chỉ rút tên riêng của bạn khỏi phòng này, <strong>không yêu cầu bạn cùng phòng biểu quyết</strong> và <strong>không làm gián đoạn hợp đồng của các bạn cùng phòng khác</strong>.
+                    </p>
+                    <p className="text-[11px] text-rose-700 font-semibold pt-1 border-t border-amber-200/60">
+                      ⚠️ Lưu ý: Tự nguyện rời phòng trước hạn sẽ không được hoàn lại tiền cọc cá nhân.
+                    </p>
+                  </div>
+                )}
 
                 {hasUnpaidBillsForLeave ? (
                   <div className="my-3 p-3.5 bg-rose-50 rounded-2xl border-2 border-rose-200 text-xs text-rose-950 space-y-2">
