@@ -652,6 +652,33 @@ export default function UserDashboard() {
 
 
 
+    // Đơn trả phòng bị bạn cùng phòng từ chối vì muốn ở tiếp
+  const rejectedCheckoutRequest = useMemo(() => {
+    if (!myRoomNumber) return null;
+    return (roomRequests || []).find((req) => {
+      const isTarget = req.targetRoom === myRoomNumber || req.currentRoom === myRoomNumber;
+      return isTarget && req.type === 'CHECKOUT' && req.status === 'REJECTED_BY_ROOMMATES';
+    });
+  }, [myRoomNumber, roomRequests]);
+
+  // Đơn trả phòng đang chờ bạn cùng phòng biểu quyết
+  const waitingCheckoutRequest = useMemo(() => {
+    if (!myRoomNumber) return null;
+    return (roomRequests || []).find((req) => {
+      const isTarget = req.targetRoom === myRoomNumber || req.currentRoom === myRoomNumber;
+      return isTarget && req.type === 'CHECKOUT' && req.status === 'WAITING_ROOMMATES' && isRepresentative;
+    });
+  }, [myRoomNumber, roomRequests, isRepresentative]);
+
+  // Đơn trả phòng sẵn sàng chờ BQL nghiệm thu (ở 1 mình PENDING hoặc ở ghép ROOMMATES_APPROVED)
+  const pendingInspectionCheckoutRequest = useMemo(() => {
+    if (!myRoomNumber) return null;
+    return (roomRequests || []).find((req) => {
+      const isTarget = req.targetRoom === myRoomNumber || req.currentRoom === myRoomNumber;
+      return isTarget && req.type === 'CHECKOUT' && (req.status === 'PENDING' || req.status === 'ROOMMATES_APPROVED');
+    });
+  }, [myRoomNumber, roomRequests]);
+
   const pendingRoommateRequests = useMemo(() => {
     if (!myRoomNumber) return [];
     const uName = (user?.fullName || '').toLowerCase().trim();
@@ -1813,7 +1840,7 @@ export default function UserDashboard() {
                   }}
                   className="px-4 py-2 bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 font-bold rounded-xl text-xs transition-colors btn-press-ghost cursor-pointer"
                 >
-                  ❌ Từ Chối
+                  ❌ Tôi Muốn Ở Tiếp (Từ Chối)
                 </button>
                 <button
                   type="button"
@@ -1824,7 +1851,7 @@ export default function UserDashboard() {
                   }}
                   className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-emerald-600/20 btn-press cursor-pointer flex items-center gap-1.5"
                 >
-                  <span>✅ Đồng Ý</span>
+                  <span>✅ Đồng Ý Trả Phòng</span>
                 </button>
               </div>
             </div>
@@ -1832,7 +1859,90 @@ export default function UserDashboard() {
         </div>
       )}
 
-      {/* Hero Banner Khách Thuê */}
+            {/* BANNER 1: ĐƠN TRẢ PHÒNG BỊ BẠN CÙNG PHÒNG TỪ CHỐI */}
+      {rejectedCheckoutRequest && (
+        <div className="p-5 bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-rose-500/10 border-2 border-rose-400 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-md animate-fadeIn">
+          <div className="flex items-start gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
+              ⚠️
+            </div>
+            <div>
+              <h4 className="font-extrabold text-sm text-rose-950 flex items-center gap-2">
+                <span>Yêu Cầu Trả Toàn Bộ Phòng Đã Bị Bác Bỏ</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-200 text-rose-800">Cần Bàn Giao Hợp Đồng</span>
+              </h4>
+              <p className="text-xs text-rose-800 mt-1 leading-relaxed">
+                Bạn cùng phòng <strong>"{rejectedCheckoutRequest.rejectedBy || 'thành viên trong phòng'}"</strong> không đồng ý trả phòng vì muốn tiếp tục ở lại. Bạn không thể đơn phương thanh lý hợp đồng chung của cả phòng!
+              </p>
+              <p className="text-[11px] text-amber-900 font-semibold mt-1">
+                👉 <strong>Giải pháp:</strong> Vui lòng sử dụng tính năng <strong>"Bàn Giao Hợp Đồng & Rời Phòng"</strong> để chuyển giao quyền đại diện HĐ cho bạn cùng phòng trước khi dọn đi.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setLeaveModal(myRoomNumber);
+                setAgreedForfeitLeave(false);
+                setLeaveReason('');
+                setLeaveSuccess(false);
+              }}
+              className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-rose-600/20 btn-press cursor-pointer flex items-center gap-1.5"
+            >
+              <span>Bàn Giao HĐ & Rời Phòng</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* BANNER 2: ĐƠN TRẢ PHÒNG ĐANG CHỜ BẠN CÙNG PHÒNG BIỂU QUYẾT */}
+      {waitingCheckoutRequest && (
+        <div className="p-5 bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-indigo-500/10 border-2 border-indigo-400 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-md animate-fadeIn">
+          <div className="flex items-start gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
+              ⏳
+            </div>
+            <div>
+              <h4 className="font-extrabold text-sm text-indigo-950 flex items-center gap-2">
+                <span>Đang Chờ Tất Cả Bạn Cùng Phòng Biểu Quyết Trả Phòng</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-200 text-indigo-900">
+                  {waitingCheckoutRequest.roommateVotes?.filter(v => v.approved)?.length || 0} / {Math.max(1, (selectedCheckoutRoomObj?.occupants || 2) - 1)} Phiếu Đồng Ý
+                </span>
+              </h4>
+              <p className="text-xs text-indigo-800 mt-1 leading-relaxed">
+                Yêu cầu trả toàn bộ phòng {myRoomNumber} đã được gửi tới tất cả thành viên trong phòng. Theo quy định, đơn chỉ được chuyển đến Ban Quản Lý nghiệm thu khi <strong>100% các bạn cùng phòng đồng ý</strong>.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BANNER 3: ĐƠN TRẢ PHÒNG SẴN SÀNG CHỜ BQL NGHIỆM THU */}
+      {pendingInspectionCheckoutRequest && (
+        <div className="p-5 bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/10 border-2 border-emerald-400 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-md animate-fadeIn">
+          <div className="flex items-start gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
+              📋
+            </div>
+            <div>
+              <h4 className="font-extrabold text-sm text-emerald-950 flex items-center gap-2">
+                <span>Đơn Trả Phòng Đang Chờ Ban Quản Lý Nghiệm Thu & Hoàn Cọc</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-200 text-emerald-900">
+                  {pendingInspectionCheckoutRequest.status === 'ROOMMATES_APPROVED' ? 'Phòng Đã Duyệt 100%' : 'Chờ Nghiệm Thu'}
+                </span>
+              </h4>
+              <p className="text-xs text-emerald-800 mt-1 leading-relaxed">
+                {pendingInspectionCheckoutRequest.status === 'ROOMMATES_APPROVED'
+                  ? '100% cư dân trong phòng đã đồng thuận trả phòng. Ban Quản Lý đang xếp lịch kiểm kê thiết bị và chốt số điện nước để thanh lý hợp đồng.'
+                  : 'Yêu cầu trả phòng của bạn đã được chuyển tới Ban Quản Lý để xếp lịch kiểm kê phòng và hoàn cọc.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+{/* Hero Banner Khách Thuê */}
       <div className="bg-white relative overflow-hidden p-6 sm:p-7 rounded-3xl border border-slate-100 shadow-sm">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
           <div className="space-y-2">

@@ -1940,7 +1940,9 @@ export const DataProvider = ({ children }) => {
           return {
             ...req,
             roommateVotes: newVotes,
-            status: 'REJECTED_BY_ROOMMATES'
+            status: 'REJECTED_BY_ROOMMATES',
+            rejectedBy: voterName,
+            rejectedReason: 'Bạn cùng phòng muốn tiếp tục ở lại, không đồng ý trả toàn bộ phòng'
           };
         }
 
@@ -2277,12 +2279,11 @@ export const DataProvider = ({ children }) => {
           setRooms((roomsPrev) =>
             roomsPrev.map((r) => {
               if (r.number === oldRoomToFree) {
-                const nextOcc = Math.max(0, (r.occupants || 1) - 1);
                 return {
-                  ...r,
-                  occupants: nextOcc,
-                  status: nextOcc === 0 ? 'AVAILABLE' : r.status
-                };
+            ...r,
+            occupants: 0,
+            status: 'AVAILABLE'
+          };
               }
               return r;
             })
@@ -2483,7 +2484,7 @@ export const DataProvider = ({ children }) => {
       // 3. Cập nhật trạng thái thành viên phòng thành MOVED_OUT
       setRoomMembers((prev) => {
         const next = prev.map((m) => {
-          const isMatch = m.roomNumber === roomNum && (m.fullName || '').toLowerCase().includes(tName.toLowerCase());
+          const isMatch = m.roomNumber === roomNum;
           return isMatch ? { ...m, status: 'MOVED_OUT' } : m;
         });
         localStorage.setItem('rental_room_members', JSON.stringify(next));
@@ -2583,9 +2584,10 @@ export const DataProvider = ({ children }) => {
     }
   };
 
-  // 5. Khách gửi yêu cầu trả phòng (báo trước hạn mất cọc)
-  // Quy tắc: Nếu phòng có 1 mình -> Trả được luôn (chuyển BQL duyệt ngay)
-  // Nếu phòng có người khác -> BẮT BUỘC hỏi ý kiến mọi người trong phòng (tất cả đồng ý mới chuyển BQL duyệt)
+  // 5. Khách gửi yêu cầu trả phòng (báo trước hạn mất cọc hoặc hết hạn HĐ)
+  // Quy chuẩn BA chặt chẽ:
+  // - Nếu phòng ở 1 mình -> Đơn CHECKOUT gửi thẳng BQL với status = 'PENDING' để BQL nghiệm thu & hoàn cọc
+  // - Nếu phòng ở ghép (>= 2 người) -> Đơn CHECKOUT có status = 'WAITING_ROOMMATES', cần 100% bạn cùng phòng đồng ý
   const submitCheckoutRequest = ({
     room,
     reason,
@@ -2600,10 +2602,21 @@ export const DataProvider = ({ children }) => {
   }) => {
     const cleanRoom = String(room || '').replace(/^P\.?/i, '').trim();
 
-    // Chống spam: Nếu đã có đơn CHECKOUT đang chờ BQL duyệt cho phòng hoặc khách này -> từ chối gửi thêm
+    // 0. Điều kiện tiên quyết: Phải thanh toán hết hóa đơn tiền phòng/điện nước trước khi làm thủ tục trả phòng
+    const hasUnpaidBills = (invoices || []).some(
+      (inv) => String(inv.room || '').replace(/^P\.?/i, '').trim() === cleanRoom && inv.status !== 'PAID'
+    );
+    if (hasUnpaidBills) {
+      return {
+        error: true,
+        message: 'Phòng vẫn còn hóa đơn cước phí / điện nước chưa thanh toán. Vui lòng thanh toán hết trước khi làm thủ tục trả phòng!'
+      };
+    }
+
+    // Chống spam: Nếu đã có đơn CHECKOUT đang chờ BQL duyệt hoặc chờ biểu quyết -> từ chối gửi thêm
     const isExisting = (roomRequests || []).some((r) => {
       if (r.type !== 'CHECKOUT') return false;
-      if (r.status !== 'PENDING' && r.status !== 'WAITING_ROOMMATES') return false;
+      if (r.status !== 'PENDING' && r.status !== 'WAITING_ROOMMATES' && r.status !== 'ROOMMATES_APPROVED') return false;
       const rRoomClean = String(r.targetRoom || r.currentRoom || '').replace(/^P\.?/i, '').trim();
       const rTenant = (r.tenant || '').toLowerCase().trim();
       const rPhone = (r.phone || '').trim();
@@ -2615,7 +2628,7 @@ export const DataProvider = ({ children }) => {
     if (isExisting) {
       return {
         error: true,
-        message: 'Bạn đã gửi đơn trả phòng và đang chờ Ban Quản Lý phê duyệt & nghiệm thu. Không thể gửi thêm yêu cầu trùng lặp!'
+        message: 'Bạn đã có đơn trả phòng đang được xử lý. Không thể gửi thêm yêu cầu trùng lặp!'
       };
     }
 
@@ -2623,58 +2636,10 @@ export const DataProvider = ({ children }) => {
     const occupants = targetRoomObj ? targetRoomObj.occupants : 1;
     const hasMultiplePeople = occupants > 1;
 
-    // Khi khách ở 1 mình thực hiện trả phòng: Tự động giải phóng phòng về AVAILABLE, cập nhật hợp đồng và gỡ phòng
-    if (!hasMultiplePeople) {
-      setRooms((prev) => {
-        const updated = prev.map((r) => {
-          const isMatch = r.number === room && (!targetRoomObj?.houseCode || r.houseCode === targetRoomObj.houseCode);
-          return isMatch ? { ...r, occupants: 0, status: 'AVAILABLE' } : r;
-        });
-        try { localStorage.setItem('rental_rooms', JSON.stringify(updated)); } catch {}
-        return updated;
-      });
-
-      setContracts((prev) => {
-        const updated = prev.map((c) => {
-          const isMatch = c.roomNumber === room && (!targetRoomObj?.houseCode || c.houseCode === targetRoomObj.houseCode);
-          return isMatch && c.status === 'ACTIVE'
-            ? { ...c, status: 'TERMINATED', terminatedAt: new Date().toLocaleDateString('vi-VN'), endReason: 'Khách đã trả phòng' }
-            : c;
-        });
-        try { localStorage.setItem('rental_contracts', JSON.stringify(updated)); } catch {}
-        return updated;
-      });
-
-      setRoomMembers((prev) => {
-        const updated = prev.map((m) => {
-          return m.roomNumber === room ? { ...m, status: 'MOVED_OUT', leaveDate: new Date().toLocaleDateString('vi-VN') } : m;
-        });
-        try { localStorage.setItem('rental_room_members', JSON.stringify(updated)); } catch {}
-        return updated;
-      });
-
-      if (updateTenantRoom) {
-        updateTenantRoom(tenantName, room, 'REMOVE');
-      }
-
-      try {
-        const sTR = localStorage.getItem('rental_tenant_rooms');
-        const trMap = sTR ? JSON.parse(sTR) : {};
-        const tNorm = (tenantName || '').toLowerCase();
-        if (tNorm.includes('an')) {
-          trMap.tenant1 = [];
-          trMap['Nguyễn Văn An'] = [];
-        } else if (tNorm.includes('cường')) {
-          trMap.tenant2 = [];
-          trMap['Phạm Minh Cường'] = [];
-        } else if (tNorm.includes('nam')) {
-          trMap.tenant_new = [];
-          trMap['Hoàng Văn Nam'] = [];
-        }
-        trMap[tenantName] = [];
-        localStorage.setItem('rental_tenant_rooms', JSON.stringify(trMap));
-      } catch {}
-    }
+    // Phân loại trạng thái ban đầu:
+    // - Ở 1 mình: Gửi thẳng BQL để nghiệm thu (PENDING)
+    // - Ở ghép: Chờ 100% bạn cùng phòng biểu quyết (WAITING_ROOMMATES)
+    const initialStatus = hasMultiplePeople ? 'WAITING_ROOMMATES' : 'PENDING';
 
     return submitRoomRequest({
       type: 'CHECKOUT',
@@ -2687,12 +2652,13 @@ export const DataProvider = ({ children }) => {
       note: reason,
       forfeitDeposit: forfeitDeposit,
       hasMultiplePeople: hasMultiplePeople,
+      occupantsAtCheckout: occupants,
       refundBank,
       refundAccountNumber,
       refundAccountName,
       refundQrCode,
       isContractExpired,
-      status: 'APPROVED'
+      status: initialStatus
     });
   };
 

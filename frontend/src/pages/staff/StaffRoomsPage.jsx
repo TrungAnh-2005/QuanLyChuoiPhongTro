@@ -1489,18 +1489,24 @@ export default function StaffRoomsPage() {
                       {req.note && <div className="text-slate-500 italic">"{req.note}"</div>}
                     </div>
 
-                    {/* Trạng thái đơn ROOMMATE đang chờ biểu quyết */}
-                    {req.type === 'ROOMMATE' && req.status === 'WAITING_ROOMMATES' && (
+                    {/* Trạng thái đơn đang chờ biểu quyết (ROOMMATE hoặc CHECKOUT) */}
+                    {req.status === 'WAITING_ROOMMATES' && (
                       <div className="pt-2 border-t border-slate-200 text-[11px] text-amber-800 font-semibold flex items-center justify-between">
-                        <span>⏳ Đang chờ cư dân phòng {req.targetRoom} biểu quyết ({req.roommateVotes?.filter(v => v.approved)?.length || 0} phiếu đồng ý)...</span>
+                        <span>
+                          ⏳ Đang chờ cư dân phòng {req.targetRoom || req.roomNumber} biểu quyết ({req.roommateVotes?.filter(v => v.approved)?.length || 0} phiếu đồng ý)...
+                        </span>
                         <span className="text-[10px] text-slate-500 italic">Cần 100% phòng đồng thuận</span>
                       </div>
                     )}
 
-                    {/* Trạng thái đơn ROOMMATE bị phòng từ chối */}
-                    {req.type === 'ROOMMATE' && req.status === 'REJECTED_BY_ROOMMATES' && (
+                    {/* Trạng thái đơn bị cư dân trong phòng từ chối */}
+                    {req.status === 'REJECTED_BY_ROOMMATES' && (
                       <div className="pt-2 border-t border-slate-200 text-[11px] text-rose-700 font-semibold flex items-center justify-between">
-                        <span>❌ Có thành viên trong phòng từ chối yêu cầu ở ghép này.</span>
+                        <span>
+                          ❌ {req.type === 'CHECKOUT'
+                            ? `Cư dân bác bỏ: "${req.rejectedBy || 'Thành viên trong phòng'}" muốn ở tiếp, không đồng ý trả cả phòng.`
+                            : 'Có thành viên trong phòng từ chối yêu cầu ở ghép này.'}
+                        </span>
                       </div>
                     )}
 
@@ -1528,12 +1534,17 @@ export default function StaffRoomsPage() {
                             type="button"
                             onClick={() => {
                               if (approveRoomRequest) approveRoomRequest(req.id);
-                              setActionToast(req.type === 'ROOMMATE' ? '🎉 Đã phê duyệt nhận bạn vào ở ghép!' : '🎉 Đã phê duyệt đơn!');
-                              setTimeout(() => setActionToast(null), 3000);
+                              const msg = req.type === 'CHECKOUT'
+                                ? `🎉 Đã nghiệm thu & thanh lý phòng ${req.targetRoom || req.roomNumber}! Phòng đã trống và mở lại cho khách mới đặt cọc.`
+                                : req.type === 'ROOMMATE'
+                                ? '🎉 Đã phê duyệt nhận bạn vào ở ghép!'
+                                : '🎉 Đã phê duyệt đơn!';
+                              setActionToast(msg);
+                              setTimeout(() => setActionToast(null), 4000);
                             }}
-                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer"
+                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer flex items-center gap-1"
                           >
-                            Phê duyệt
+                            <span>{req.type === 'CHECKOUT' ? 'Nghiệm Thu & Thanh Lý' : 'Phê duyệt'}</span>
                           </button>
                         </div>
                       </div>
