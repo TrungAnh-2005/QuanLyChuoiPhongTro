@@ -124,7 +124,7 @@ export function healBoardingHousesList(list) {
   return healed;
 }
 
-const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+const isZeroSandbox = typeof window === 'undefined' || localStorage.getItem('rental_is_zero_sandbox') !== 'false';
 
 export const HOUSE_IMAGE_PRESETS = [
   { label: 'Tòa Thang Máy Hiện Đại', url: '/assets/images/house_cau_giay.jpg' },

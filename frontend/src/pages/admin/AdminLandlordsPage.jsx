@@ -34,7 +34,7 @@ import Modal from '../../components/common/Modal';
 import CreateLandlordAiModal from '../../components/admin/CreateLandlordAiModal';
 import { checkKycTrialAbuse, registerKycTrial, getTrialStatus } from '../../utils/packagePermissions';
 
-const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+const isZeroSandbox = typeof window === 'undefined' || localStorage.getItem('rental_is_zero_sandbox') !== 'false';
 
 export default function AdminLandlordsPage() {
   const {

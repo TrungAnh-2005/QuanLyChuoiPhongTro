@@ -81,7 +81,7 @@ export default function StaffDashboard() {
       const saved = localStorage.getItem('rental_boarding_houses');
       const dynamicHouses = saved ? JSON.parse(saved) : [];
       const u = (user?.username || '').toLowerCase();
-      const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+      const isZeroSandbox = typeof window === 'undefined' || localStorage.getItem('rental_is_zero_sandbox') !== 'false';
       return dynamicHouses.filter((h) => {
         const created = (h.createdBy || '').toLowerCase();
         const manager = (h.managerUsername || '').toLowerCase();
@@ -109,7 +109,7 @@ export default function StaffDashboard() {
   const occupiedCount = scopedRooms.filter((r) => r.status === 'OCCUPIED').length;
   const availableCount = scopedRooms.filter((r) => r.status === 'AVAILABLE').length;
   const maintenanceCount = scopedRooms.filter((r) => r.status === 'MAINTENANCE').length;
-  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+  const isZeroSandbox = typeof window === 'undefined' || localStorage.getItem('rental_is_zero_sandbox') !== 'false';
   const totalRooms = scopedRooms.length;
   const occupancyRate = totalRooms > 0 ? Math.round((occupiedCount / totalRooms) * 100) : 0;
 

@@ -36,7 +36,7 @@ export default function StaffMaintenancePage() {
       const dynamicHouses = saved ? JSON.parse(saved) : [];
       if (isAdmin) return dynamicHouses;
       const u = (user?.username || '').toLowerCase();
-      const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+      const isZeroSandbox = typeof window === 'undefined' || localStorage.getItem('rental_is_zero_sandbox') !== 'false';
       return dynamicHouses.filter((h) => {
         const created = (h.createdBy || '').toLowerCase();
         const manager = (h.managerUsername || '').toLowerCase();

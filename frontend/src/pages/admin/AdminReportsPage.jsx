@@ -19,7 +19,7 @@ import {
 import { useData } from '../../contexts/DataContext';
 
 export default function AdminReportsPage() {
-  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+  const isZeroSandbox = typeof window === 'undefined' || localStorage.getItem('rental_is_zero_sandbox') !== 'false';
   const { rooms = [], invoices = [], landlords = [], saasInvoices = [] } = useData();
 
   const [timeRange, setTimeRange] = useState('9_MONTHS');

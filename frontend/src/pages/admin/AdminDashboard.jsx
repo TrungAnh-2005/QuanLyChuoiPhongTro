@@ -57,7 +57,7 @@ export default function AdminDashboard() {
     saasInvoices = []
   } = useData();
 
-  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+  const isZeroSandbox = typeof window === 'undefined' || localStorage.getItem('rental_is_zero_sandbox') !== 'false';
 
   // 1. Thống kê Chủ trọ (UC-A01)
   const totalLandlords = isZeroSandbox ? (landlords.length || 0) : (landlords.length || 3);

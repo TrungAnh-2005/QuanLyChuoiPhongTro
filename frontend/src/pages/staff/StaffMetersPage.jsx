@@ -59,7 +59,7 @@ export default function StaffMetersPage() {
     );
   }, [user, landlords]);
 
-  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+  const isZeroSandbox = typeof window === 'undefined' || localStorage.getItem('rental_is_zero_sandbox') !== 'false';
   const landlordPackage =
     isZeroSandbox && (!currentLandlord || currentLandlord.packageCode === 'NONE')
       ? 'NONE'

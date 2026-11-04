@@ -26,7 +26,7 @@ import PaymentModal from '../../components/payment/PaymentModal';
 import BuySaasPackageModal from '../../components/staff/BuySaasPackageModal';
 import TrialExpiryBanner from '../../components/common/TrialExpiryBanner';
 
-const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+const isZeroSandbox = typeof window === 'undefined' || localStorage.getItem('rental_is_zero_sandbox') !== 'false';
 
 export default function StaffInvoicesPage({ forcedTab }) {
   const { user } = useAuth();

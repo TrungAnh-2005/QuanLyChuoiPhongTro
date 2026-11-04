@@ -870,10 +870,10 @@ export const DEFAULT_LANDLORD_PROFILES = [
   }
 ];
 
-const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+const isZeroSandbox = typeof window === 'undefined' || localStorage.getItem('rental_is_zero_sandbox') !== 'false';
 
 export const DataProvider = ({ children }) => {
-  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+  const isZeroSandbox = typeof window === 'undefined' || localStorage.getItem('rental_is_zero_sandbox') !== 'false';
   const auth = useAuth();
   const updateTenantRoom = auth?.updateTenantRoom;
 
@@ -5614,6 +5614,7 @@ export const DataProvider = ({ children }) => {
     try {
       const keys = Object.keys(localStorage).filter((k) => k.startsWith('rental_'));
       keys.forEach((k) => localStorage.removeItem(k));
+      localStorage.setItem('rental_is_zero_sandbox', 'false');
       sessionStorage.clear();
     } catch {}
 

@@ -69,7 +69,7 @@ export default function TenantsPage() {
     ) || (landlords && landlords.length > 0 ? landlords[0] : null);
   }, [user, landlords]);
 
-  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+  const isZeroSandbox = typeof window === 'undefined' || localStorage.getItem('rental_is_zero_sandbox') !== 'false';
 
   // Danh mục Cơ sở năng động (Đọc từ localStorage hoặc dữ liệu chuỗi trọ thực tế)
   const facilities = useMemo(() => {

@@ -947,6 +947,7 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
         <button
           type="button"
           onClick={() => {
+            localStorage.setItem('rental_is_zero_sandbox', 'false');
             if (dataContext && dataContext.restoreDefaultDemoData) {
               dataContext.restoreDefaultDemoData();
             } else {

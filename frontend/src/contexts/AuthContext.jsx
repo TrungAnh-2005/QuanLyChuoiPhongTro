@@ -3,7 +3,7 @@ import api from '../services/api';
 
 const AuthContext = createContext(null);
 
-const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+const isZeroSandbox = typeof window === 'undefined' || localStorage.getItem('rental_is_zero_sandbox') !== 'false';
 
 const DEMO_USERS = {
   ADMIN: {

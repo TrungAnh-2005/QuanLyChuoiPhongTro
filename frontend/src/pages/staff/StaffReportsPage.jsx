@@ -22,7 +22,7 @@ import { useData } from '../../contexts/DataContext';
 export default function StaffReportsPage() {
   const { user } = useAuth();
   const { rooms = [], invoices = [] } = useData();
-  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+  const isZeroSandbox = typeof window === 'undefined' || localStorage.getItem('rental_is_zero_sandbox') !== 'false';
 
   const [selectedFacility, setSelectedFacility] = useState('ALL');
   const [timeRange, setTimeRange] = useState('9_MONTHS');
