@@ -71,6 +71,8 @@ export default function UserDashboard() {
     contracts = [],
     roomRequests = [],
     roomMembers = [],
+    roommateLeaveNotices = [],
+    dismissRoommateLeaveNotice,
     resetRoomPaymentStatus,
     signContractElectronically,
     payDepositAndSignContract,
@@ -751,6 +753,19 @@ export default function UserDashboard() {
       return isTarget && isWaiting && hasNotVoted;
     });
   }, [myRoomNumber, roomRequests, user]);
+
+  // Thông báo khi có thành viên ở ghép đã rời phòng (chỉ thông báo thông tin, không cần biểu quyết)
+  const currentRoommateLeaveNotices = useMemo(() => {
+    if (!myRoomNumber) return [];
+    const norm = String(myRoomNumber).replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase();
+    const myNameNorm = (user?.fullName || '').toLowerCase().trim();
+    return (roommateLeaveNotices || []).filter((n) => {
+      const nRoom = String(n.room || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase();
+      const nMem = (n.member || '').toLowerCase().trim();
+      const isMe = myNameNorm && (nMem.includes(myNameNorm) || myNameNorm.includes(nMem));
+      return nRoom === norm && !isMe;
+    });
+  }, [myRoomNumber, roommateLeaveNotices, user]);
 
   const handleSendLeave = (e) => {
     e.preventDefault();
@@ -1950,7 +1965,51 @@ export default function UserDashboard() {
         </div>
       )}
 
-            {/* BANNER 1: ĐƠN TRẢ PHÒNG BỊ BẠN CÙNG PHÒNG TỪ CHỐI */}
+      {/* BANNER THÔNG BÁO: BẠN CÙNG PHÒNG ĐÃ RỜI PHÒNG (KHÔNG CẦN BIỂU QUYẾT, CHỈ GỬI THÔNG BÁO) */}
+      {currentRoommateLeaveNotices.length > 0 && (
+        <div className="space-y-3">
+          {currentRoommateLeaveNotices.map((notice) => (
+            <div
+              key={notice.id}
+              className="p-5 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 border-2 border-amber-400 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-md animate-fadeIn"
+            >
+              <div className="flex items-start gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
+                  📢
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="font-extrabold text-sm text-amber-950">
+                      Biến Động Cư Dân: Thành Viên Đã Rời Phòng
+                    </h4>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900">
+                      Thông Báo Thông Tin
+                    </span>
+                    <span className="text-[11px] text-slate-500">{notice.date}</span>
+                  </div>
+                  <p className="text-xs text-amber-900 mt-1 font-medium leading-relaxed">
+                    {notice.message || `Thành viên ${notice.member} đã hoàn tất thủ tục và rời phòng ${notice.room}. Sĩ số phòng đã được tự động cập nhật.`}
+                  </p>
+                  <p className="text-[11px] text-amber-800 mt-0.5">
+                    💡 <em>Lưu ý: Hợp đồng của phòng vẫn duy trì bình thường. Số tiền điện nước và chi phí sinh hoạt kỳ tới sẽ được chia lại theo số người ở thực tế.</em>
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => dismissRoommateLeaveNotice && dismissRoommateLeaveNotice(notice.id)}
+                  className="px-4 py-2 bg-white hover:bg-amber-100/70 text-amber-900 border border-amber-300 font-bold rounded-xl text-xs transition-colors cursor-pointer shadow-xs btn-press"
+                >
+                  Đã Hiểu & Đóng
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* BANNER 1: ĐƠN TRẢ PHÒNG BỊ BẠN CÙNG PHÒNG TỪ CHỐI */}
       {rejectedCheckoutRequest && (
         <div className="p-5 bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-rose-500/10 border-2 border-rose-400 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-md animate-fadeIn">
           <div className="flex items-start gap-3.5">

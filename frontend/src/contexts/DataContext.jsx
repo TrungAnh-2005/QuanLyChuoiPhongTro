@@ -948,6 +948,16 @@ export const DataProvider = ({ children }) => {
     }
   });
 
+  const dismissRoommateLeaveNotice = (noticeId) => {
+    setRoommateLeaveNotices((prev) => {
+      const next = prev.filter((n) => n.id !== noticeId);
+      try {
+        localStorage.setItem('rental_roommate_leave_notices', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
   // Quản lý cập nhật meters và invoices theo kỳ hiện tại
 
   const setMeters = (actionOrValue) => {
@@ -2838,6 +2848,21 @@ export const DataProvider = ({ children }) => {
         member: tName,
         date: new Date().toLocaleDateString('vi-VN'),
         message: leaveNoticeText
+      },
+      ...prev
+    ]);
+
+    // 2E. Gửi thông báo biến động cư dân đến Ban Quản Lý & Staff để đối soát tạm trú
+    setSystemNotices((prev) => [
+      {
+        id: `leave-staff-${Date.now()}`,
+        type: 'TENANT_LEAVE',
+        title: `Biến động cư dân: Thành viên rời phòng ${roomNumber}`,
+        desc: `Thành viên ${tName} đã tự nguyện rời phòng ${roomNumber}. Sĩ số phòng giảm, vui lòng kiểm tra hồ sơ tạm trú.`,
+        time: 'Vừa xong',
+        date: new Date().toLocaleDateString('vi-VN'),
+        room: roomNumber,
+        tenant: tName
       },
       ...prev
     ]);
@@ -5728,6 +5753,7 @@ export const DataProvider = ({ children }) => {
         systemNotices,
         roomPaymentNotices,
         roommateLeaveNotices,
+        dismissRoommateLeaveNotice,
         resetRoomPaymentStatus,
         // RBAC SaaS Additions
         resetTenantPassword,
