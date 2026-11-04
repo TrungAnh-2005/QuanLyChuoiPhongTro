@@ -1401,7 +1401,7 @@ export const DataProvider = ({ children }) => {
         }
 
         if (activeCount > 0) {
-          return { ...r, occupants: Math.max(r.occupants || 0, activeCount), status: 'OCCUPIED' };
+          return { ...r, occupants: activeCount, status: 'OCCUPIED' };
         }
         return r;
       });
@@ -4763,7 +4763,7 @@ export const DataProvider = ({ children }) => {
             ? {
                 ...r,
                 status: 'OCCUPIED',
-                occupants: Math.max(1, (r.occupants || 0) + 1),
+                occupants: Math.max(1, r.occupants || 1),
                 holdingBy: null,
                 holdingPhone: null,
                 holdingUntil: null

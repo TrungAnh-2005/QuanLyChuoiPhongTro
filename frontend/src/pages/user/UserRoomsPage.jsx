@@ -164,7 +164,34 @@ export function healBoardingHousesList(list) {
 const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
 
 export default function UserRoomsPage() {
-  const { user, tenantRooms } = useAuth();
+    // Hàm tính toán số cư dân thực tế trong phòng chuẩn xác theo roomMembers & hợp đồng ACTIVE
+  const getActualOccupants = (room) => {
+    if (!room || room.status === 'AVAILABLE') return 0;
+    const cleanNum = String(room.number || '').replace(/^P\.?/i, '').trim();
+
+    // 1. Đếm số thành viên còn đang cư trú thực tế trong phòng
+    const activeMems = (roomMembers || []).filter((m) => {
+      const mClean = String(m.roomNumber || '').replace(/^P\.?/i, '').trim();
+      const matchRoom = mClean === cleanNum;
+      const matchHouse = !room.houseCode || !m.houseCode || m.houseCode === room.houseCode;
+      return matchRoom && matchHouse && m.status !== 'MOVED_OUT';
+    });
+    if (activeMems.length > 0) return activeMems.length;
+
+    // 2. Nếu có hợp đồng ACTIVE tại phòng này
+    const hasActiveContract = (contracts || []).some((c) => {
+      const cClean = String(c.roomNumber || '').replace(/^P\.?/i, '').trim();
+      const matchRoom = cClean === cleanNum;
+      const matchHouse = !room.houseCode || !c.houseCode || c.houseCode === room.houseCode;
+      return matchRoom && matchHouse && c.status === 'ACTIVE';
+    });
+    if (hasActiveContract) return 1;
+
+    // 3. Fallback theo room.occupants
+    return typeof room.occupants === 'number' ? room.occupants : 1;
+  };
+
+const { user, tenantRooms } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
@@ -1169,7 +1196,7 @@ export default function UserRoomsPage() {
                                 </span>
                               );
                             }
-                            const curOccupants = room.occupants || 1;
+                            const curOccupants = getActualOccupants(room);
                             const maxOcc = room.maxOccupants || 2;
                             const freeSlots = maxOcc - curOccupants;
                             if (freeSlots > 0) {
@@ -1214,11 +1241,11 @@ export default function UserRoomsPage() {
                           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200/80">
                               <Users className="w-3 h-3 text-indigo-600" />
-                              <span>{room.occupants || (room.status === 'AVAILABLE' ? 0 : 1)}/{room.maxOccupants || 2} người</span>
+                              <span>{getActualOccupants(room)}/{room.maxOccupants || 2} người</span>
                             </span>
-                            {room.status === 'OCCUPIED' && (room.occupants || 1) < (room.maxOccupants || 2) && (
+                            {room.status !== 'AVAILABLE' && getActualOccupants(room) < (room.maxOccupants || 2) && (
                               <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                Còn trống {(room.maxOccupants || 2) - (room.occupants || 1)} chỗ
+                                Còn trống {(room.maxOccupants || 2) - getActualOccupants(room)} chỗ
                               </span>
                             )}
                           </div>
@@ -1318,7 +1345,7 @@ export default function UserRoomsPage() {
                       {/* 2. Nếu phòng OCCUPIED (Đang thuê) */}
                       {room.status !== 'AVAILABLE' && (
                         (() => {
-                          const curOcc = room.occupants || 1;
+                          const curOcc = getActualOccupants(room);
                           const maxOcc = room.maxOccupants || 2;
                           const isFull = curOcc >= maxOcc;
 
@@ -1532,7 +1559,7 @@ export default function UserRoomsPage() {
                   Giữ Trọ Đặt Cọc (1 Tháng Tiền Trọ)
                 </button>
               )}
-              {selectedRoomDetails.status !== 'AVAILABLE' && (selectedRoomDetails.occupants || 1) < (selectedRoomDetails.maxOccupants || 2) && !((user?.rooms || []).includes(selectedRoomDetails.number) || user?.room === selectedRoomDetails.number) && (
+              {selectedRoomDetails.status !== 'AVAILABLE' && getActualOccupants(selectedRoomDetails) < (selectedRoomDetails.maxOccupants || 2) && !((user?.rooms || []).includes(selectedRoomDetails.number) || user?.room === selectedRoomDetails.number) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1762,7 +1789,7 @@ export default function UserRoomsPage() {
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">Sức chứa & Hiện tại:</span>
                 <span className="font-bold text-slate-800">
-                  {joinRoomModalData.occupants || 1}/{joinRoomModalData.maxOccupants || 2} người (Còn trống {(joinRoomModalData.maxOccupants || 2) - (joinRoomModalData.occupants || 1)} chỗ)
+                  {getActualOccupants(joinRoomModalData)}/{joinRoomModalData.maxOccupants || 2} người (Còn trống {(joinRoomModalData.maxOccupants || 2) - getActualOccupants(joinRoomModalData)} chỗ)
                 </span>
               </div>
               <div className="pt-2 border-t border-slate-200/60">
