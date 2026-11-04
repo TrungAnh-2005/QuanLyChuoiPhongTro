@@ -441,8 +441,26 @@ export const AuthProvider = ({ children }) => {
         userHouseCode = null;
         userHouseName = null;
       } else {
-        userHouseCode = baseUser.houseCode || 'CS-01';
-        userHouseName = baseUser.houseName || 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
+        // Tự động đồng bộ cơ sở thực tế từ roomMembers hoặc contracts của phòng đang thuê
+        let matchedHouse = null;
+        try {
+          const sM = localStorage.getItem('rental_room_members');
+          const pM = sM ? JSON.parse(sM) : [];
+          const mem = pM.find(m => currentRooms.includes(m.roomNumber) && m.status !== 'MOVED_OUT');
+          if (mem?.houseCode) {
+            matchedHouse = { code: mem.houseCode, name: mem.house };
+          } else {
+            const sC = localStorage.getItem('rental_contracts');
+            const pC = sC ? JSON.parse(sC) : [];
+            const contract = pC.find(c => currentRooms.includes(c.roomNumber) && c.status === 'ACTIVE');
+            if (contract?.houseCode) {
+              matchedHouse = { code: contract.houseCode, name: contract.houseName };
+            }
+          }
+        } catch {}
+
+        userHouseCode = matchedHouse?.code || baseUser.houseCode || 'CS-01';
+        userHouseName = matchedHouse?.name || baseUser.houseName || 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
       }
     }
 
