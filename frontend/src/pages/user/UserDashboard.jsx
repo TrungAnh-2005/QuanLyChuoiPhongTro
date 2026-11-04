@@ -26,7 +26,8 @@ import {
   Copy,
   Shield,
   ArrowRight,
-  Settings
+  Settings,
+  RefreshCw
 } from 'lucide-react';
 import { createVNPayPaymentUrl } from '../../services/vnpayService';
 import { createMoMoPaymentUrl } from '../../services/momoService';
@@ -125,21 +126,6 @@ export default function UserDashboard() {
   const [isSyncingSepay, setIsSyncingSepay] = useState(false);
   const [isDepositPaid, setIsDepositPaid] = useState(false);
   const [depositPaymentMethod, setDepositPaymentMethod] = useState('SEPAY');
-
-  // Reset trạng thái nộp cọc khi đổi hợp đồng / tài khoản
-  useEffect(() => {
-    setIsDepositPaid(Boolean(myContract?.depositPaid && myContract?.status !== 'PENDING_DEPOSIT'));
-    setSepayDepositStatusMsg(null);
-    // Xóa triệt để các cờ nộp cọc cũ lưu theo phòng trong localStorage
-    try {
-      const keys = Object.keys(localStorage);
-      keys.forEach((k) => {
-        if (k.startsWith('rental_deposit_paid_')) {
-          localStorage.removeItem(k);
-        }
-      });
-    } catch {}
-  }, [myContract?.id, myContract?.status, user?.username]); // 'SEPAY' | 'VNPAY' | 'MOMO'
 
   // Đơn đăng ký thuê phòng của khách đã được Quản lý/Staff phê duyệt
   const hasApprovedRentalRequest = useMemo(() => {
@@ -255,6 +241,20 @@ export default function UserDashboard() {
   }, [user, roomRequests]);
 
   // Đếm ngược thời hạn nộp cọc giữ phòng (Countdown Timer cho Onboarding Gate)
+  // Reset trạng thái nộp cọc khi đổi hợp đồng / tài khoản
+  useEffect(() => {
+    setIsDepositPaid(Boolean(myContract?.depositPaid && myContract?.status !== 'PENDING_DEPOSIT'));
+    setSepayDepositStatusMsg(null);
+    try {
+      const keys = Object.keys(localStorage);
+      keys.forEach((k) => {
+        if (k.startsWith('rental_deposit_paid_')) {
+          localStorage.removeItem(k);
+        }
+      });
+    } catch {}
+  }, [myContract?.id, myContract?.status, user?.username]);
+
   const [holdingSecondsLeft, setHoldingSecondsLeft] = useState(15 * 60);
 
   useEffect(() => {
