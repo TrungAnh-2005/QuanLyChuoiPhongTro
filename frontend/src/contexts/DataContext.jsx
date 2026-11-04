@@ -593,6 +593,7 @@ export const DEFAULT_ROOM_MEMBERS = [
     phone: '0987.654.321',
     cccd: '001201012345',
     maskedCccd: '00120101****',
+    hometown: 'Nam Định',
     roleInRoom: 'REPRESENTATIVE',
     joinDate: '01/01/2026',
     temporaryResidenceStatus: 'REGISTERED',
@@ -609,6 +610,7 @@ export const DEFAULT_ROOM_MEMBERS = [
     phone: '0978.123.456',
     cccd: '001202023456',
     maskedCccd: '00120202****',
+    hometown: 'Bắc Ninh',
     roleInRoom: 'REPRESENTATIVE',
     joinDate: '15/02/2026',
     temporaryResidenceStatus: 'REGISTERED',
@@ -624,6 +626,7 @@ export const DEFAULT_ROOM_MEMBERS = [
     phone: '0912.888.999',
     cccd: '034203034567',
     maskedCccd: '03420303****',
+    hometown: 'Hải Phòng',
     roleInRoom: 'REPRESENTATIVE',
     joinDate: '10/03/2026',
     temporaryResidenceStatus: 'REGISTERED',
@@ -944,6 +947,16 @@ export const DataProvider = ({ children }) => {
       return [];
     }
   });
+
+  const dismissRoommateLeaveNotice = (noticeId) => {
+    setRoommateLeaveNotices((prev) => {
+      const next = prev.filter((n) => n.id !== noticeId);
+      try {
+        localStorage.setItem('rental_roommate_leave_notices', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
 
   // Quản lý cập nhật meters và invoices theo kỳ hiện tại
 
@@ -2074,6 +2087,135 @@ export const DataProvider = ({ children }) => {
     return { success: true, message: `Đã bàn giao Hợp đồng phòng ${roomNumber} cho ${toTenantName} thành công!` };
   };
 
+  // 5.2b. Đề xuất chuyển giao quyền đại diện Hợp đồng (Giao dịch 2 chiều - Chờ bạn cùng phòng đồng ý)
+  const proposeContractTransfer = (roomNumber, fromTenantName, toTenantName, reason = '') => {
+    if (!roomNumber || !fromTenantName || !toTenantName) {
+      return { error: true, message: 'Thiếu thông tin phòng hoặc người nhận bàn giao hợp đồng!' };
+    }
+    const cleanRoom = String(roomNumber || '').replace(/^P\.?/i, 'P.').trim();
+    const newReqId = 'transfer-' + Date.now();
+    const targetRoomObj = (rooms || []).find((r) => String(r.number).replace(/^P\.?/i, '').trim() === String(roomNumber).replace(/^P\.?/i, '').trim());
+
+    const newRequest = {
+      id: newReqId,
+      type: 'TRANSFER_CONTRACT',
+      targetRoom: cleanRoom,
+      currentRoom: cleanRoom,
+      house: targetRoomObj?.house || 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
+      houseCode: targetRoomObj?.houseCode || 'CS-01',
+      fromTenant: fromTenantName,
+      toTenant: toTenantName,
+      tenant: fromTenantName,
+      phone: auth?.user?.phone || '0987.654.321',
+      note: reason || 'Đề xuất bàn giao quyền đại diện Hợp đồng để hoàn tất dọn ra ngoài',
+      status: 'PENDING_ACCEPTANCE',
+      createdAt: new Date().toLocaleDateString('vi-VN'),
+      createdTime: new Date().toLocaleTimeString('vi-VN')
+    };
+
+    setRoomRequests((prev) => {
+      // Loại bỏ các đơn bàn giao cũ chưa xong của cùng phòng này để tránh rác state
+      const filtered = prev.filter(
+        (r) => !(r.type === 'TRANSFER_CONTRACT' && r.targetRoom === cleanRoom && (r.status === 'PENDING_ACCEPTANCE' || r.status === 'REJECTED_BY_TRANSFEREE'))
+      );
+      const next = [newRequest, ...filtered];
+      try {
+        localStorage.setItem('rental_room_requests', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    addAuditLog({
+      role: 'ROLE_TENANT',
+      username: fromTenantName,
+      action: 'PROPOSE_CONTRACT_TRANSFER',
+      target: cleanRoom,
+      details: `Đại diện ${fromTenantName} đề xuất bàn giao Hợp đồng phòng ${cleanRoom} cho bạn cùng phòng ${toTenantName}.`
+    });
+
+    return {
+      success: true,
+      message: `Đã gửi đề xuất bàn giao Hợp đồng cho ${toTenantName}. Hệ thống đang chờ bạn ấy bấm đồng ý tiếp quản!`
+    };
+  };
+
+  // 5.2c. Bạn cùng phòng phản hồi đề xuất bàn giao HĐ (Đồng ý nhận -> đổi đại diện; Từ chối -> kích hoạt cơ chế Deadlock-Breaker)
+  const respondContractTransfer = (requestId, accepted, rejectReason = '') => {
+    const targetReq = (roomRequests || []).find((r) => r.id === requestId);
+    if (!targetReq) {
+      return { error: true, message: 'Không tìm thấy yêu cầu bàn giao hợp đồng này!' };
+    }
+
+    if (accepted) {
+      // 1. Thực hiện đổi người ký HĐ & cho người đại diện cũ rời phòng
+      transferContractHolder(targetReq.targetRoom, targetReq.fromTenant, targetReq.toTenant);
+
+      // 2. Đánh dấu đơn bàn giao đã được chấp nhận
+      setRoomRequests((prev) => {
+        const next = prev.map((r) => {
+          if (r.id === requestId) {
+            return {
+              ...r,
+              status: 'APPROVED',
+              acceptedAt: new Date().toLocaleDateString('vi-VN')
+            };
+          }
+          return r;
+        });
+        try {
+          localStorage.setItem('rental_room_requests', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      addAuditLog({
+        role: 'ROLE_TENANT',
+        username: targetReq.toTenant,
+        action: 'ACCEPT_CONTRACT_TRANSFER',
+        target: targetReq.targetRoom,
+        details: `${targetReq.toTenant} ĐỒNG Ý tiếp quản Hợp đồng phòng ${targetReq.targetRoom} từ ${targetReq.fromTenant}.`
+      });
+
+      return {
+        success: true,
+        message: `Bạn đã đồng ý tiếp quản Hợp đồng phòng ${targetReq.targetRoom} thành công! Bạn hiện là Người đại diện mới của phòng.`
+      };
+    } else {
+      // Người được chọn từ chối tiếp quản hợp đồng
+      setRoomRequests((prev) => {
+        const next = prev.map((r) => {
+          if (r.id === requestId) {
+            return {
+              ...r,
+              status: 'REJECTED_BY_TRANSFEREE',
+              rejectedBy: targetReq.toTenant,
+              rejectReason: rejectReason || 'Tôi không muốn nhận trách nhiệm đứng tên Hợp đồng',
+              rejectedAt: new Date().toLocaleDateString('vi-VN')
+            };
+          }
+          return r;
+        });
+        try {
+          localStorage.setItem('rental_room_requests', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      addAuditLog({
+        role: 'ROLE_TENANT',
+        username: targetReq.toTenant,
+        action: 'REJECT_CONTRACT_TRANSFER',
+        target: targetReq.targetRoom,
+        details: `${targetReq.toTenant} TỪ CHỐI nhận Hợp đồng phòng ${targetReq.targetRoom} từ ${targetReq.fromTenant}. Đã kích hoạt cơ chế Deadlock-Breaker (Mở quyền Trả phòng khẩn cấp bỏ qua biểu quyết cho đại diện).`
+      });
+
+      return {
+        success: true,
+        message: `Bạn đã từ chối tiếp quản Hợp đồng phòng ${targetReq.targetRoom}.`
+      };
+    }
+  };
+
   // 5.3. Chủ trọ Nghiệm thu tài sản phòng & Quyết toán hoàn cọc / thu bồi thường
   const inspectAndApproveCheckout = (requestId, { damages = [], totalDamageCost = 0, refundAmount = 0, additionalFee = 0, notes = '' } = {}) => {
     const targetReq = (roomRequests || []).find((r) => r.id === requestId);
@@ -2627,6 +2769,8 @@ export const DataProvider = ({ children }) => {
   // Quy chuẩn BA chặt chẽ:
   // - Nếu phòng ở 1 mình -> Đơn CHECKOUT gửi thẳng BQL với status = 'PENDING' để BQL nghiệm thu & hoàn cọc
   // - Nếu phòng ở ghép (>= 2 người) -> Đơn CHECKOUT có status = 'WAITING_ROOMMATES', cần 100% bạn cùng phòng đồng ý
+  // - NGOẠI LỆ ĐẶC BIỆT (Deadlock-Breaker): Nếu Người đại diện đã đề xuất bàn giao HĐ nhưng bạn cùng phòng TỪ CHỐI tiếp quản,
+  //   hệ thống mở khóa gửi thẳng BQL với status = 'PENDING', KHÔNG CẦN bạn cùng phòng biểu quyết!
   const submitCheckoutRequest = ({
     room,
     reason,
@@ -2637,7 +2781,8 @@ export const DataProvider = ({ children }) => {
     refundAccountNumber = '',
     refundAccountName = '',
     refundQrCode = null,
-    isContractExpired = false
+    isContractExpired = false,
+    bypassRoommateVoting = false
   }) => {
     const cleanRoom = String(room || '').replace(/^P\.?/i, '').trim();
 
@@ -2675,10 +2820,24 @@ export const DataProvider = ({ children }) => {
     const occupants = targetRoomObj ? targetRoomObj.occupants : 1;
     const hasMultiplePeople = occupants > 1;
 
+    // Kiểm tra cơ chế Phá vỡ bế tắc (Deadlock-Breaker):
+    // Bạn cùng phòng đã từ chối nhận bàn giao HĐ phòng này
+    const hasRejectedTransfer = (roomRequests || []).some(
+      (r) => r.type === 'TRANSFER_CONTRACT' &&
+             String(r.targetRoom || '').replace(/^P\.?/i, '').trim() === cleanRoom &&
+             r.status === 'REJECTED_BY_TRANSFEREE'
+    );
+
+    const isDeadlockBypassActive = Boolean(bypassRoommateVoting || hasRejectedTransfer);
+
     // Phân loại trạng thái ban đầu:
-    // - Ở 1 mình: Gửi thẳng BQL để nghiệm thu (PENDING)
-    // - Ở ghép: Chờ 100% bạn cùng phòng biểu quyết (WAITING_ROOMMATES)
-    const initialStatus = hasMultiplePeople ? 'WAITING_ROOMMATES' : 'PENDING';
+    // - Ở 1 mình HOẶC kích hoạt Deadlock-Breaker: Gửi thẳng BQL để nghiệm thu (PENDING)
+    // - Ở ghép bình thường: Chờ 100% bạn cùng phòng biểu quyết (WAITING_ROOMMATES)
+    const initialStatus = (hasMultiplePeople && !isDeadlockBypassActive) ? 'WAITING_ROOMMATES' : 'PENDING';
+
+    const formattedNote = isDeadlockBypassActive
+      ? `[Cơ chế Deadlock-Breaker: Bạn cùng phòng từ chối tiếp quản HĐ, tự động chuyển đơn lên BQL nghiệm thu] ${reason || ''}`.trim()
+      : reason;
 
     return submitRoomRequest({
       type: 'CHECKOUT',
@@ -2688,9 +2847,10 @@ export const DataProvider = ({ children }) => {
       houseCode: targetRoomObj?.houseCode || 'CS-01',
       tenant: tenantName,
       phone: phone,
-      note: reason,
+      note: formattedNote,
       forfeitDeposit: forfeitDeposit,
       hasMultiplePeople: hasMultiplePeople,
+      isDeadlockBypass: isDeadlockBypassActive,
       occupantsAtCheckout: occupants,
       refundBank,
       refundAccountNumber,
@@ -2835,6 +2995,21 @@ export const DataProvider = ({ children }) => {
         member: tName,
         date: new Date().toLocaleDateString('vi-VN'),
         message: leaveNoticeText
+      },
+      ...prev
+    ]);
+
+    // 2E. Gửi thông báo biến động cư dân đến Ban Quản Lý & Staff để đối soát tạm trú
+    setSystemNotices((prev) => [
+      {
+        id: `leave-staff-${Date.now()}`,
+        type: 'TENANT_LEAVE',
+        title: `Biến động cư dân: Thành viên rời phòng ${roomNumber}`,
+        desc: `Thành viên ${tName} đã tự nguyện rời phòng ${roomNumber}. Sĩ số phòng giảm, vui lòng kiểm tra hồ sơ tạm trú.`,
+        time: 'Vừa xong',
+        date: new Date().toLocaleDateString('vi-VN'),
+        room: roomNumber,
+        tenant: tName
       },
       ...prev
     ]);
@@ -5714,6 +5889,8 @@ export const DataProvider = ({ children }) => {
         cancelRoomHold,
         submitCheckoutRequest,
         transferContractHolder,
+        proposeContractTransfer,
+        respondContractTransfer,
         inspectAndApproveCheckout,
         leaveRoom,
         submitContractRenewalRequest,
@@ -5725,6 +5902,7 @@ export const DataProvider = ({ children }) => {
         systemNotices,
         roomPaymentNotices,
         roommateLeaveNotices,
+        dismissRoommateLeaveNotice,
         resetRoomPaymentStatus,
         // RBAC SaaS Additions
         resetTenantPassword,
