@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { useData } from '../../contexts/DataContext';
+import { useData, isSameHouse, isSameRoom } from '../../contexts/DataContext';
 import {
   Building2,
   Plus,
@@ -286,7 +286,7 @@ export default function BoardingHousesPage() {
     return rawHouses.map((house) => {
       // Lấy danh sách phòng thuộc cơ sở này
       const houseRooms = (rooms || []).filter(
-        (r) => r.houseCode === house.code || (house.code === 'CS-01' && !r.houseCode)
+        (r) => isSameHouse(r.houseCode, house.code) || (house.code === 'CS-01' && !r.houseCode)
       );
 
       // Nếu cơ sở đang ở trạng thái CHỜ ADMIN DUYỆT (PENDING_APPROVAL), cơ sở chưa được cấp phép nên số phòng hoạt động bằng 0
@@ -316,7 +316,8 @@ export default function BoardingHousesPage() {
       // Danh sách khách thuê thực tế đang ở tại cơ sở này
       const houseTenants = (tenants || []).filter((t) => {
         if (t.status !== 'ACTIVE') return false;
-        return houseRooms.some((r) => (r.number === t.room || (Array.isArray(t.rooms) && t.rooms.includes(r.number))) && r.status === 'OCCUPIED');
+        const belongsToThisHouse = isSameHouse(t.houseCode, house.code) || (!t.houseCode && house.code === 'CS-01');
+        return belongsToThisHouse && houseRooms.some((r) => (isSameRoom(r.number, t.room) || (Array.isArray(t.rooms) && t.rooms.some((rn) => isSameRoom(rn, r.number)))) && r.status === 'OCCUPIED');
       });
 
       return {
@@ -339,8 +340,8 @@ export default function BoardingHousesPage() {
 
     if (isTenant) {
       list = list.filter((h) => h.code === 'CS-01');
-    } else if (isStaff) {
-      // Staff chỉ xem cơ sở thuộc quyền quản lý của mình (Multi-Tenancy)
+    } else if (isStaff && houseScopeTab === 'ASSIGNED') {
+      // Staff chỉ xem cơ sở thuộc quyền quản lý của mình khi chọn tab 'Cơ Sở Bạn Quản Lý'
       list = list.filter((h) => canManageHouse(h));
     }
 
@@ -361,10 +362,10 @@ export default function BoardingHousesPage() {
       if (cmp !== 0) return cmp;
       return String(a.code || '').localeCompare(String(b.code || ''), undefined, { numeric: true, sensitivity: 'base' });
     });
-  }, [enrichedHouses, isTenant, isStaff, houseStatusTab, staffHouseCode, user]);
+  }, [enrichedHouses, isTenant, isStaff, houseScopeTab, houseStatusTab, staffHouseCode, user]);
 
   const houseCounts = useMemo(() => {
-    const baseList = isStaff
+    const baseList = isStaff && houseScopeTab === 'ASSIGNED'
       ? enrichedHouses.filter(canManageHouse)
       : enrichedHouses;
     return {

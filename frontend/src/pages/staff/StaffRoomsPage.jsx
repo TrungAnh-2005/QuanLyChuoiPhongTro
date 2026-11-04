@@ -1554,12 +1554,16 @@ export default function StaffRoomsPage() {
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                           req.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' :
                           req.status === 'ROOMMATES_APPROVED' ? 'bg-purple-100 text-purple-800' :
-                          req.status === 'REJECTED_BY_ROOMMATES' ? 'bg-rose-100 text-rose-800' :
+                          req.status === 'REJECTED_BY_ROOMMATES' || req.status === 'REJECTED' ? 'bg-rose-100 text-rose-800' :
+                          (req.status === 'CANCELLED' || req.status === 'CANCELLED_BY_TENANT' || req.status === 'CANCELLED_BY_CANDIDATE') ? 'bg-slate-100 text-slate-700' :
                           'bg-amber-100 text-amber-800'
                         }`}>
                           {req.status === 'APPROVED' ? 'Đã duyệt' :
                            req.status === 'ROOMMATES_APPROVED' ? 'Phòng đã duyệt 100%' :
                            req.status === 'REJECTED_BY_ROOMMATES' ? 'Phòng đã từ chối' :
+                           req.status === 'REJECTED' ? 'Đã từ chối' :
+                           req.status === 'CANCELLED_BY_CANDIDATE' ? 'Khách đã rút đơn' :
+                           (req.status === 'CANCELLED_BY_TENANT' || req.status === 'CANCELLED') ? 'Khách đã hủy đơn' :
                            req.status === 'WAITING_ROOMMATES' ? 'Chờ phòng biểu quyết' : 'Chờ duyệt'}
                         </span>
                       </div>
@@ -1588,6 +1592,16 @@ export default function StaffRoomsPage() {
                             ? `Cư dân bác bỏ: "${req.rejectedBy || 'Thành viên trong phòng'}" muốn ở tiếp, không đồng ý trả cả phòng.`
                             : 'Có thành viên trong phòng từ chối yêu cầu ở ghép này.'}
                         </span>
+                      </div>
+                    )}
+
+                    {/* Trạng thái đơn khách tự hủy / rút lại */}
+                    {(req.status === 'CANCELLED' || req.status === 'CANCELLED_BY_TENANT' || req.status === 'CANCELLED_BY_CANDIDATE') && (
+                      <div className="pt-2 border-t border-slate-200 text-[11px] text-slate-600 font-semibold flex items-center justify-between">
+                        <span>
+                          ↩️ {req.cancelReason || 'Khách đã chủ động rút lại yêu cầu này.'}
+                        </span>
+                        {req.cancelledAt && <span className="text-[10px] text-slate-400 font-normal">Hủy ngày: {req.cancelledAt}</span>}
                       </div>
                     )}
 

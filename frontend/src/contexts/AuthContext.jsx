@@ -76,8 +76,8 @@ const DEMO_USERS = {
     phone: '0912.888.999',
     cccd: '034203034567',
     hometown: 'Hải Phòng',
-    room: isZeroSandbox ? null : 'P.103',
-    rooms: isZeroSandbox ? [] : ['P.103'],
+    room: isZeroSandbox ? null : 'P.101',
+    rooms: isZeroSandbox ? [] : ['P.101'],
     houseCode: 'CS-01',
     houseName: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
     role: 'TENANT',
@@ -123,8 +123,8 @@ const getStoredTenantRooms = () => {
     : {
         tenant1: ['P.101'],
         'Nguyễn Văn An': ['P.101'],
-        tenant2: ['P.103'],
-        'Phạm Minh Cường': ['P.103'],
+        tenant2: ['P.101'],
+        'Phạm Minh Cường': ['P.101'],
         tenant_new: [],
         'Hoàng Văn Nam': []
       };
@@ -218,7 +218,7 @@ export const AuthProvider = ({ children }) => {
     const injectRooms = (u) => {
       if (!u || u.role !== 'TENANT') return u;
       if (u.username === 'tenant2' || u.fullName?.includes('Cường')) {
-        const matched = currentRoomsMap.tenant2 !== undefined ? currentRoomsMap.tenant2 : (currentRoomsMap['Phạm Minh Cường'] !== undefined ? currentRoomsMap['Phạm Minh Cường'] : ['P.103']);
+        const matched = currentRoomsMap.tenant2 !== undefined ? currentRoomsMap.tenant2 : (currentRoomsMap['Phạm Minh Cường'] !== undefined ? currentRoomsMap['Phạm Minh Cường'] : ['P.101']);
         const roomsList = normalizeRoomList(matched);
         const hasRooms = roomsList.length > 0;
         return {
