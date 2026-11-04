@@ -459,7 +459,7 @@ export default function TenantsPage() {
     return { total, registered, pending, unregistered };
   }, [combinedResidents]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL'); // ALL | ACTIVE | INACTIVE
+  const [statusFilter, setStatusFilter] = useState('ACTIVE'); // ACTIVE | INACTIVE | ALL
   const [showModal, setShowModal] = useState(false);
   const [showAiTenantModal, setShowAiTenantModal] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState(null);
