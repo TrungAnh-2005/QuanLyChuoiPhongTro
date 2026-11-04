@@ -124,7 +124,22 @@ export default function UserDashboard() {
   const [sepayDepositStatusMsg, setSepayDepositStatusMsg] = useState(null);
   const [isSyncingSepay, setIsSyncingSepay] = useState(false);
   const [isDepositPaid, setIsDepositPaid] = useState(false);
-  const [depositPaymentMethod, setDepositPaymentMethod] = useState('SEPAY'); // 'SEPAY' | 'VNPAY' | 'MOMO'
+  const [depositPaymentMethod, setDepositPaymentMethod] = useState('SEPAY');
+
+  // Reset trạng thái nộp cọc khi đổi hợp đồng / tài khoản
+  useEffect(() => {
+    setIsDepositPaid(Boolean(myContract?.depositPaid && myContract?.status !== 'PENDING_DEPOSIT'));
+    setSepayDepositStatusMsg(null);
+    // Xóa triệt để các cờ nộp cọc cũ lưu theo phòng trong localStorage
+    try {
+      const keys = Object.keys(localStorage);
+      keys.forEach((k) => {
+        if (k.startsWith('rental_deposit_paid_')) {
+          localStorage.removeItem(k);
+        }
+      });
+    } catch {}
+  }, [myContract?.id, myContract?.status, user?.username]); // 'SEPAY' | 'VNPAY' | 'MOMO'
 
   // Đơn đăng ký thuê phòng của khách đã được Quản lý/Staff phê duyệt
   const hasApprovedRentalRequest = useMemo(() => {
@@ -728,9 +743,8 @@ export default function UserDashboard() {
     
     const isDepositConfirmed = Boolean(
       isDepositPaid ||
-      myContract.depositPaid ||
-      localStorage.getItem(`rental_deposit_paid_${myContract.id}`) ||
-      localStorage.getItem(`rental_deposit_paid_${myContract.roomNumber}`)
+      (myContract?.status === 'PENDING_SIGN' && myContract?.depositPaid) ||
+      (myContract?.status === 'ACTIVE' && myContract?.depositPaid)
     );
 
     let methodBankDisplay = `${bankName} ${bankAccount}`;
@@ -848,27 +862,22 @@ export default function UserDashboard() {
             amount: depositAmount,
             accountNumber: bankAccount
           });
-          if (res.success) {
+          if (res && res.success) {
             setIsDepositPaid(true);
-            setSepayDepositStatusMsg('✅ Đã phát hiện giao dịch nộp cọc thành công trên SePay! Nút Ký Hợp Đồng đã sáng.');
+            setSepayDepositStatusMsg('✅ Đã phát hiện giao dịch nộp cọc thành công trên SePay! Nút Ký Hợp Đồng đã sáng lên.');
             setPaySuccessToast(`⚡ SePay: Đã nhận tiền cọc ${depositAmount.toLocaleString('vi-VN')} đ!`);
           } else {
-            setIsDepositPaid(true);
-            setSepayDepositStatusMsg('✅ Đã đối soát giao dịch nộp cọc thành công trên SePay! Nút Ký Hợp Đồng đã sáng.');
-            setPaySuccessToast(`⚡ SePay: Đã nhận tiền cọc ${depositAmount.toLocaleString('vi-VN')} đ!`);
+            setIsDepositPaid(false);
+            setSepayDepositStatusMsg('⏳ Hệ thống chưa phát hiện giao dịch tiền cọc chuyển vào tài khoản. Vui lòng quét mã VietQR và thử lại sau vài giây.');
           }
         } else if (depositPaymentMethod === 'VNPAY') {
-          setIsDepositPaid(true);
-          setSepayDepositStatusMsg('✅ Đã xác nhận giao dịch cọc phòng qua Cổng VNPAY-QR thành công! Nút Ký Hợp Đồng đã sáng.');
-          setPaySuccessToast(`🔷 VNPAY: Đã nhận tiền cọc ${depositAmount.toLocaleString('vi-VN')} đ!`);
+          setSepayDepositStatusMsg('ℹ️ Vui lòng bấm "Mở Cổng VNPAY" để thanh toán qua cổng VNPAY Sandbox.');
         } else {
-          setIsDepositPaid(true);
-          setSepayDepositStatusMsg('✅ Đã xác nhận giao dịch cọc phòng qua Ví MoMo thành công! Nút Ký Hợp Đồng đã sáng.');
-          setPaySuccessToast(`👛 MoMo: Đã nhận tiền cọc ${depositAmount.toLocaleString('vi-VN')} đ!`);
+          setSepayDepositStatusMsg('ℹ️ Vui lòng bấm "Mở Cổng MoMo" để thanh toán qua Ví MoMo Sandbox.');
         }
       } catch (err) {
-        setIsDepositPaid(true);
-        setSepayDepositStatusMsg('✅ Đã ghi nhận giao dịch nộp cọc thành công! Nút Ký Hợp Đồng đã sáng.');
+        setIsDepositPaid(false);
+        setSepayDepositStatusMsg('⏳ Chưa phát hiện tiền cọc vào tài khoản... Vui lòng quét mã QR chuyển tiền đúng cú pháp.');
       } finally {
         setIsCheckingSepayDeposit(false);
       }
@@ -1222,6 +1231,19 @@ export default function UserDashboard() {
                     <p className="text-[9px] text-slate-400">
                       Tự động gạch nợ sau 3–5 giây
                     </p>
+                    <button
+                      type="button"
+                      onClick={handleCheckDepositPayment}
+                      disabled={isCheckingSepayDeposit || isDepositConfirmed}
+                      className={`w-full mt-2 py-2 px-2.5 font-bold text-xs rounded-xl border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        isDepositConfirmed
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200 cursor-default'
+                          : 'bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200'
+                      }`}
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isCheckingSepayDeposit ? 'animate-spin' : ''}`} />
+                      <span className="text-[11px]">{isDepositConfirmed ? '✓ Đã Nhận Tiền Cọc' : isCheckingSepayDeposit ? 'Đang kiểm tra SePay...' : 'Kiểm Tra Tiền Cọc'}</span>
+                    </button>
                   </div>
                 ) : depositPaymentMethod === 'VNPAY' ? (
                   <div className="w-full sm:w-56 shrink-0 flex flex-col items-center justify-between bg-gradient-to-br from-blue-50 to-indigo-50/70 p-4 rounded-3xl border-2 border-blue-200 text-center space-y-2.5">
