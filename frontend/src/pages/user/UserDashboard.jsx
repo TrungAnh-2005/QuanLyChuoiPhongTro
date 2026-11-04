@@ -333,21 +333,6 @@ export default function UserDashboard() {
     }
   };
 
-  const isRepresentative = useMemo(() => {
-    const rNum = (user?.room || user?.rooms?.[0] || 'P.101');
-    const repMember = (roomMembers || []).find(
-      (m) => (m.roomNumber === rNum || (contracts || []).some(c => c.roomNumber === m.roomNumber)) && m.roleInRoom === 'REPRESENTATIVE'
-    );
-    if (!repMember) return true;
-    const uName = (user?.fullName || '').toLowerCase().trim();
-    const uPhone = (user?.phone || '').trim();
-    return (
-      (repMember.fullName && repMember.fullName.toLowerCase().includes(uName)) ||
-      (uPhone && repMember.phone === uPhone) ||
-      (user?.username === 'tenant' || user?.username === 'tenant1')
-    );
-  }, [user, roomMembers, contracts]);
-
   const myRoomNumber = useMemo(() => {
     if (isContractPending) return null;
 
@@ -478,59 +463,97 @@ export default function UserDashboard() {
     );
   }, [rooms, myRoomNumber, myContract, currentTenant, user, roomMembers]);
 
-  const roommates = useMemo(() => {
-    const myNameNorm = (currentTenant?.fullName || user?.fullName || '').toLowerCase().trim();
-    const maxCapacity = currentRoomObj?.maxOccupants || 2;
-    const maxAllowedRoommates = Math.max(0, maxCapacity - 1);
-    const targetHouse = currentRoomObj?.houseCode || myContract?.houseCode;
+  // Danh sách toàn bộ cư dân thực tế đang ở trong phòng (Bất kể Khách 1 hay Khách 2 đăng nhập đều xem đúng danh sách này)
+  const currentRoomResidents = useMemo(() => {
+    if (!myRoomNumber) return [];
+    const normRoom = String(myRoomNumber).replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase();
+    const targetHouse = currentRoomObj?.houseCode || myContract?.houseCode || 'CS-01';
 
-    const otherRoomTenants = new Set(
-      tenants
-        .filter((t) => {
-          const r = t.rooms && t.rooms.length > 0 ? t.rooms[0] : t.room;
-          return r && r !== myRoomNumber;
-        })
-        .map((t) => (t.fullName || '').toLowerCase().trim())
-    );
-
-    const fromMembers = (roomMembers || []).filter((m) => {
-      if (m.roomNumber !== myRoomNumber) return false;
-      if (targetHouse && m.houseCode && m.houseCode !== targetHouse) return false;
-      if (m.status === 'MOVED_OUT') return false;
-      const mNameNorm = (m.fullName || '').toLowerCase().trim();
-
-      if (mNameNorm === myNameNorm || mNameNorm.includes(myNameNorm) || myNameNorm.includes(mNameNorm)) {
-        return false;
-      }
-
-      if (m.roleInRoom !== 'MEMBER') {
-        return false;
-      }
-
-      if (otherRoomTenants.has(mNameNorm)) {
-        return false;
-      }
-
-      return true;
+    // 1. Lọc tất cả thành viên trong roomMembers của đúng phòng và cơ sở này
+    let mems = (roomMembers || []).filter((m) => {
+      const mNorm = String(m.roomNumber || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase();
+      const matchRoom = mNorm === normRoom;
+      const matchHouse = !targetHouse || !m.houseCode || m.houseCode.toUpperCase() === targetHouse.toUpperCase();
+      return matchRoom && matchHouse && m.status !== 'MOVED_OUT';
     });
 
-    return fromMembers.slice(0, maxAllowedRoommates);
-  }, [roomMembers, myRoomNumber, currentTenant, currentRoomObj, tenants, myContract]);
+    // 2. Tìm Hợp đồng ACTIVE của phòng này
+    const activeContract = (contracts || []).find((c) => {
+      const cNorm = String(c.roomNumber || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase();
+      const matchRoom = cNorm === normRoom;
+      const matchHouse = !targetHouse || !c.houseCode || c.houseCode.toUpperCase() === targetHouse.toUpperCase();
+      return matchRoom && matchHouse && c.status === 'ACTIVE';
+    });
 
+    if (activeContract) {
+      const cTenantName = (activeContract.tenantName || '').toLowerCase().trim();
+      const foundIdx = mems.findIndex((m) => {
+        const mName = (m.fullName || '').toLowerCase().trim();
+        return mName.includes(cTenantName) || cTenantName.includes(mName);
+      });
+
+      if (foundIdx >= 0) {
+        mems[foundIdx] = { ...mems[foundIdx], roleInRoom: 'REPRESENTATIVE' };
+      } else {
+        // Nếu người đứng tên hợp đồng chưa có trong roomMembers, bổ sung vào đầu danh sách
+        mems.unshift({
+          id: 'rep-' + (activeContract.id || Date.now()),
+          roomNumber: myRoomNumber,
+          houseCode: targetHouse,
+          fullName: activeContract.tenantName || 'Nguyễn Văn An',
+          phone: activeContract.tenantPhone || '0987.654.321',
+          cccd: activeContract.tenantCccd || '001201012345',
+          maskedCccd: activeContract.tenantCccd ? activeContract.tenantCccd.slice(0, 8) + '****' : '00120101****',
+          roleInRoom: 'REPRESENTATIVE',
+          joinDate: activeContract.startDate || '01/01/2026',
+          temporaryResidenceStatus: 'REGISTERED',
+          status: 'ACTIVE'
+        });
+      }
+    }
+
+    // 3. Đưa Người đại diện (REPRESENTATIVE) lên đầu danh sách, sau đó đến các Thành viên ở ghép (MEMBER)
+    return [...mems].sort((a, b) => {
+      if (a.roleInRoom === 'REPRESENTATIVE') return -1;
+      if (b.roleInRoom === 'REPRESENTATIVE') return 1;
+      return 0;
+    });
+  }, [myRoomNumber, roomMembers, contracts, currentRoomObj, myContract]);
+
+  // Kiểm tra người đang đăng nhập có phải là Người đại diện đứng tên hợp đồng hay không
+  const isRepresentative = useMemo(() => {
+    if (!myRoomNumber) return false;
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    const uPhone = (user?.phone || '').trim();
+
+    const repMember = currentRoomResidents.find((m) => m.roleInRoom === 'REPRESENTATIVE');
+    if (repMember) {
+      const repName = (repMember.fullName || '').toLowerCase().trim();
+      const repPhone = (repMember.phone || '').trim();
+      return (uName && (repName.includes(uName) || uName.includes(repName))) || (uPhone && repPhone === uPhone);
+    }
+
+    return user?.username === 'tenant' || user?.username === 'tenant1';
+  }, [user, myRoomNumber, currentRoomResidents]);
+
+  // Danh sách các bạn cùng phòng khác (ngoại trừ người dùng đang đăng nhập)
+  const otherRoommates = useMemo(() => {
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    const uPhone = (user?.phone || '').trim();
+    return currentRoomResidents.filter((m) => {
+      const mName = (m.fullName || '').toLowerCase().trim();
+      const mPhone = (m.phone || '').trim();
+      const isMe = (uName && (mName.includes(uName) || uName.includes(mName))) || (uPhone && mPhone === uPhone);
+      return !isMe;
+    });
+  }, [currentRoomResidents, user]);
+
+  const roommates = otherRoommates;
   const maxOccupants = currentRoomObj?.maxOccupants || 2;
-  const totalOccupants = Math.min(maxOccupants, 1 + roommates.length);
+  const totalOccupants = currentRoomResidents.length;
   const isRoomFull = totalOccupants >= maxOccupants;
-
-  // otherRoommates là những bạn cùng phòng hợp lệ
-  const otherRoommates = roommates;
-
-  // Xác định người thuê đang ở 1 mình hay ở ghép:
-  // Nếu số người thực tế trong phòng <= 1 (occupants <= 1) hoặc danh sách bạn cùng phòng rỗng (roommates.length === 0)
-  // thì người thuê ĐANG Ở 1 MÌNH.
-  const isLivingAlone = (currentRoomObj?.occupants || 1) <= 1 || roommates.length === 0;
-
-  // Phòng có bạn cùng phòng khác đang ở hay không (Ở ghép từ 2 người trở lên):
-  const hasRoommatesInRoom = !isLivingAlone && roommates.length > 0;
+  const isLivingAlone = totalOccupants <= 1;
+  const hasRoommatesInRoom = totalOccupants > 1;
 
   // Kiểm tra khách đã có đơn trả phòng đang chờ BQL duyệt chưa (Chống spam)
   const hasPendingCheckoutRequest = useMemo(() => {
@@ -2003,8 +2026,8 @@ export default function UserDashboard() {
               <Wrench className="w-4 h-4 text-purple-600" />
               <span>Báo Sự Cố</span>
             </Link>
-            {/* Chỉ hiển thị nút 'Rời Phòng' khi phòng có từ 2 người trở lên (ở ghép). Nếu ở 1 mình thì chỉ có quyền 'Trả Toàn Bộ Phòng' */}
-            {hasRoommatesInRoom && (
+            {/* Nút 'Rời Phòng (Dọn Ra Ngoài)': CHỈ dành cho Thành viên ở ghép (người đại diện đứng tên hợp đồng không dùng nút này) */}
+            {!isRepresentative && hasRoommatesInRoom && (
               <button
                 type="button"
                 onClick={() => {
@@ -2014,14 +2037,15 @@ export default function UserDashboard() {
                   setLeaveSuccess(false);
                 }}
                 className="btn-press px-4 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded-2xl text-xs border border-amber-200/80 transition-all flex items-center gap-2 cursor-pointer shadow-xs"
-                title="Cá nhân dọn ra ngoài, không bắt buộc bạn cùng phòng phải trả theo"
+                title="Cá nhân dọn ra ngoài, không bắt buộc bạn cùng phòng phải trả theo (Dành cho thành viên ở ghép)"
               >
                 <LogOut className="w-4 h-4 text-amber-600" />
                 <span>Rời Phòng (Dọn Ra Ngoài)</span>
               </button>
             )}
 
-            {(isRepresentative || isLivingAlone) && (
+            {/* Nút 'Trả Toàn Bộ Phòng (HĐ)': CHỈ Người đại diện đứng tên Hợp đồng mới có quyền thanh lý & trả phòng */}
+            {isRepresentative && (
               <button
                 type="button"
                 disabled={hasUnpaidBillsForCheckout || hasPendingCheckoutRequest}
@@ -2270,94 +2294,81 @@ export default function UserDashboard() {
           </div>
 
           <div className="space-y-3">
-            {/* Chủ Hợp Đồng (Chính bạn) */}
-            <div className="p-4 bg-gradient-to-br from-indigo-50/50 via-white to-purple-50/30 border border-indigo-200/80 rounded-2xl shadow-xs space-y-2.5">
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-bold text-slate-900 text-sm">
-                      {currentTenant?.fullName || user?.fullName}
-                    </span>
-                    <span className="status-pill status-pill-indigo">
-                      🔑 Đại Diện Ký Hợp Đồng
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    Khách thuê chính đứng tên phòng {myRoomNumber}
-                  </p>
-                </div>
-                <span className="status-pill status-pill-success">
-                  🟢 Đang Cư Trú
-                </span>
-              </div>
+            {currentRoomResidents.map((m) => {
+              const isRep = m.roleInRoom === 'REPRESENTATIVE';
+              const uName = (user?.fullName || '').toLowerCase().trim();
+              const uPhone = (user?.phone || '').trim();
+              const mName = (m.fullName || '').toLowerCase().trim();
+              const mPhone = (m.phone || '').trim();
+              const isMe = (uName && (mName.includes(uName) || uName.includes(mName))) || (uPhone && mPhone === uPhone);
+              const maskedCccd = m.maskedCccd || (m.cccd ? m.cccd.slice(0, 8) + '****' : (isRep ? '00120101****' : '00120109****'));
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 border-t border-indigo-100 text-[11px]">
-                <div className="bg-white/90 p-2 rounded-xl border border-slate-200/60">
-                  <div className="text-slate-400 text-[10px] font-medium">Số CCCD 12 số</div>
-                  <div className="font-mono font-bold text-slate-800 mt-0.5">
-                    {currentTenant?.cccd ? currentTenant.cccd.slice(0, 8) + '****' : '00120101****'}
-                  </div>
-                </div>
-                <div className="bg-white/90 p-2 rounded-xl border border-slate-200/60">
-                  <div className="text-slate-400 text-[10px] font-medium">Số điện thoại</div>
-                  <div className="font-bold text-slate-800 mt-0.5">
-                    {currentTenant?.phone || user?.phone || '0987.654.321'}
-                  </div>
-                </div>
-                <div className="bg-white/90 p-2 rounded-xl border border-slate-200/60">
-                  <div className="text-slate-400 text-[10px] font-medium">Quê quán</div>
-                  <div className="font-bold text-slate-800 mt-0.5 truncate">
-                    {currentTenant?.hometown || user?.hometown || 'Nam Định'}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Các thành viên ở ghép (nếu có) */}
-            {roommates.map((m) => {
-              const maskedCccd = m.maskedCccd || (m.cccd ? m.cccd.slice(0, 8) + '****' : '00120109****');
               return (
                 <div
-                  key={m.id}
-                  className="p-3.5 bg-slate-50/80 border border-slate-200/80 rounded-2xl space-y-2 hover:bg-slate-100/60 transition-colors"
+                  key={m.id || m.fullName}
+                  className={`rounded-2xl shadow-xs space-y-2.5 transition-colors ${
+                    isRep
+                      ? 'p-4 bg-gradient-to-br from-indigo-50/50 via-white to-purple-50/30 border border-indigo-200/80'
+                      : 'p-3.5 bg-slate-50/80 border border-slate-200/80 hover:bg-slate-100/60'
+                  }`}
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-0.5">
+                    <div className="space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-slate-900 text-sm">{m.fullName}</span>
-                        <span className="status-pill status-pill-indigo">
-                          👤 Thành Viên Ở Ghép
+                        <span className="font-bold text-slate-900 text-sm">
+                          {m.fullName}
                         </span>
+                        <span className="status-pill status-pill-indigo">
+                          {isRep ? '🔑 Đại Diện Ký Hợp Đồng' : '👤 Thành Viên Ở Ghép'}
+                        </span>
+                        {isMe && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-700 border border-purple-200">
+                            Bạn
+                          </span>
+                        )}
                       </div>
                       <p className="text-[11px] text-slate-500">
-                        Cư dân ở ghép cùng phòng {myRoomNumber}
+                        {isRep ? `Khách thuê chính đứng tên phòng ${myRoomNumber}` : `Cư dân ở ghép cùng phòng ${myRoomNumber}`}
                       </p>
                     </div>
                     <span className="status-pill status-pill-success">
-                      🟢 Đã đăng ký tạm trú
+                      {isRep ? '🟢 Đang Cư Trú' : '🟢 Đã đăng ký tạm trú'}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 border-t border-slate-200/60 text-[11px]">
-                    <div className="bg-white p-2 rounded-xl border border-slate-200/60">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 border-t border-slate-200/60 text-[11px]">
+                    <div className="bg-white/90 p-2 rounded-xl border border-slate-200/60">
                       <div className="text-slate-400 text-[10px] font-medium">Số CCCD 12 số</div>
-                      <div className="font-mono font-bold text-slate-800 mt-0.5">{maskedCccd}</div>
+                      <div className="font-mono font-bold text-slate-800 mt-0.5">
+                        {maskedCccd}
+                      </div>
                     </div>
-                    <div className="bg-white p-2 rounded-xl border border-slate-200/60">
+                    <div className="bg-white/90 p-2 rounded-xl border border-slate-200/60">
                       <div className="text-slate-400 text-[10px] font-medium">Số điện thoại</div>
-                      <div className="font-bold text-slate-800 mt-0.5">{m.phone || '0981.222.333'}</div>
+                      <div className="font-bold text-slate-800 mt-0.5">
+                        {m.phone || 'Chưa cập nhật'}
+                      </div>
                     </div>
-                    <div className="bg-white p-2 rounded-xl border border-slate-200/60">
-                      <div className="text-slate-400 text-[10px] font-medium">Ngày vào ở</div>
-                      <div className="font-bold text-slate-800 mt-0.5">{m.joinDate || '01/02/2026'}</div>
+                    <div className="bg-white/90 p-2 rounded-xl border border-slate-200/60">
+                      <div className="text-slate-400 text-[10px] font-medium">{isRep ? 'Quê quán' : 'Ngày vào ở'}</div>
+                      <div className="font-bold text-slate-800 mt-0.5 truncate">
+                        {isRep ? (m.hometown || currentTenant?.hometown || 'Nam Định') : (m.joinDate || '01/02/2026')}
+                      </div>
                     </div>
                   </div>
                 </div>
               );
             })}
 
-            {/* Nếu chưa có người ở ghép và còn chỗ */}
-            {roommates.length === 0 && !isRoomFull && (
+            {/* Nếu chưa có cư dân */}
+            {currentRoomResidents.length === 0 && (
+              <div className="p-4 bg-slate-50 text-center text-slate-400 text-xs rounded-2xl">
+                Chưa có dữ liệu cư dân phòng này.
+              </div>
+            )}
+
+            {/* Nếu chưa đủ người và còn chỗ trống */}
+            {!isRoomFull && (
               <div className="p-3.5 bg-slate-50/70 border border-dashed border-slate-300 rounded-2xl flex items-center justify-between text-xs text-slate-500">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-500" />
