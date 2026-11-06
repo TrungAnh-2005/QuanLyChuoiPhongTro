@@ -18,7 +18,7 @@ import {
   Menu
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { useData } from '../../contexts/DataContext';
+import { useData, isSameHouse } from '../../contexts/DataContext';
 import { Link } from 'react-router-dom';
 
 function parseViDateTime(str) {
@@ -245,8 +245,8 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
     const myStaffHouseCodes = Array.from(new Set([
       ...myStaffHouses.map((h) => h.code),
       ...(user?.houseCode ? [user.houseCode] : []),
-      ...(user?.username === 'staff' ? ['CS-01'] : []),
-      ...(user?.username === 'staff2' ? ['CS-02'] : [])
+      ...(user?.username === 'staff' || user?.username === 'staff1' ? ['CS-01', 'S1-CS-01', 'S1-CS-02'] : []),
+      ...(user?.username === 'staff2' ? ['CS-02', 'S2-CS-01', 'S2-CS-02'] : [])
     ]));
 
     // 1. Danh sách sự cố cần cử thợ sửa chữa (Chỉ cho cơ sở của Staff này)
@@ -269,18 +269,26 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
     });
 
     // 2. Danh sách đơn chờ phê duyệt & kiểm kê tiếp nhận (Chỉ cho cơ sở của Staff này!)
-    const pendingStaffRequests = roomRequests.filter((r) => {
-      const isPending = r.status === 'PENDING' || r.status === 'WAITING_ROOMMATES' || r.status === 'ROOMMATES_APPROVED';
-      if (!isPending) return false;
+    const relevantStaffRequests = roomRequests.filter((r) => {
+      // Đơn trả phòng: Chỉ báo Staff khi cả phòng đã duyệt 100% (ROOMMATES_APPROVED) hoặc phòng 1 người (PENDING không có bạn cùng phòng)
+      // Tuyệt đối không báo Staff khi đang biểu quyết (WAITING_ROOMMATES) hoặc khi bạn cùng phòng từ chối (REJECTED_BY_ROOMMATES)
+      if (r.type === 'CHECKOUT' || r.type === 'RETURN') {
+        const isReadyForStaff = r.status === 'ROOMMATES_APPROVED' || (r.status === 'PENDING' && !r.hasMultiplePeople) || r.isDeadlockBypass;
+        if (!isReadyForStaff) return false;
+      } else {
+        const isRelevant = ['PENDING', 'APPROVED'].includes(r.status);
+        if (!isRelevant) return false;
+      }
       const reqHouse = r.houseCode || (rooms || []).find((rm) => rm.number === (r.targetRoom || r.currentRoom))?.houseCode || 'CS-01';
-      return myStaffHouseCodes.includes(reqHouse);
+      return myStaffHouseCodes.length === 0 || myStaffHouseCodes.some((code) => isSameHouse(code, reqHouse));
     });
 
-    pendingStaffRequests.forEach((req) => {
+    relevantStaffRequests.forEach((req) => {
       const reqHouse = req.houseCode || (rooms || []).find((rm) => rm.number === (req.targetRoom || req.currentRoom))?.houseCode || 'CS-01';
       const reqHouseName = (myStaffHouses.find((h) => h.code === reqHouse)?.name) || reqHouse;
       let title = `Đơn cần xử lý (${reqHouse}): Phòng ${req.targetRoom || req.currentRoom}`;
       let desc = `Khách ${req.tenant} gửi yêu cầu ${req.type}.`;
+      let notifType = 'CONTRACT';
 
       if (req.type === 'RENT' || req.type === 'NEW_RENT') {
         title = `Đơn đăng ký thuê phòng mới: Phòng ${req.targetRoom} (${reqHouse})`;
@@ -288,9 +296,16 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
       } else if (req.type === 'RENEW_CONTRACT') {
         title = `Đơn xin gia hạn hợp đồng (${reqHouse}): Phòng ${req.currentRoom || req.targetRoom}`;
         desc = `Khách ${req.tenant} xin gia hạn thêm ${req.durationMonths || req.extensionMonths || 6} tháng. Nhân viên đối soát và trình duyệt.`;
-      } else if (req.type === 'CHECKOUT') {
-        title = `Kiểm kê thiết bị (Trả phòng ${reqHouse}): Phòng ${req.currentRoom || req.targetRoom}`;
-        desc = `Khách ${req.tenant} đăng ký trả phòng. Nhân viên trực cơ sở chuẩn bị kiểm kê bàn giao cơ sở vật chất.`;
+      } else if (req.type === 'CHECKOUT' || req.type === 'RETURN') {
+        if (req.status === 'ROOMMATES_APPROVED') {
+          title = `🚨 Nghiệm thu trả phòng (${reqHouse}): Phòng ${req.currentRoom || req.targetRoom} (Đã duyệt 100%)`;
+          desc = `Tất cả bạn cùng phòng đã đồng ý trả phòng! Chờ BQL kiểm kê thiết bị & tất toán cọc cho ${req.tenant}.`;
+          notifType = 'URGENT';
+        } else {
+          title = `📋 Đơn xin trả phòng (${reqHouse}): Phòng ${req.currentRoom || req.targetRoom}`;
+          desc = `Khách ${req.tenant} đăng ký trả phòng. BQL kiểm tra hiện trạng thiết bị và lên lịch nghiệm thu.`;
+          notifType = 'URGENT';
+        }
       } else if (req.type === 'TRANSFER') {
         title = `Kiểm kê & đổi phòng (${reqHouse}): ${req.currentRoom} ➔ ${req.targetRoom}`;
         desc = `Khách ${req.tenant} nộp đơn chuyển phòng. Nhân viên kiểm tra hiện trạng 2 phòng tại cơ sở.`;
@@ -302,12 +317,14 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
         desc = `Khách ${req.tenant} xin vào ở ghép phòng ${req.targetRoom} (Trạng thái: ${req.status}).`;
       }
 
+      const reqTimestamp = (typeof req.id === 'number' && req.id > 1600000000000) ? req.id : (Date.now() + 10000);
       addNotif({
-        id: `staff-req-${req.id}`,
-        type: req.type === 'CHECKOUT' ? 'URGENT' : 'CONTRACT',
+        id: `staff-req-${req.id}-${req.status}`,
+        type: notifType,
         title,
         desc,
         time: req.date || 'Hôm nay',
+        timestampMs: reqTimestamp,
         defaultRead: false,
         link: `/rooms?action=review-requests&requestId=${req.id}`
       });
@@ -481,10 +498,20 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
             id: `tenant-checkout-vote-${req.id}`,
             type: 'URGENT',
             title: `⚠️ Biểu Quyết: Bạn cùng phòng xin trả phòng ${req.targetRoom}!`,
-            desc: `Bạn ${req.tenant} đã yêu cầu trả phòng trước hạn. Tất cả thành viên trong phòng cùng đồng ý thì mới chuyển BQL. Hãy vào Phòng Trọ biểu quyết.`,
+            desc: `Bạn ${req.tenant} đã yêu cầu trả phòng trước hạn. Tất cả thành viên trong phòng cùng đồng ý thì mới chuyển BQL. Hãy vào Cổng Cư Dân biểu quyết.`,
             time: req.date || 'Hôm nay',
             defaultRead: false,
-            link: '/rooms'
+            link: '/user'
+          });
+        } else if (isTargetMyRoom && req.status === 'REJECTED_BY_ROOMMATES') {
+          addNotif({
+            id: `tenant-checkout-rejected-${req.id}`,
+            type: 'NOTICE',
+            title: `❌ Đơn trả phòng ${req.targetRoom} đã bị từ chối`,
+            desc: `Bạn cùng phòng "${req.rejectedBy || 'Phạm Minh Cường'}" không đồng ý trả phòng vì muốn ở tiếp. Phòng tiếp tục duy trì hợp đồng.`,
+            time: req.date || 'Hôm nay',
+            defaultRead: false,
+            link: '/user'
           });
         }
       }
@@ -593,16 +620,62 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
             defaultRead: false,
             link: '/rooms'
           });
-        } else if (req.type === 'CHECKOUT') {
-          addNotif({
-            id: `my-checkout-req-${req.id}`,
-            type: 'URGENT',
-            title: `Yêu cầu trả phòng ${req.targetRoom} (Mất cọc)`,
-            desc: `Đã ghi nhận yêu cầu trả phòng trước hạn của bạn. Quản lý sẽ liên hệ kiểm kê bàn giao trong 24h.`,
-            time: req.date || 'Hôm nay',
-            defaultRead: false,
-            link: '/rooms'
-          });
+        } else if (req.type === 'CHECKOUT' || req.type === 'RETURN') {
+          if (req.status === 'REJECTED_BY_ROOMMATES') {
+            const isMeRejecter = (fullName || '').toLowerCase().includes((req.rejectedBy || '').toLowerCase());
+            addNotif({
+              id: `my-checkout-req-${req.id}-${req.status}`,
+              type: 'NOTICE',
+              title: isMeRejecter
+                ? `🛡️ Bạn đã từ chối trả phòng ${req.targetRoom || req.currentRoom}`
+                : `⚠️ Đơn trả phòng ${req.targetRoom || req.currentRoom} bị bạn cùng phòng từ chối`,
+              desc: isMeRejecter
+                ? `Bạn đã từ chối yêu cầu trả phòng. Phòng tiếp tục duy trì hợp đồng bình thường để bạn ở lại.`
+                : `Bạn cùng phòng "${req.rejectedBy || 'thành viên trong phòng'}" muốn ở lại (không đồng ý trả phòng). Vui lòng bàn giao hợp đồng cho bạn cùng phòng nếu bạn muốn rời đi một mình.`,
+              time: req.date || 'Hôm nay',
+              timestampMs: typeof req.id === 'number' && req.id > 1600000000000 ? req.id : Date.now(),
+              defaultRead: false,
+              link: '/rooms'
+            });
+          } else if (req.status === 'WAITING_ROOMMATES') {
+            const isMeRequester = (fullName || '').toLowerCase().includes((req.tenant || '').toLowerCase());
+            addNotif({
+              id: `my-checkout-req-${req.id}-${req.status}`,
+              type: isMeRequester ? 'CONTRACT' : 'URGENT',
+              title: isMeRequester
+                ? `⏳ Đang chờ bạn cùng phòng biểu quyết trả phòng ${req.targetRoom || req.currentRoom}`
+                : `🗳️ Biểu quyết trả phòng: Người đại diện xin trả phòng ${req.targetRoom || req.currentRoom}`,
+              desc: isMeRequester
+                ? `Yêu cầu trả phòng của bạn đang được bạn cùng phòng xem xét. Cần 100% đồng ý trước khi chuyển BQL.`
+                : `Đại diện ${req.tenant} đề xuất trả toàn bộ phòng. Vui lòng vào cổng cư dân để bỏ phiếu đồng ý hoặc ở tiếp.`,
+              time: req.date || 'Hôm nay',
+              timestampMs: typeof req.id === 'number' && req.id > 1600000000000 ? req.id : Date.now(),
+              defaultRead: false,
+              link: '/rooms'
+            });
+          } else if (req.status === 'ROOMMATES_APPROVED') {
+            addNotif({
+              id: `my-checkout-req-${req.id}-${req.status}`,
+              type: 'URGENT',
+              title: `🎉 Đơn trả phòng ${req.targetRoom || req.currentRoom} đã được phòng duyệt 100%`,
+              desc: `Tất cả bạn cùng phòng đã đồng ý trả phòng. Đơn đã được chuyển tới Ban Quản Lý để xếp lịch kiểm kê thiết bị và hoàn trả tiền cọc.`,
+              time: req.date || 'Hôm nay',
+              timestampMs: typeof req.id === 'number' && req.id > 1600000000000 ? req.id : Date.now(),
+              defaultRead: false,
+              link: '/rooms'
+            });
+          } else {
+            addNotif({
+              id: `my-checkout-req-${req.id}-${req.status}`,
+              type: 'URGENT',
+              title: `Yêu cầu trả phòng ${req.targetRoom || req.currentRoom}`,
+              desc: `Đã ghi nhận yêu cầu trả phòng của bạn. Ban Quản Lý sẽ liên hệ kiểm kê bàn giao trong 24h.`,
+              time: req.date || 'Hôm nay',
+              timestampMs: typeof req.id === 'number' && req.id > 1600000000000 ? req.id : Date.now(),
+              defaultRead: false,
+              link: '/rooms'
+            });
+          }
         } else if (req.type === 'RENEW_CONTRACT') {
           addNotif({
             id: `my-renew-req-${req.id}`,

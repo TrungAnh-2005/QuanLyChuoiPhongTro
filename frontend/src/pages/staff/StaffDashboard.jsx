@@ -15,6 +15,8 @@ import {
   Sparkles,
   Layers,
   AlertCircle,
+  LogOut,
+  CheckCircle2,
   PieChart as PieChartIcon
 } from 'lucide-react';
 import {
@@ -72,7 +74,7 @@ const CustomChartTooltip = ({ active, payload, label }) => {
 
 export default function StaffDashboard() {
   const { user } = useAuth();
-  const { invoices = [], tickets = [], rooms = [], tenants = [] } = useData();
+  const { invoices = [], tickets = [], rooms = [], tenants = [], roomRequests = [] } = useData();
 
   const role = user?.role || 'STAFF';
 
@@ -176,6 +178,21 @@ export default function StaffDashboard() {
       ]
     : revenueData;
 
+  const staffCheckoutRequests = useMemo(() => {
+    return (roomRequests || []).filter((r) => {
+      if (r.type !== 'CHECKOUT' && r.type !== 'RETURN') return false;
+      const rHouse = r.houseCode || (rooms || []).find((rm) => rm.number === (r.targetRoom || r.currentRoom))?.houseCode || 'CS-01';
+      return staffHouseCodes.length === 0 || staffHouseCodes.includes(rHouse);
+    });
+  }, [roomRequests, rooms, staffHouseCodes]);
+
+  const readyCheckoutRequests = staffCheckoutRequests.filter(
+    (r) => r.status === 'ROOMMATES_APPROVED' || r.status === 'PENDING'
+  );
+  const votingCheckoutRequests = staffCheckoutRequests.filter(
+    (r) => r.status === 'WAITING_ROOMMATES'
+  );
+
   const openTicketsCount = tickets.filter((t) => {
     if (staffHouseCodes.length > 0) {
       const ticketHouse = t.houseCode || (rooms || []).find((r) => r.number === t.room)?.houseCode || (t.room?.startsWith('P.') ? 'CS-01' : null);
@@ -228,6 +245,39 @@ export default function StaffDashboard() {
           </Link>
         </div>
       </div>
+
+      {/* CẢNH BÁO ĐƠN TRẢ PHÒNG CHỜ NGHIỆM THU */}
+      {readyCheckoutRequests.length > 0 && (
+        <div className="p-5 bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-rose-500/10 border-2 border-rose-400 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm animate-fadeIn">
+          <div className="flex items-start gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
+              🚨
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="font-extrabold text-sm text-rose-950">
+                  Có {readyCheckoutRequests.length} Đơn Trả Phòng Cần Nghiệm Thu Thiết Bị & Tất Toán Cọc
+                </h4>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-200 text-rose-800">
+                  Chờ Nghiệm Thu
+                </span>
+              </div>
+              <p className="text-xs text-rose-800 mt-1 leading-relaxed">
+                Khách phòng <strong>{readyCheckoutRequests.map((r) => r.targetRoom || r.currentRoom).join(', ')}</strong> ({readyCheckoutRequests[0]?.tenant || 'Khách thuê'}) đã nộp đơn và được bạn cùng phòng duyệt 100%. Vui lòng kiểm kê cơ sở vật chất để hoàn tất thủ tục trả phòng!
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Link
+              to={`/rooms?action=review-requests&requestId=${readyCheckoutRequests[0]?.id}`}
+              className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-rose-600/20 btn-press cursor-pointer flex items-center gap-1.5"
+            >
+              <span>Kiểm Kê & Nghiệm Thu Ngay</span>
+              <ArrowUpRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* 4 Stat Bento Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
@@ -530,6 +580,21 @@ export default function StaffDashboard() {
                 openTicketsCount > 0 ? 'text-indigo-800 bg-indigo-100' : 'text-slate-600 bg-slate-100'
               }`}>
                 {openTicketsCount} sự cố
+              </span>
+            </Link>
+
+            <Link
+              to="/rooms?action=review-requests"
+              className="p-3 bg-purple-50/70 hover:bg-purple-100/80 border border-purple-200/80 rounded-2xl flex items-center justify-between transition-colors cursor-pointer block group"
+            >
+              <div className="flex items-center gap-2.5">
+                <LogOut className="w-4 h-4 text-purple-600 shrink-0 group-hover:rotate-12 transition-transform" />
+                <span className="text-purple-900 font-semibold group-hover:underline">Đơn trả phòng chờ nghiệm thu</span>
+              </div>
+              <span className={`font-bold px-2 py-0.5 rounded-lg font-mono ${
+                readyCheckoutRequests.length > 0 ? 'text-purple-800 bg-purple-200' : 'text-slate-600 bg-slate-100'
+              }`}>
+                {readyCheckoutRequests.length} phòng
               </span>
             </Link>
           </div>

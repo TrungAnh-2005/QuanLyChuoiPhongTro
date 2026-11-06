@@ -44,7 +44,25 @@ export function healBoardingHousesList(list) {
   const usedCodes = new Set();
   const codeRenames = {};
 
-  const healed = list.map((h) => {
+  // Nếu staff2 đã có cơ sở thực tế (S2-CS-* hoặc id > 1000), loại bỏ triệt để cơ sở mẫu cũ CS-02 (Hai Bà Trưng)
+  const hasStaff2Custom = list.some((h) => 
+    (h.createdBy === 'staff2' || h.managerUsername === 'staff2') &&
+    ((h.code || '').toUpperCase().startsWith('S2-') || (typeof h.id === 'number' && h.id > 1000))
+  );
+
+  let cleanList = list;
+  if (hasStaff2Custom) {
+    cleanList = list.filter((h) => {
+      const isLegacyCs02 = h.code === 'CS-02' || (h.id === 2 && (h.name || '').includes('Bách Khoa'));
+      if (isLegacyCs02) {
+        changed = true;
+        return false;
+      }
+      return true;
+    });
+  }
+
+  const healed = cleanList.map((h) => {
     if ((h.code === 'CS-01' || (h.name && h.name.includes('Cầu Giấy'))) && h.floors === 5) {
       h = { ...h, floors: 4, totalFloors: 4 };
       changed = true;
@@ -289,6 +307,20 @@ export default function BoardingHousesPage() {
         (r) => isSameHouse(r.houseCode, house.code) || (house.code === 'CS-01' && !r.houseCode)
       );
 
+      // Danh sách khách thuê thực tế đang ở tại cơ sở này
+      const houseTenants = (tenants || []).filter((t) => {
+        if (t.status !== 'ACTIVE') return false;
+        const belongsToThisHouse = isSameHouse(t.houseCode, house.code) || (!t.houseCode && house.code === 'CS-01');
+        return belongsToThisHouse && houseRooms.some((r) => (isSameRoom(r.number, t.room) || (Array.isArray(t.rooms) && t.rooms.some((rn) => isSameRoom(rn, r.number)))) && r.status === 'OCCUPIED');
+      });
+
+      // Kiểm tra phòng thực sự đang có người ở (loại trừ phòng ma 0 người)
+      const isRoomOccupied = (r) => {
+        if (r.status !== 'OCCUPIED') return false;
+        if (typeof r.occupants === 'number' && r.occupants > 0) return true;
+        return houseTenants.some((t) => isSameRoom(t.room, r.number) || (Array.isArray(t.rooms) && t.rooms.some((rn) => isSameRoom(rn, r.number))));
+      };
+
       // Nếu cơ sở đang ở trạng thái CHỜ ADMIN DUYỆT (PENDING_APPROVAL), cơ sở chưa được cấp phép nên số phòng hoạt động bằng 0
       const isPending = house.status === 'PENDING_APPROVAL';
       const rawFallbackRooms = Number(house.totalRooms) || 10;
@@ -297,10 +329,10 @@ export default function BoardingHousesPage() {
         : (houseRooms.length > 0 ? houseRooms.length : Math.min(rawFallbackRooms, maxRoomsAllowed));
       const occupiedRooms = isPending
         ? 0
-        : (houseRooms.length > 0 ? houseRooms.filter((r) => r.status === 'OCCUPIED').length : (house.occupiedRooms || 0));
+        : (houseRooms.length > 0 ? houseRooms.filter(isRoomOccupied).length : (house.occupiedRooms || 0));
       const availableRooms = isPending
         ? 0
-        : (houseRooms.length > 0 ? houseRooms.filter((r) => r.status === 'AVAILABLE').length : Math.min(Number(house.availableRooms ?? rawFallbackRooms) || 0, maxRoomsAllowed));
+        : (houseRooms.length > 0 ? houseRooms.filter((r) => r.status === 'AVAILABLE' || (r.status === 'OCCUPIED' && !isRoomOccupied(r))).length : Math.min(Number(house.availableRooms ?? rawFallbackRooms) || 0, maxRoomsAllowed));
       const holdingRooms = isPending ? 0 : (houseRooms.length > 0 ? houseRooms.filter((r) => r.status === 'HOLDING').length : 0);
       const maintenanceRooms = isPending ? 0 : (houseRooms.length > 0 ? houseRooms.filter((r) => r.status === 'MAINTENANCE').length : 0);
 
@@ -309,16 +341,9 @@ export default function BoardingHousesPage() {
         ? 0
         : (houseRooms.length > 0
             ? houseRooms
-                .filter((r) => r.status === 'OCCUPIED')
+                .filter(isRoomOccupied)
                 .reduce((sum, r) => sum + (r.price || 3500000), 0)
             : (house.monthlyRevenue || 0));
-
-      // Danh sách khách thuê thực tế đang ở tại cơ sở này
-      const houseTenants = (tenants || []).filter((t) => {
-        if (t.status !== 'ACTIVE') return false;
-        const belongsToThisHouse = isSameHouse(t.houseCode, house.code) || (!t.houseCode && house.code === 'CS-01');
-        return belongsToThisHouse && houseRooms.some((r) => (isSameRoom(r.number, t.room) || (Array.isArray(t.rooms) && t.rooms.some((rn) => isSameRoom(rn, r.number)))) && r.status === 'OCCUPIED');
-      });
 
       return {
         ...house,

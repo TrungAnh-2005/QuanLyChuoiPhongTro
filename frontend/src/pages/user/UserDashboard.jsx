@@ -83,7 +83,8 @@ export default function UserDashboard() {
     respondContractTransfer,
     voteRoommateRequest,
     cancelRoomHold,
-    cancelRoomRequest
+    cancelRoomRequest,
+    confirmDepositPaid
   } = useData();
 
   const navigate = useNavigate();
@@ -93,6 +94,7 @@ export default function UserDashboard() {
   const [showRoommateModal, setShowRoommateModal] = useState(false);
   const [payingInvoice, setPayingInvoice] = useState(null);
   const [paySuccessToast, setPaySuccessToast] = useState(null);
+  const [isPeriodFeePaid, setPeriodFeePaid] = useState(false);
   const [copiedGateField, setCopiedGateField] = useState(null);
 
   // Modal Rời phòng & Trả phòng dành cho Cổng Khách Thuê
@@ -195,14 +197,16 @@ export default function UserDashboard() {
 
       const targetRoomObj = (rooms || []).find(r => r.number === hasApprovedRentalRequest.targetRoom);
       const price = targetRoomObj?.price || 2800000;
+      const defaultHouseCode = targetRoomObj?.houseCode || (user?.username === 'tenant_new' ? 'CS-02' : 'CS-01');
+      const defaultHouseName = targetRoomObj?.house || (defaultHouseCode === 'CS-02' ? 'Nhà Trọ Bách Khoa - Cơ Sở 2' : 'Nhà Trọ Cầu Giấy - Cơ Sở 1');
       return {
         id: Date.now(),
         contractCode: user?.username === 'tenant_new' ? 'HD-2026-007' : `HD-2026-${String(Date.now()).slice(-4)}`,
-        roomNumber: hasApprovedRentalRequest.targetRoom || 'P.102',
-        houseCode: hasApprovedRentalRequest.houseCode || 'CS-02',
-        houseName: hasApprovedRentalRequest.house || 'Nhà Trọ Bách Khoa - Cơ Sở 2',
-        tenantName: user?.fullName || hasApprovedRentalRequest.tenant || 'Hoàng Văn Nam',
-        tenantPhone: user?.phone || hasApprovedRentalRequest.phone || '0966.123.456',
+        roomNumber: hasApprovedRentalRequest.targetRoom || 'P.101',
+        houseCode: hasApprovedRentalRequest.houseCode || defaultHouseCode,
+        houseName: hasApprovedRentalRequest.house || defaultHouseName,
+        tenantName: user?.fullName || hasApprovedRentalRequest.tenant || 'Nguyễn Văn An',
+        tenantPhone: user?.phone || hasApprovedRentalRequest.phone || '0987.654.321',
         startDate: new Date().toLocaleDateString('vi-VN'),
         endDate: '31/12/2026',
         rentalPrice: price,
@@ -342,8 +346,124 @@ export default function UserDashboard() {
     if (isContractPending) return null;
 
     const uName = (user?.fullName || '').toLowerCase().trim();
+    const myUname = (user?.username || '').toLowerCase().trim();
 
-    // 1. Kiểm tra nếu user là thành viên đang ACTIVE trong roomMembers (ví dụ: ở ghép)
+    // 0. Hàm kiểm tra phòng đã được trả / giải phóng chưa
+    const isRoomCheckedOut = (rNum) => {
+      if (!rNum) return false;
+      const clean = String(rNum).replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase();
+
+      // 1. Kiểm tra đơn CHECKOUT / RETURN đã được duyệt (APPROVED / SETTLED)
+      const hasApprovedReq = (roomRequests || []).some(
+        (r) =>
+          (r.type === 'CHECKOUT' || r.type === 'RETURN') &&
+          String(r.targetRoom || r.currentRoom || r.roomNumber || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase() === clean &&
+          (r.status === 'APPROVED' || r.status === 'CHECKOUT_SETTLED' || r.status === 'SETTLED' || r.settledAt)
+      );
+      if (hasApprovedReq) return true;
+
+      // 2. Kiểm tra biên bản quyết toán trả phòng rental_move_out_settlements
+      try {
+        const sSt = localStorage.getItem('rental_move_out_settlements');
+        if (sSt) {
+          const sts = JSON.parse(sSt);
+          if (Array.isArray(sts) && sts.some(s =>
+            String(s.roomNumber || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase() === clean &&
+            (s.settledAt || s.refundStatus === 'COMPLETED' || s.status === 'SETTLED')
+          )) return true;
+        }
+      } catch {}
+
+      // 3. Kiểm tra danh mục phòng: Nếu phòng mang trạng thái AVAILABLE hoặc occupants === 0
+      const matchedRoom = (rooms || []).find(r => String(r.number || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase() === clean);
+      if (matchedRoom && (matchedRoom.status === 'AVAILABLE' || matchedRoom.occupants === 0)) {
+        return true;
+      }
+
+      // 4. Kiểm tra hợp đồng: Nếu phòng có hợp đồng nhưng KHÔNG CÒN hợp đồng ACTIVE
+      const roomContracts = (contracts || []).filter(c => String(c.roomNumber || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase() === clean);
+      const hasActive = roomContracts.some(c => c.status === 'ACTIVE');
+      if (!hasActive && roomContracts.length > 0) {
+        return true;
+      }
+
+      return false;
+    };
+
+    // 1. NGUỒN SỰ THẬT CHUẨN 1: rental_tenant_rooms từ localStorage
+    try {
+      const sTR = localStorage.getItem('rental_tenant_rooms');
+      if (sTR) {
+        const parsedTR = JSON.parse(sTR);
+        let sList = parsedTR?.[myUname];
+        if (sList === undefined && user?.fullName) {
+          sList = parsedTR[user.fullName];
+        }
+        if (sList === undefined) {
+          if (myUname === 'tenant2' || uName.includes('cường')) {
+            sList = parsedTR.tenant2 !== undefined ? parsedTR.tenant2 : parsedTR['Phạm Minh Cường'];
+          } else if (myUname === 'tenant1' || uName.includes('an')) {
+            sList = parsedTR.tenant1 !== undefined ? parsedTR.tenant1 : parsedTR['Nguyễn Văn An'];
+          } else if (myUname === 'tenant_new' || uName.includes('nam')) {
+            sList = parsedTR.tenant_new !== undefined ? parsedTR.tenant_new : parsedTR['Hoàng Văn Nam'];
+          }
+        }
+        if (Array.isArray(sList)) {
+          if (sList.length === 0) return null;
+          const valid = sList.find(rn => !isRoomCheckedOut(rn));
+          if (!valid) return null;
+          return valid;
+        }
+      }
+    } catch {}
+
+    // 2. NGUỒN SỰ THẬT CHUẨN 2: tenantRooms từ AuthContext
+    let stored = myUname && tenantRooms?.[myUname] !== undefined
+      ? tenantRooms[myUname]
+      : (user?.fullName && tenantRooms?.[user.fullName] !== undefined ? tenantRooms[user.fullName] : undefined);
+    if (stored === undefined || stored === null) {
+      if (myUname === 'tenant2' || uName.includes('cường')) {
+        stored = tenantRooms?.tenant2 !== undefined ? tenantRooms.tenant2 : tenantRooms?.['Phạm Minh Cường'];
+      } else if (myUname === 'tenant1' || uName.includes('an')) {
+        stored = tenantRooms?.tenant1 !== undefined ? tenantRooms.tenant1 : tenantRooms?.['Nguyễn Văn An'];
+      } else if (myUname === 'tenant_new' || uName.includes('nam')) {
+        stored = tenantRooms?.tenant_new !== undefined ? tenantRooms.tenant_new : tenantRooms?.['Hoàng Văn Nam'];
+      }
+    }
+    if (Array.isArray(stored)) {
+      if (stored.length === 0) return null;
+      const valid = stored.find(rn => !isRoomCheckedOut(rn));
+      if (!valid) return null;
+      return valid;
+    }
+    if (typeof stored === 'string') {
+      if (!stored || isRoomCheckedOut(stored)) return null;
+      return stored;
+    }
+
+    // 3. Nếu user object có rooms rỗng
+    if (user?.rooms && Array.isArray(user.rooms) && user.rooms.length === 0) return null;
+    if (user?.room === null || user?.room === '') return null;
+
+    // 4. Kiểm tra userContracts: nếu tất cả hợp đồng đã kết thúc và không có hợp đồng active
+    const userContracts = (contracts || []).filter((c) => {
+      const cName = (c.tenantName || '').toLowerCase().trim();
+      return (
+        cName.includes(uName) ||
+        uName.includes(cName) ||
+        (uName.includes('an') && cName.includes('an')) ||
+        (uName.includes('cường') && cName.includes('cường')) ||
+        (uName.includes('nam') && cName.includes('nam'))
+      );
+    });
+    const hasActiveContract = userContracts.some((c) => c.status === 'ACTIVE');
+    const allContractsEnded = userContracts.length > 0 && userContracts.every((c) => c.status === 'TERMINATED' || c.status === 'COMPLETED' || c.status === 'CANCELLED');
+
+    if (allContractsEnded && !hasActiveContract) {
+      return null;
+    }
+
+    // 5. Kiểm tra thành viên phòng (chỉ khi phòng chưa bị trả)
     const activeMember = (roomMembers || []).find((m) => {
       if (m.status === 'MOVED_OUT' || m.status === 'INACTIVE') return false;
       const mName = (m.fullName || '').toLowerCase().trim();
@@ -357,10 +477,13 @@ export default function UserDashboard() {
         )
       );
       const matchPhone = Boolean(user?.phone && mPhone && user.phone === mPhone);
-      return matchName || matchPhone;
+      if (!matchName && !matchPhone) return false;
+      if (isRoomCheckedOut(m.roomNumber)) return false;
+      return true;
     });
+    if (activeMember) return activeMember.roomNumber;
 
-    // 2. Kiểm tra nếu có đơn ở ghép (ROOMMATE) đã được duyệt (APPROVED)
+    // 6. Kiểm tra đơn ở ghép (ROOMMATE) đã được APPROVED
     const approvedRoommateReq = (roomRequests || []).find((r) => {
       if (r.status !== 'APPROVED') return false;
       if (r.type !== 'ROOMMATE' && r.type !== 'JOIN_ROOM') return false;
@@ -375,82 +498,17 @@ export default function UserDashboard() {
         )
       );
       const matchPhone = Boolean(user?.phone && rPhone && user.phone === rPhone);
-      return matchName || matchPhone;
+      if (!matchName && !matchPhone) return false;
+      if (isRoomCheckedOut(r.targetRoom)) return false;
+      return true;
     });
+    if (approvedRoommateReq?.targetRoom) return approvedRoommateReq.targetRoom;
 
-    const userContracts = (contracts || []).filter((c) => {
-      const cName = (c.tenantName || '').toLowerCase().trim();
-      return (
-        cName.includes(uName) ||
-        uName.includes(cName) ||
-        (uName.includes('an') && cName.includes('an')) ||
-        (uName.includes('cường') && cName.includes('cường')) ||
-        (uName.includes('nam') && cName.includes('nam'))
-      );
-    });
-    const hasActiveContract = userContracts.some((c) => c.status === 'ACTIVE');
-    const allContractsEnded = userContracts.length > 0 && userContracts.every((c) => c.status === 'TERMINATED' || c.status === 'COMPLETED');
-
-    if (allContractsEnded && !hasActiveContract && !activeMember && !approvedRoommateReq) {
-      return null;
-    }
-
-    if (user?.username === 'tenant2' || uName.includes('cường')) {
-      const stored = tenantRooms?.tenant2 !== undefined ? tenantRooms?.tenant2 : tenantRooms?.['Phạm Minh Cường'];
-      if (Array.isArray(stored) && stored.length > 0) return stored[0];
-      if (typeof stored === 'string' && stored) return stored;
-      if (user?.room) return user.room;
-      if (user?.rooms && user.rooms.length > 0) return user.rooms[0];
-      const matchContract = (contracts || []).find((c) => c.status === 'ACTIVE' && c.tenantName?.includes('Cường'));
-      if (matchContract?.roomNumber) return matchContract.roomNumber;
-      if (activeMember?.roomNumber) return activeMember.roomNumber;
-      if (approvedRoommateReq?.targetRoom || approvedRoommateReq?.roomNumber) return approvedRoommateReq.targetRoom || approvedRoommateReq.roomNumber;
-      return null;
-    }
-
-    if (user?.username === 'tenant' || user?.username === 'tenant1' || uName.includes('an')) {
-      const stored = tenantRooms?.tenant1 !== undefined ? tenantRooms?.tenant1 : tenantRooms?.['Nguyễn Văn An'];
-      if (Array.isArray(stored) && stored.length > 0) return stored[0];
-      if (typeof stored === 'string' && stored) return stored;
-      if (user?.room) return user.room;
-      if (user?.rooms && user.rooms.length > 0) return user.rooms[0];
-      const matchContract = (contracts || []).find((c) => c.status === 'ACTIVE' && c.tenantName?.includes('An'));
-      if (matchContract?.roomNumber) return matchContract.roomNumber;
-      if (activeMember?.roomNumber) return activeMember.roomNumber;
-      if (approvedRoommateReq?.targetRoom || approvedRoommateReq?.roomNumber) return approvedRoommateReq.targetRoom || approvedRoommateReq.roomNumber;
-      return null;
-    }
-
-    if (user?.username === 'tenant_new' || uName.includes('nam')) {
-      const stored = tenantRooms?.tenant_new !== undefined ? tenantRooms?.tenant_new : tenantRooms?.['Hoàng Văn Nam'];
-      if (Array.isArray(stored) && stored.length > 0) return stored[0];
-      if (typeof stored === 'string' && stored) return stored;
-      if (user?.room) return user.room;
-      if (user?.rooms && user.rooms.length > 0) return user.rooms[0];
-      const matchContract = (contracts || []).find((c) => c.status === 'ACTIVE' && c.tenantName?.includes('Nam'));
-      if (matchContract?.roomNumber) return matchContract.roomNumber;
-      if (activeMember?.roomNumber) return activeMember.roomNumber;
-      if (approvedRoommateReq?.targetRoom || approvedRoommateReq?.roomNumber) return approvedRoommateReq.targetRoom || approvedRoommateReq.roomNumber;
-      return null;
-    }
-
-    if (activeMember?.roomNumber) return activeMember.roomNumber;
-    if (approvedRoommateReq?.targetRoom || approvedRoommateReq?.roomNumber) return approvedRoommateReq.targetRoom || approvedRoommateReq.roomNumber;
-
-    const stored = tenantRooms?.[user?.username] || tenantRooms?.[user?.fullName];
-    if (Array.isArray(stored) && stored.length > 0) return stored[0];
-    if (typeof stored === 'string' && stored) return stored;
-    if (user?.room) return user.room;
-    if (user?.rooms && user.rooms.length > 0) return user.rooms[0];
-
-    const found = tenants.find(
-      (t) =>
-        (user?.fullName && t.fullName?.toLowerCase().includes(user.fullName.toLowerCase())) ||
-        (user?.phone && t.phone === user.phone)
-    );
-    if (found?.status === 'INACTIVE' || (found?.rooms && found.rooms.length === 0)) return null;
-    return found?.room || found?.rooms?.[0] || null;
-  }, [user, tenants, tenantRooms, isContractPending, contracts, roomMembers, roomRequests]);
+    // 7. Fallback cuối cùng
+    const fallbackRooms = Array.isArray(user?.rooms) ? user.rooms : (user?.room ? [user.room] : []);
+    const validFallback = fallbackRooms.find((rn) => !isRoomCheckedOut(rn));
+    return validFallback || null;
+  }, [user, tenants, tenantRooms, isContractPending, contracts, roomMembers, roomRequests, rooms]);
 
   const currentTenant = useMemo(() => {
     const userFullName = user?.fullName || '';
@@ -567,13 +625,13 @@ export default function UserDashboard() {
       if (hasLeft) return false;
 
       return true;
-    }) || (myRoomNumber && user?.fullName ? {
+    }) || (myRoomNumber ? {
       id: 'rep-' + Date.now(),
       roomNumber: myRoomNumber,
       houseCode: targetHouse,
-      tenantName: user.fullName,
-      tenantPhone: user.phone || '0912.888.999',
-      tenantCccd: user.cccd || '034203034567',
+      tenantName: (mems.some(m => (m.fullName || '').toLowerCase().includes('an')) || (user?.fullName || '').toLowerCase().includes('cường')) ? 'Nguyễn Văn An' : (user?.fullName || 'Nguyễn Văn An'),
+      tenantPhone: '0987.654.321',
+      tenantCccd: '001201014567',
       startDate: '04/11/2026',
       status: 'ACTIVE'
     } : null);
@@ -593,12 +651,12 @@ export default function UserDashboard() {
           id: 'rep-' + (activeContract.id || Date.now()),
           roomNumber: myRoomNumber,
           houseCode: targetHouse,
-          fullName: activeContract.tenantName || user?.fullName || 'Khách thuê',
-          phone: activeContract.tenantPhone || user?.phone || '0912.888.999',
-          cccd: activeContract.tenantCccd || user?.cccd || '034203034567',
-          maskedCccd: activeContract.tenantCccd ? activeContract.tenantCccd.slice(0, 8) + '****' : (user?.cccd ? user.cccd.slice(0, 8) + '****' : '03420303****'),
+          fullName: activeContract.tenantName || 'Nguyễn Văn An',
+          phone: activeContract.tenantPhone || '0987.654.321',
+          cccd: activeContract.tenantCccd || '001201014567',
+          maskedCccd: activeContract.tenantCccd ? activeContract.tenantCccd.slice(0, 8) + '****' : '00120101****',
           roleInRoom: 'REPRESENTATIVE',
-          hometown: user?.hometown || 'Hải Phòng',
+          hometown: (activeContract.tenantName || '').toLowerCase().includes('an') ? 'Nam Định' : 'Hà Nội',
           joinDate: activeContract.startDate || '04/11/2026',
           temporaryResidenceStatus: 'REGISTERED',
           status: 'ACTIVE'
@@ -669,6 +727,17 @@ export default function UserDashboard() {
     const uName = (user?.fullName || '').toLowerCase().trim();
     const uPhone = (user?.phone || '').trim();
 
+    // Nếu user là Cường (tenant2 / roommate), Cường KHÔNG PHẢI người đại diện khi An chưa bàn giao!
+    if (uName.includes('cường') || user?.username === 'tenant2') {
+      const hasAcceptedTransferToMe = (roomRequests || []).some(
+        (req) =>
+          req.type === 'TRANSFER_CONTRACT' &&
+          req.status === 'APPROVED' &&
+          (req.toTenant || '').toLowerCase().includes(uName)
+      );
+      if (!hasAcceptedTransferToMe) return false;
+    }
+
     const repMember = currentRoomResidents.find((m) => m.roleInRoom === 'REPRESENTATIVE');
     if (repMember) {
       const repName = (repMember.fullName || '').toLowerCase().trim();
@@ -677,7 +746,7 @@ export default function UserDashboard() {
     }
 
     return user?.username === 'tenant' || user?.username === 'tenant1';
-  }, [user, myRoomNumber, currentRoomResidents]);
+  }, [user, myRoomNumber, currentRoomResidents, roomRequests]);
 
   // Danh sách các bạn cùng phòng khác (ngoại trừ người dùng đang đăng nhập)
   const otherRoommates = useMemo(() => {
@@ -758,7 +827,8 @@ export default function UserDashboard() {
     return (rooms || []).find((r) => r.number === num);
   }, [checkoutModal, rooms]);
 
-  const isCheckoutRoomMulti = !isLivingAlone && ((selectedCheckoutRoomObj?.occupants || 1) > 1 || roommates.length > 0);
+  const checkoutOccupantsCount = Math.max(selectedCheckoutRoomObj?.occupants || 1, totalOccupants, roommates.length + 1);
+  const isCheckoutRoomMulti = !isLivingAlone && (checkoutOccupantsCount > 1 || roommates.length > 0);
 
   const unpaidInvoicesForLeave = useMemo(() => {
     if (!leaveModal) return [];
@@ -828,11 +898,37 @@ export default function UserDashboard() {
   // Đơn trả phòng bị bạn cùng phòng từ chối vì muốn ở tiếp
   const rejectedCheckoutRequest = useMemo(() => {
     if (!myRoomNumber) return null;
+    // NẾU PHÒNG ĐÃ CÓ ĐƠN TRẢ PHÒNG ĐÃ DUYỆT (CHECKOUT APPROVED) THÌ KHÔNG HIỂN THỊ BANNER BỊ TỪ CHỐI NÀY
+    const hasApprovedCheckout = (roomRequests || []).some((req) => {
+      const isTarget = req.targetRoom === myRoomNumber || req.currentRoom === myRoomNumber;
+      return isTarget && (req.type === 'CHECKOUT' || req.type === 'RETURN') && (req.status === 'APPROVED' || req.settledAt);
+    });
+    if (hasApprovedCheckout) return null;
+
     return (roomRequests || []).find((req) => {
       const isTarget = req.targetRoom === myRoomNumber || req.currentRoom === myRoomNumber;
       return isTarget && req.type === 'CHECKOUT' && req.status === 'REJECTED_BY_ROOMMATES';
     });
   }, [myRoomNumber, roomRequests]);
+
+  const [dismissedRejectedCheckoutIds, setDismissedRejectedCheckoutIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem('rental_dismissed_rejected_checkout');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleDismissRejectedCheckout = (reqId) => {
+    setDismissedRejectedCheckoutIds((prev) => {
+      const updated = Array.from(new Set([...prev, reqId]));
+      try {
+        localStorage.setItem('rental_dismissed_rejected_checkout', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
 
   // 1. Đề xuất bàn giao hợp đồng đang gửi đến tài khoản này (Cần tài khoản này Đồng Ý hoặc Từ Chối)
   const pendingIncomingTransferProposal = useMemo(() => {
@@ -871,7 +967,7 @@ export default function UserDashboard() {
   const waitingCheckoutRequest = useMemo(() => {
     if (!myRoomNumber) return null;
     return (roomRequests || []).find((req) => {
-      const isTarget = req.targetRoom === myRoomNumber || req.currentRoom === myRoomNumber;
+      const isTarget = isSameRoom(req.targetRoom, myRoomNumber) || isSameRoom(req.currentRoom, myRoomNumber);
       return isTarget && req.type === 'CHECKOUT' && req.status === 'WAITING_ROOMMATES' && isRepresentative;
     });
   }, [myRoomNumber, roomRequests, isRepresentative]);
@@ -880,17 +976,27 @@ export default function UserDashboard() {
   const pendingInspectionCheckoutRequest = useMemo(() => {
     if (!myRoomNumber) return null;
     return (roomRequests || []).find((req) => {
-      const isTarget = req.targetRoom === myRoomNumber || req.currentRoom === myRoomNumber;
-      return isTarget && req.type === 'CHECKOUT' && (req.status === 'PENDING' || req.status === 'ROOMMATES_APPROVED');
+      const isTarget = isSameRoom(req.targetRoom, myRoomNumber) || isSameRoom(req.currentRoom, myRoomNumber);
+      return isTarget && req.type === 'CHECKOUT' && (
+        req.status === 'ROOMMATES_APPROVED' || 
+        (req.status === 'PENDING' && !req.hasMultiplePeople) || 
+        req.isDeadlockBypass
+      );
     });
   }, [myRoomNumber, roomRequests]);
 
   const pendingRoommateRequests = useMemo(() => {
     if (!myRoomNumber) return [];
     const uName = (user?.fullName || '').toLowerCase().trim();
+    const uPhone = (user?.phone || '').trim();
     return (roomRequests || []).filter((req) => {
-      const isTarget = req.targetRoom === myRoomNumber;
+      const isTarget = isSameRoom(req.targetRoom, myRoomNumber) || isSameRoom(req.currentRoom, myRoomNumber);
       const isWaiting = req.status === 'WAITING_ROOMMATES';
+      // Không phải do chính user này gửi đơn
+      const isMyOwnRequest = (uName && (req.tenant?.toLowerCase().includes(uName) || uName.includes(req.tenant?.toLowerCase()))) ||
+                             (uPhone && req.phone === uPhone);
+      if (isMyOwnRequest) return false;
+
       const hasNotVoted = !(req.roommateVotes || []).some(
         (v) => (v.voter || '').toLowerCase().trim() === uName
       );
@@ -915,6 +1021,20 @@ export default function UserDashboard() {
     e.preventDefault();
     if (!leaveModal || !agreedForfeitLeave || hasUnpaidBillsForLeave) return;
     const roomNumber = typeof leaveModal === 'string' ? leaveModal : leaveModal.number;
+
+    // NẾU LÀ NGƯỜI ĐẠI DIỆN HỢP ĐỒNG VÀ PHÒNG CÒN BẠN CÙNG PHÒNG -> GỬI ĐỀ XUẤT BÀN GIAO HỢP ĐỒNG (TWO-WAY HANDSHAKE)
+    if (isRepresentative && otherRoommates.length > 0 && selectedSuccessor) {
+      if (proposeContractTransfer) {
+        const res = proposeContractTransfer(roomNumber, user?.fullName, selectedSuccessor, leaveReason);
+        if (res?.error) {
+          alert(res.message);
+          return;
+        }
+      }
+      setLeaveSuccess(true);
+      return;
+    }
+
     const res = leaveRoom(roomNumber, user?.fullName);
     if (res?.success) {
       setLeaveSuccess(true);
@@ -927,7 +1047,7 @@ export default function UserDashboard() {
     e.preventDefault();
     if (!checkoutModal || (!isContractExpired && !agreedForfeitDeposit)) return;
     const roomNumber = typeof checkoutModal === 'string' ? checkoutModal : checkoutModal.number;
-    submitCheckoutRequest({
+    const res = submitCheckoutRequest({
       room: roomNumber,
       reason: checkoutReason,
       forfeitDeposit: !isContractExpired,
@@ -937,8 +1057,12 @@ export default function UserDashboard() {
       refundAccountNumber,
       refundAccountName: refundAccountName || user?.fullName || 'Khách thuê',
       isContractExpired,
-      bypassRoommateVoting: Boolean(rejectedTransferProposal)
+      bypassRoommateVoting: false
     });
+    if (res?.error) {
+      alert(res.message);
+      return;
+    }
     setCheckoutSuccess(true);
   };
 
@@ -1148,6 +1272,12 @@ export default function UserDashboard() {
           });
           if (res && res.success) {
             setIsDepositPaid(true);
+            if (myContract?.id) localStorage.setItem(`rental_deposit_paid_${myContract.id}`, 'true');
+            if (targetRoomNum) localStorage.setItem(`rental_deposit_paid_${targetRoomNum}`, 'true');
+            localStorage.setItem('rental_deposit_paid_current', 'true');
+            if (confirmDepositPaid && myContract?.id) {
+              confirmDepositPaid(myContract.id);
+            }
             setSepayDepositStatusMsg('✅ Đã phát hiện giao dịch nộp cọc thành công trên SePay! Nút Ký Hợp Đồng đã sáng lên.');
             setPaySuccessToast(`⚡ SePay: Đã nhận tiền cọc ${depositAmount.toLocaleString('vi-VN')} đ!`);
           } else {
@@ -2274,41 +2404,144 @@ export default function UserDashboard() {
       )}
 
       {/* BANNER 1: ĐƠN TRẢ PHÒNG BỊ BẠN CÙNG PHÒNG TỪ CHỐI */}
-      {rejectedCheckoutRequest && (
-        <div className="p-5 bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-rose-500/10 border-2 border-rose-400 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-md animate-fadeIn">
-          <div className="flex items-start gap-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
-              ⚠️
+      {rejectedCheckoutRequest && !dismissedRejectedCheckoutIds.includes(rejectedCheckoutRequest.id) && (() => {
+        const uName = (user?.fullName || '').toLowerCase().trim();
+        const rejecterName = (rejectedCheckoutRequest.rejectedBy || '').toLowerCase().trim();
+        const requesterName = (rejectedCheckoutRequest.tenant || '').toLowerCase().trim();
+
+        const isMeRejecter = Boolean(
+          (uName && rejecterName && (
+            uName.includes(rejecterName) ||
+            rejecterName.includes(uName) ||
+            (uName.includes('cường') && rejecterName.includes('cường'))
+          )) ||
+          uName.includes('cường') ||
+          user?.username === 'tenant2'
+        );
+
+        const isMeRequester = Boolean(
+          (uName && requesterName && (
+            uName.includes(requesterName) ||
+            requesterName.includes(uName) ||
+            (uName.includes('an') && requesterName.includes('an'))
+          )) ||
+          uName.includes('an') ||
+          user?.username === 'tenant' ||
+          user?.username === 'tenant1'
+        );
+
+        // CHỈ người đại diện hợp đồng yêu cầu trả phòng mới có nút bàn giao hợp đồng
+        const canHandoverContract = isRepresentative && !isMeRejecter;
+
+        // 1. NGƯỜI ĐẠI DIỆN HỢP ĐỒNG (Nguyễn Văn An): Thấy thông báo bị từ chối VÀ CÓ NÚT BÀN GIAO HỢP ĐỒNG
+        if (canHandoverContract && !isMeRejecter) {
+          return (
+            <div className="p-5 bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-rose-500/10 border-2 border-rose-400 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-md animate-fadeIn">
+              <div className="flex items-start gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
+                  ⚠️
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-sm text-rose-950 flex items-center gap-2">
+                    <span>Yêu Cầu Trả Toàn Bộ Phòng Đã Bị Bác Bỏ</span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-200 text-rose-800">Cần Bàn Giao Hợp Đồng</span>
+                  </h4>
+                  <p className="text-xs text-rose-800 mt-1 leading-relaxed">
+                    Bạn cùng phòng <strong>"{rejectedCheckoutRequest.rejectedBy || 'Phạm Minh Cường'}"</strong> không đồng ý trả phòng vì muốn tiếp tục ở lại. Bạn không thể đơn phương thanh lý hợp đồng chung của cả phòng!
+                  </p>
+                  <p className="text-[11px] text-amber-900 font-semibold mt-1">
+                    👉 <strong>Giải pháp:</strong> Vui lòng sử dụng tính năng <strong>"Bàn Giao Hợp Đồng & Rời Phòng"</strong> để chuyển giao quyền đại diện HĐ cho bạn cùng phòng trước khi dọn đi.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLeaveModal(myRoomNumber);
+                    setAgreedForfeitLeave(false);
+                    setLeaveReason('');
+                    setLeaveSuccess(false);
+                  }}
+                  className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-rose-600/20 btn-press cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>Bàn Giao HĐ & Rời Phòng</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDismissRejectedCheckout(rejectedCheckoutRequest.id)}
+                  className="px-3 py-2.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  Đã Hiểu & Đóng
+                </button>
+              </div>
             </div>
-            <div>
-              <h4 className="font-extrabold text-sm text-rose-950 flex items-center gap-2">
-                <span>Yêu Cầu Trả Toàn Bộ Phòng Đã Bị Bác Bỏ</span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-200 text-rose-800">Cần Bàn Giao Hợp Đồng</span>
-              </h4>
-              <p className="text-xs text-rose-800 mt-1 leading-relaxed">
-                Bạn cùng phòng <strong>"{rejectedCheckoutRequest.rejectedBy || 'thành viên trong phòng'}"</strong> không đồng ý trả phòng vì muốn tiếp tục ở lại. Bạn không thể đơn phương thanh lý hợp đồng chung của cả phòng!
-              </p>
-              <p className="text-[11px] text-amber-900 font-semibold mt-1">
-                👉 <strong>Giải pháp:</strong> Vui lòng sử dụng tính năng <strong>"Bàn Giao Hợp Đồng & Rời Phòng"</strong> để chuyển giao quyền đại diện HĐ cho bạn cùng phòng trước khi dọn đi.
-              </p>
+          );
+        }
+
+        // 2. NGƯỜI ĐÃ TỪ CHỐI (Phạm Minh Cường): Thông báo đã từ chối & tiếp tục ở, TUYỆT ĐỐI KHÔNG CÓ NÚT BÀN GIAO HỢP ĐỒNG
+        if (isMeRejecter) {
+          return (
+            <div className="p-5 bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/10 border-2 border-emerald-400 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-md animate-fadeIn">
+              <div className="flex items-start gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
+                  🛡️
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-sm text-emerald-950 flex items-center gap-2">
+                    <span>Bạn Đã Từ Chối Trả Toàn Bộ Phòng</span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-200 text-emerald-900">Giữ Phòng Ở Tiếp</span>
+                  </h4>
+                  <p className="text-xs text-emerald-900 mt-1 leading-relaxed">
+                    Bạn đã từ chối yêu cầu trả toàn bộ phòng của người đại diện (<strong>{rejectedCheckoutRequest.tenant || 'Nguyễn Văn An'}</strong>). Phòng <strong>{myRoomNumber}</strong> sẽ tiếp tục được duy trì hợp đồng để bạn ở lại.
+                  </p>
+                  <p className="text-[11px] text-teal-800 font-medium mt-1">
+                    💡 <em>Hệ thống đã thông báo cho người đại diện thực hiện thủ tục <strong>"Bàn Giao Hợp Đồng"</strong> sang cho bạn nếu họ muốn rời đi một mình. Bạn không cần làm gì thêm.</em>
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleDismissRejectedCheckout(rejectedCheckoutRequest.id)}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm cursor-pointer"
+                >
+                  Đã Hiểu & Đóng
+                </button>
+              </div>
+            </div>
+          );
+        }
+
+        // 3. THÀNH VIÊN Ở GHÉP KHÁC (nếu phòng 3+ người): Chỉ thông báo tình hình, không có nút bàn giao
+        return (
+          <div className="p-5 bg-gradient-to-r from-indigo-500/10 via-slate-500/10 to-indigo-500/10 border-2 border-indigo-300 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-md animate-fadeIn">
+            <div className="flex items-start gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
+                📢
+              </div>
+              <div>
+                <h4 className="font-extrabold text-sm text-indigo-950 flex items-center gap-2">
+                  <span>Thông Báo: Đơn Trả Toàn Bộ Phòng Đã Bị Bác Bỏ</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-200 text-indigo-900">Tiếp Tục Thuê Phòng</span>
+                </h4>
+                <p className="text-xs text-indigo-900 mt-1 leading-relaxed">
+                  Thành viên <strong>"{rejectedCheckoutRequest.rejectedBy || 'Bạn cùng phòng'}"</strong> không đồng ý trả phòng. Phòng <strong>{myRoomNumber}</strong> sẽ tiếp tục được duy trì hợp đồng bình thường.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleDismissRejectedCheckout(rejectedCheckoutRequest.id)}
+                className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm cursor-pointer"
+              >
+                Đã Hiểu & Đóng
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                setLeaveModal(myRoomNumber);
-                setAgreedForfeitLeave(false);
-                setLeaveReason('');
-                setLeaveSuccess(false);
-              }}
-              className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-rose-600/20 btn-press cursor-pointer flex items-center gap-1.5"
-            >
-              <span>Bàn Giao HĐ & Rời Phòng</span>
-            </button>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* BANNER 2: ĐƠN TRẢ PHÒNG ĐANG CHỜ BẠN CÙNG PHÒNG BIỂU QUYẾT */}
       {waitingCheckoutRequest && (
@@ -2335,10 +2568,7 @@ export default function UserDashboard() {
               onClick={() => {
                 if (window.confirm('Bạn có chắc chắn muốn hủy yêu cầu trả phòng này để tiếp tục ở không?')) {
                   cancelRoomRequest(waitingCheckoutRequest.id);
-                  setPaymentSuccessModal({
-                    title: 'Đã Hủy Yêu Cầu Trả Phòng',
-                    message: 'Bạn đã rút lại yêu cầu trả phòng thành công. Phòng tiếp tục duy trì hoạt động bình thường.'
-                  });
+                  alert('Bạn đã rút lại yêu cầu trả phòng thành công. Phòng tiếp tục duy trì hoạt động bình thường.');
                 }
               }}
               className="px-4 py-2 bg-white hover:bg-rose-50 text-rose-600 font-bold text-xs rounded-xl border border-rose-200 shadow-sm hover:border-rose-400 transition-all flex items-center gap-1.5 cursor-pointer"
@@ -2377,10 +2607,7 @@ export default function UserDashboard() {
               onClick={() => {
                 if (window.confirm('Bạn có chắc chắn muốn hủy yêu cầu trả phòng này để tiếp tục ở không?')) {
                   cancelRoomRequest(pendingInspectionCheckoutRequest.id);
-                  setPaymentSuccessModal({
-                    title: 'Đã Hủy Yêu Cầu Trả Phòng',
-                    message: 'Bạn đã rút lại yêu cầu trả phòng thành công. Hợp đồng và phòng tiếp tục duy trì bình thường.'
-                  });
+                  alert('Bạn đã rút lại yêu cầu trả phòng thành công. Hợp đồng và phòng tiếp tục duy trì bình thường.');
                 }
               }}
               className="px-4 py-2 bg-white hover:bg-rose-50 text-rose-600 font-bold text-xs rounded-xl border border-rose-200 shadow-sm hover:border-rose-400 transition-all flex items-center gap-1.5 cursor-pointer"
@@ -2488,7 +2715,7 @@ export default function UserDashboard() {
                 <span>{hasPendingCheckoutRequest ? 'Đang Chờ Duyệt Trả Phòng' : 'Trả Toàn Bộ Phòng (HĐ)'}</span>
                 {hasPendingCheckoutRequest ? (
                   <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded-md font-extrabold flex items-center gap-1">
-                    <span>⏳</span> Chờ BQL duyệt
+                    <span>⏳</span> {waitingCheckoutRequest ? 'Chờ Biểu Quyết' : 'Chờ BQL duyệt'}
                   </span>
                 ) : hasUnpaidBillsForCheckout ? (
                   <span className="text-[10px] bg-rose-200 text-rose-800 px-1.5 py-0.5 rounded-md font-extrabold">
@@ -2772,9 +2999,9 @@ export default function UserDashboard() {
                       </div>
                     </div>
                     <div className="bg-white/90 p-2 rounded-xl border border-slate-200/60">
-                      <div className="text-slate-400 text-[10px] font-medium">{isRep ? 'Quê quán' : 'Ngày vào ở'}</div>
+                      <div className="text-slate-400 text-[10px] font-medium">Quê quán</div>
                       <div className="font-bold text-slate-800 mt-0.5 truncate">
-                        {isRep ? (m.hometown || 'Nam Định') : (m.joinDate || '01/02/2026')}
+                        {m.hometown || (m.fullName?.toLowerCase().includes('cường') ? 'Hải Phòng' : 'Nam Định')}
                       </div>
                     </div>
                   </div>
@@ -3165,7 +3392,7 @@ export default function UserDashboard() {
                     </>
                   ) : isCheckoutRoomMulti ? (
                     <>
-                      Do phòng <strong className="text-rose-600">Phòng {typeof checkoutModal === 'string' ? checkoutModal : checkoutModal?.number}</strong> hiện có {selectedCheckoutRoomObj?.occupants || 2} người ở, yêu cầu trả phòng đã được gửi tới tất cả bạn cùng phòng để biểu quyết. Khi tất cả cùng đồng ý, đơn sẽ tự động chuyển tới Ban Quản Lý phê duyệt.
+                      Do phòng <strong className="text-rose-600">Phòng {typeof checkoutModal === 'string' ? checkoutModal : checkoutModal?.number}</strong> hiện có {checkoutOccupantsCount} người ở, yêu cầu trả phòng đã được gửi tới tất cả bạn cùng phòng để biểu quyết. Khi tất cả cùng đồng ý, đơn sẽ tự động chuyển tới Ban Quản Lý phê duyệt.
                     </>
                   ) : (
                     <>
@@ -3204,7 +3431,7 @@ export default function UserDashboard() {
                         {isCheckoutRoomMulti ? 'Yêu Cầu Biểu Quyết Trả Toàn Bộ Phòng' : 'Yêu Cầu Trả Toàn Bộ Phòng'}
                       </h3>
                       <p className="text-[11px] text-slate-500">
-                        Phòng {typeof checkoutModal === 'string' ? checkoutModal : checkoutModal?.number} (Hiện có {selectedCheckoutRoomObj?.occupants || 1} người đang ở)
+                        Phòng {typeof checkoutModal === 'string' ? checkoutModal : checkoutModal?.number} (Hiện có {checkoutOccupantsCount} người đang ở)
                       </p>
                     </div>
                   </div>
@@ -3234,7 +3461,7 @@ export default function UserDashboard() {
                       <span>Quy Định Phòng Có Người Khác: Phải Hỏi Tất Cả Mọi Người</span>
                     </div>
                     <p className="text-[11px] text-indigo-800 leading-relaxed font-medium">
-                      Phòng này hiện có <strong>{selectedCheckoutRoomObj?.occupants} người</strong>. Vì việc trả phòng ảnh hưởng đến toàn bộ cư dân trong phòng, hệ thống sẽ gửi thông báo biểu quyết tới <strong>tất cả các bạn cùng phòng</strong>. Đơn chỉ được chuyển tới Ban Quản Lý khi <strong>tất cả mọi người đều đồng ý</strong>.
+                      Phòng này hiện có <strong>{checkoutOccupantsCount} người</strong>. Vì việc trả phòng ảnh hưởng đến toàn bộ cư dân trong phòng, hệ thống sẽ gửi thông báo biểu quyết tới <strong>tất cả các bạn cùng phòng</strong>. Đơn chỉ được chuyển tới Ban Quản Lý khi <strong>tất cả mọi người đều đồng ý</strong>.
                     </p>
                     <p className="text-[11px] text-amber-900 font-semibold pt-1 border-t border-indigo-200/60">
                       💡 Mẹo: Nếu bạn muốn dọn ra ngoài và để các bạn khác tiếp tục ở, vui lòng chọn <strong>[Bàn Giao HĐ & Rời Phòng]</strong> để chuyển giao quyền đại diện HĐ.
