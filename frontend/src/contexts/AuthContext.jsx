@@ -147,10 +147,42 @@ const getStoredTenantRooms = () => {
     const pReqs = sReqs ? JSON.parse(sReqs) : null;
     if (Array.isArray(pReqs)) {
       pReqs.forEach((req) => {
-        if (req.status === 'APPROVED' && req.targetRoom && req.tenant) {
+        const isSettledOrApproved = req.status === 'APPROVED' || req.status === 'CHECKOUT_SETTLED' || req.status === 'SETTLED' || req.settledAt;
+        if (isSettledOrApproved && (req.targetRoom || req.currentRoom) && req.tenant) {
           const tNorm = req.tenant.toLowerCase();
-          // NẾU LÀ ĐƠN RỜI PHÒNG HOẶC TRẢ PHÒNG -> PHẢI XÓA PHÒNG KHỎI KHÁCH!
-          if (req.type === 'LEAVE_ROOM' || req.type === 'CHECKOUT') {
+          const targetNum = String(req.targetRoom || req.currentRoom || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase();
+
+          // NẾU LÀ ĐƠN TRẢ TOÀN BỘ PHÒNG (CHECKOUT / RETURN) -> TẤT CẢ KHÁCH TRONG PHÒNG ĐỀU DỌN RA!
+          if (req.type === 'CHECKOUT' || req.type === 'RETURN') {
+            Object.keys(res).forEach((k) => {
+              if (Array.isArray(res[k])) {
+                res[k] = res[k].filter((rm) => String(rm || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase() !== targetNum);
+              }
+            });
+            if (targetNum === '101') {
+              res.tenant1 = [];
+              res['Nguyễn Văn An'] = [];
+              res.tenant2 = [];
+              res['Phạm Minh Cường'] = [];
+            }
+            if (tNorm.includes('an')) {
+              res.tenant1 = [];
+              res['Nguyễn Văn An'] = [];
+            }
+            if (tNorm.includes('cường')) {
+              res.tenant2 = [];
+              res['Phạm Minh Cường'] = [];
+            }
+            if (tNorm.includes('nam')) {
+              res.tenant_new = [];
+              res['Hoàng Văn Nam'] = [];
+            }
+            res[req.tenant] = [];
+            return;
+          }
+
+          // NẾU LÀ ĐƠN CÁ NHÂN RỜI PHÒNG (LEAVE_ROOM)
+          if (req.type === 'LEAVE_ROOM') {
             if (tNorm.includes('an')) {
               res.tenant1 = [];
               res['Nguyễn Văn An'] = [];
@@ -187,6 +219,63 @@ const getStoredTenantRooms = () => {
     }
   } catch {}
 
+  // Kiểm tra rental_move_out_settlements: Nếu phòng đã nghiệm thu thanh lý cọc -> giải phóng toàn bộ cư dân
+  try {
+    const sSt = localStorage.getItem('rental_move_out_settlements');
+    if (sSt) {
+      const sts = JSON.parse(sSt);
+      if (Array.isArray(sts)) {
+        sts.forEach((s) => {
+          if (s.settledAt || s.refundStatus === 'COMPLETED' || s.status === 'SETTLED') {
+            const num = String(s.roomNumber || '').replace(/^P\.?/i, '').trim();
+            if (num === '101') {
+              res.tenant1 = [];
+              res['Nguyễn Văn An'] = [];
+              res.tenant2 = [];
+              res['Phạm Minh Cường'] = [];
+            }
+          }
+        });
+      }
+    }
+  } catch {}
+
+  // Kiểm tra rental_contracts: Nếu phòng P.101 không còn hợp đồng ACTIVE -> giải phóng cư dân
+  try {
+    const sC = localStorage.getItem('rental_contracts');
+    if (sC) {
+      const pC = JSON.parse(sC);
+      if (Array.isArray(pC)) {
+        const p101Contracts = pC.filter(c => String(c.roomNumber || '').replace(/^P\.?/i, '').trim() === '101');
+        const hasActive101 = p101Contracts.some(c => c.status === 'ACTIVE');
+        const hasEnded101 = p101Contracts.some(c => c.status === 'TERMINATED' || c.status === 'COMPLETED');
+        if (hasEnded101 && !hasActive101) {
+          res.tenant1 = [];
+          res['Nguyễn Văn An'] = [];
+          res.tenant2 = [];
+          res['Phạm Minh Cường'] = [];
+        }
+      }
+    }
+  } catch {}
+
+  // Kiểm tra rental_rooms: Nếu phòng P.101 đã về AVAILABLE hoặc 0 người ở
+  try {
+    const sR = localStorage.getItem('rental_rooms');
+    if (sR) {
+      const pR = JSON.parse(sR);
+      if (Array.isArray(pR)) {
+        const r101 = pR.find(r => String(r.number || '').replace(/^P\.?/i, '').trim() === '101');
+        if (r101 && (r101.status === 'AVAILABLE' || r101.occupants === 0)) {
+          res.tenant1 = [];
+          res['Nguyễn Văn An'] = [];
+          res.tenant2 = [];
+          res['Phạm Minh Cường'] = [];
+        }
+      }
+    }
+  } catch {}
+
   // Kiểm tra rental_contracts: Nếu Khách Mới (Nam) chưa thanh toán cọc thì luôn giữ rooms = []
   try {
     const sContracts = localStorage.getItem('rental_contracts');
@@ -217,8 +306,25 @@ export const AuthProvider = ({ children }) => {
     // Helper to inject latest dynamic rooms array
     const injectRooms = (u) => {
       if (!u || u.role !== 'TENANT') return u;
+
+      const isP101CheckedOut = (() => {
+        try {
+          const sReqs = localStorage.getItem('rental_room_requests');
+          if (sReqs) {
+            const reqs = JSON.parse(sReqs);
+            return reqs.some(r =>
+              (r.type === 'CHECKOUT' || r.type === 'RETURN') &&
+              String(r.targetRoom || r.currentRoom || '').replace(/^P\.?/i, '').trim() === '101' &&
+              (r.status === 'APPROVED' || r.status === 'CHECKOUT_SETTLED' || r.settledAt)
+            );
+          }
+        } catch {}
+        return false;
+      })();
+
       if (u.username === 'tenant2' || u.fullName?.includes('Cường')) {
-        const matched = currentRoomsMap.tenant2 !== undefined ? currentRoomsMap.tenant2 : (currentRoomsMap['Phạm Minh Cường'] !== undefined ? currentRoomsMap['Phạm Minh Cường'] : ['P.101']);
+        const defaultRooms = isP101CheckedOut ? [] : ['P.101'];
+        const matched = currentRoomsMap.tenant2 !== undefined ? currentRoomsMap.tenant2 : (currentRoomsMap['Phạm Minh Cường'] !== undefined ? currentRoomsMap['Phạm Minh Cường'] : defaultRooms);
         const roomsList = normalizeRoomList(matched);
         const hasRooms = roomsList.length > 0;
         return {
@@ -230,7 +336,8 @@ export const AuthProvider = ({ children }) => {
         };
       }
       if (u.username === 'tenant' || u.username === 'tenant1' || u.fullName?.includes('An')) {
-        const matched = currentRoomsMap.tenant1 !== undefined ? currentRoomsMap.tenant1 : (currentRoomsMap['Nguyễn Văn An'] !== undefined ? currentRoomsMap['Nguyễn Văn An'] : ['P.101']);
+        const defaultRooms = isP101CheckedOut ? [] : ['P.101'];
+        const matched = currentRoomsMap.tenant1 !== undefined ? currentRoomsMap.tenant1 : (currentRoomsMap['Nguyễn Văn An'] !== undefined ? currentRoomsMap['Nguyễn Văn An'] : defaultRooms);
         const roomsList = normalizeRoomList(matched);
         const hasRooms = roomsList.length > 0;
         return {
@@ -324,7 +431,8 @@ export const AuthProvider = ({ children }) => {
         updatedRooms = Array.from(new Set([...currentRooms, roomsData].filter(Boolean)));
       } else if (mode === 'REMOVE') {
         // TRẢ PHÒNG: gỡ phòng đó khỏi danh sách
-        updatedRooms = currentRooms.filter((rm) => rm !== roomsData);
+        const rmNorm = String(roomsData || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase();
+        updatedRooms = currentRooms.filter((rm) => String(rm || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase() !== rmNorm);
       } else {
         // CHUYỂN PHÒNG (REPLACE / TRANSFER): TỰ ĐỘNG TRẢ PHÒNG CŨ!
         if (typeof roomsData === 'object' && roomsData.oldRoom && roomsData.newRoom) {
@@ -379,7 +487,8 @@ export const AuthProvider = ({ children }) => {
       } else if (mode === 'ADD') {
         newRoomsList = Array.from(new Set([...currentRooms, roomsData].filter(Boolean)));
       } else if (mode === 'REMOVE') {
-        newRoomsList = currentRooms.filter((rm) => rm !== roomsData);
+        const rmNorm = String(roomsData || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase();
+        newRoomsList = currentRooms.filter((rm) => String(rm || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase() !== rmNorm);
       } else {
         if (typeof roomsData === 'object' && roomsData.oldRoom && roomsData.newRoom) {
           newRoomsList = currentRooms.map((r) => r === roomsData.oldRoom ? roomsData.newRoom : r);
@@ -391,13 +500,14 @@ export const AuthProvider = ({ children }) => {
         }
       }
 
+      const isZero = newRoomsList.length === 0;
       const updatedUser = {
         ...currentUser,
         rooms: newRoomsList,
         room: newRoomsList[0] || null,
-        houseCode: houseInfo?.houseCode || currentUser.houseCode,
-        house: houseInfo?.house || currentUser.house,
-        houseName: houseInfo?.house || currentUser.houseName
+        houseCode: isZero ? null : (houseInfo?.houseCode || currentUser.houseCode),
+        house: isZero ? null : (houseInfo?.house || currentUser.house),
+        houseName: isZero ? null : (houseInfo?.house || currentUser.houseName)
       };
       sessionStorage.setItem('rental_user', JSON.stringify(updatedUser));
       localStorage.setItem('rental_user', JSON.stringify(updatedUser));
