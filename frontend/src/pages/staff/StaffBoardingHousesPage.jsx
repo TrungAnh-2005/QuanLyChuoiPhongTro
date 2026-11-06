@@ -38,108 +38,8 @@ import TrialExpiryBanner from '../../components/common/TrialExpiryBanner';
 import { getTrialStatus } from '../../utils/packagePermissions';
 
 export function healBoardingHousesList(list) {
-  if (!Array.isArray(list) || list.length === 0) return list;
-
-  let changed = false;
-  const usedCodes = new Set();
-  const codeRenames = {};
-
-  // Nếu staff2 đã có cơ sở thực tế (S2-CS-* hoặc id > 1000), loại bỏ triệt để cơ sở mẫu cũ CS-02 (Hai Bà Trưng)
-  const hasStaff2Custom = list.some((h) => 
-    (h.createdBy === 'staff2' || h.managerUsername === 'staff2') &&
-    ((h.code || '').toUpperCase().startsWith('S2-') || (typeof h.id === 'number' && h.id > 1000))
-  );
-
-  let cleanList = list;
-  if (hasStaff2Custom) {
-    cleanList = list.filter((h) => {
-      const isLegacyCs02 = h.code === 'CS-02' || (h.id === 2 && (h.name || '').includes('Bách Khoa'));
-      if (isLegacyCs02) {
-        changed = true;
-        return false;
-      }
-      return true;
-    });
-  }
-
-  const healed = cleanList.map((h) => {
-    if ((h.code === 'CS-01' || (h.name && h.name.includes('Cầu Giấy'))) && h.floors === 5) {
-      h = { ...h, floors: 4, totalFloors: 4 };
-      changed = true;
-    }
-    const isCustom = (typeof h.id === 'number' && h.id > 1000) || h.createdAtMs || (h.createdAt && !h.features);
-    let code = (h.code || '').trim().toUpperCase();
-    const u = (h.createdBy || h.managerUsername || '').toLowerCase();
-
-    let prefix = 'CS';
-    if (u === 'staff' || u === 'staff1') prefix = 'S1-CS';
-    else if (u === 'staff2') prefix = 'S2-CS';
-    else if (u && u !== 'admin') prefix = `${u.toUpperCase()}-CS`;
-
-    if (isCustom && (code === 'CS-02' || code === 'CS-03')) {
-      code = '';
-    }
-
-    if (!code || usedCodes.has(code)) {
-      let preferredNum = null;
-      const numMatch = (h.name || '').match(/(\d+)/);
-      if (numMatch) {
-        const candidateNum = parseInt(numMatch[1], 10);
-        const candidateCode = `${prefix}-${String(candidateNum).padStart(2, '0')}`;
-        if (!usedCodes.has(candidateCode)) {
-          preferredNum = candidateNum;
-        }
-      }
-
-      let seq = preferredNum || 1;
-      let newCode = `${prefix}-${String(seq).padStart(2, '0')}`;
-      while (usedCodes.has(newCode)) {
-        seq++;
-        newCode = `${prefix}-${String(seq).padStart(2, '0')}`;
-      }
-
-      if (h.code && h.code !== newCode) {
-        codeRenames[h.code] = newCode;
-      }
-      code = newCode;
-      changed = true;
-    }
-
-    usedCodes.add(code);
-    return code !== h.code ? { ...h, code } : h;
-  });
-
-  if (changed) {
-    try {
-      localStorage.setItem('rental_boarding_houses', JSON.stringify(healed));
-    } catch {}
-
-    try {
-      const savedRooms = localStorage.getItem('rental_rooms');
-      if (savedRooms) {
-        const parsedRooms = JSON.parse(savedRooms);
-        if (Array.isArray(parsedRooms)) {
-          let roomsChanged = false;
-          const updatedRooms = parsedRooms.map((r) => {
-            const matchedHouse = healed.find((h) =>
-              (h.name && r.house && (h.name === r.house || String(r.house).trim() === String(h.name).trim())) ||
-              (codeRenames[r.houseCode] && h.code === codeRenames[r.houseCode])
-            );
-            if (matchedHouse && matchedHouse.code !== r.houseCode) {
-              roomsChanged = true;
-              return { ...r, houseCode: matchedHouse.code, house: matchedHouse.name };
-            }
-            return r;
-          });
-          if (roomsChanged) {
-            localStorage.setItem('rental_rooms', JSON.stringify(updatedRooms));
-          }
-        }
-      }
-    } catch {}
-  }
-
-  return healed;
+  if (!Array.isArray(list)) return [];
+  return list;
 }
 
 const isZeroSandbox = typeof window === 'undefined' || localStorage.getItem('rental_is_zero_sandbox') !== 'false';
@@ -153,59 +53,7 @@ export const HOUSE_IMAGE_PRESETS = [
   { label: 'Chung Cư Mini Cao Cấp', url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&auto=format&fit=crop' }
 ];
 
-const initialHouses = [
-  {
-    id: 1,
-    code: 'CS-01',
-    name: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
-    address: 'Số 45, Ngõ 165 Cầu Giấy, Phường Dịch Vọng, Cầu Giấy, Hà Nội',
-    manager: 'Lê Thị Thu Ngân (Staff CS1)',
-    managerUsername: 'staff',
-    createdBy: 'staff',
-    managerPhone: '0912.888.666',
-    floors: 4,
-    totalRooms: 12,
-    occupiedRooms: 9,
-    availableRooms: 2,
-    maintenanceRooms: 1,
-    monthlyRevenue: 34500000,
-    features: ['Thang máy', 'Khóa cổng vân tay', 'Camera an ninh 24/7', 'Nhà để xe có bảo vệ', 'Sân phơi rộng']
-  },
-  {
-    id: 2,
-    code: 'CS-02',
-    name: 'Nhà Trọ Bách Khoa - Cơ Sở 2',
-    address: 'Số 18, Ngõ Tự Do, Phường Đồng Tâm, Hai Bà Trưng, Hà Nội',
-    manager: 'Đàm Văn Táo (Staff CS2)',
-    managerUsername: 'staff2',
-    createdBy: 'staff2',
-    managerPhone: '0988.777.999',
-    floors: 4,
-    totalRooms: 8,
-    occupiedRooms: 5,
-    availableRooms: 3,
-    maintenanceRooms: 0,
-    monthlyRevenue: 22800000,
-    features: ['Khóa cổng vân tay', 'Camera an ninh 24/7', 'Nhà để xe', 'Máy giặt chung', 'Gần các trường ĐH']
-  },
-  {
-    id: 3,
-    code: 'CS-03',
-    name: 'Nhà Trọ Đống Đa - Cơ Sở 3',
-    address: 'Số 92, Phố Chùa Láng, Phường Láng Thượng, Đống Đa, Hà Nội',
-    manager: 'Phạm Quốc Hùng',
-    managerUsername: 'admin',
-    createdBy: 'admin',
-    managerPhone: '0936.555.222',
-    floors: 6,
-    totalRooms: 16,
-    occupiedRooms: 14,
-    availableRooms: 1,
-    maintenanceRooms: 1,
-    monthlyRevenue: 51200000,
-    features: ['Thang máy tốc độ cao', 'Khóa vân tay & FaceID', 'Bảo vệ túc trực', 'Hầm để xe riêng', 'PCCC tự động']
-  }
-];
+const initialHouses = [];
 
 export default function BoardingHousesPage() {
   const { user } = useAuth();
@@ -237,6 +85,8 @@ export default function BoardingHousesPage() {
     return (
       house.createdBy === myUsername ||
       house.managerUsername === myUsername ||
+      (user?.fullName && house.manager && house.manager.toLowerCase().includes(user.fullName.toLowerCase())) ||
+      (user?.phone && house.managerPhone && house.managerPhone.replace(/\D/g, '') === user.phone.replace(/\D/g, '')) ||
       (!isZeroSandbox && myUsername === 'staff' && (house.code === 'CS-01' || !house.createdBy)) ||
       (!isZeroSandbox && myUsername === 'staff2' && house.code === 'CS-02') ||
       (staffHouseCode && house.code === staffHouseCode)
@@ -292,6 +142,23 @@ export default function BoardingHousesPage() {
       return isZeroSandbox ? [] : initialHouses;
     }
   });
+
+  // Lắng nghe sự kiện storage để đồng bộ tức thì khi Admin phê duyệt hoặc cơ sở thay đổi ở tab/trang khác
+  useEffect(() => {
+    const handleStorage = () => {
+      try {
+        const saved = localStorage.getItem('rental_boarding_houses');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            setHouses(healCustomHouses(parsed));
+          }
+        }
+      } catch {}
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [maxRoomsAllowed]);
 
   // Đếm số cơ sở mà Chủ trọ / Staff hiện tại đang sở hữu / quản lý (không tính gộp cơ sở của chủ trọ khác)
   const myHousesCount = useMemo(() => {
@@ -500,7 +367,10 @@ export default function BoardingHousesPage() {
   const handleApproveHouse = (code) => {
     const nextList = rawHouses.map((h) => (h.code === code ? { ...h, status: 'ACTIVE', approvedAt: new Date().toLocaleDateString('vi-VN') } : h));
     setHouses(nextList);
-    try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
+    try { 
+      localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); 
+      window.dispatchEvent(new Event('storage'));
+    } catch {}
     alert(`✅ Quản Trị Viên đã phê duyệt cơ sở ${code}! Cơ sở đã chuyển sang trạng thái Hoạt Động chính thức.`);
   };
 
@@ -508,7 +378,10 @@ export default function BoardingHousesPage() {
     if (window.confirm(`Xác nhận từ chối và gỡ bỏ hồ sơ cơ sở ${code}?`)) {
       const nextList = rawHouses.filter((h) => h.code !== code);
       setHouses(nextList);
-      try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
+      try { 
+        localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); 
+        window.dispatchEvent(new Event('storage'));
+      } catch {}
       alert(`Đã từ chối và gỡ bỏ cơ sở ${code}.`);
     }
   };
@@ -662,7 +535,10 @@ export default function BoardingHousesPage() {
     if (window.confirm(`Xác nhận xóa vĩnh viễn cơ sở "${targetHouse?.name || code}" (${code})?\n\nDữ liệu cơ sở này và toàn bộ danh mục phòng trực thuộc sẽ được dọn sạch khỏi hệ thống.`)) {
       const nextList = rawHouses.filter((h) => h.code !== code);
       setHouses(nextList);
-      try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
+      try { 
+        localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); 
+        window.dispatchEvent(new Event('storage'));
+      } catch {}
 
       // Xóa đồng bộ các phòng thuộc cơ sở này
       const houseRoomsToDelete = (rooms || []).filter((r) => r.houseCode === code || (code === 'CS-01' && !r.houseCode));
@@ -791,7 +667,7 @@ export default function BoardingHousesPage() {
     };
 
     try {
-      await api.post('/properties', payload);
+      api.post('/properties', payload).catch(() => {});
     } catch {
       // Proceed locally if offline
     }
@@ -801,8 +677,8 @@ export default function BoardingHousesPage() {
       id: now,
       createdAtMs: now,
       createdAt: new Date().toLocaleString('vi-VN'),
-      code: newCode,
       ...newHouse,
+      code: newCode,
       imageUrl: newHouse.imageUrl || '/assets/images/house_cau_giay.jpg',
       manager: assignedManager,
       managerPhone: assignedPhone,
@@ -819,7 +695,10 @@ export default function BoardingHousesPage() {
     };
     const nextList = [...rawHouses, created];
     setHouses(nextList);
-    try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
+    try { 
+      localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); 
+      window.dispatchEvent(new Event('storage'));
+    } catch {}
     setShowModal(false);
     setNewHouse({
       code: '',
@@ -877,14 +756,19 @@ export default function BoardingHousesPage() {
                 setShowUpgradeModal(true);
               } else {
                 let nextNum = 1;
-                rawHouses.forEach((h) => {
-                  const match = (h.code || '').match(/CS-(\d+)/i);
+                const staffPrefix = isStaff
+                  ? (user?.username === 'staff2' ? 'S2-CS' : (user?.username === 'staff' ? 'S1-CS' : `${(user?.username || 'S').toUpperCase()}-CS`))
+                  : 'CS';
+                const myHouses = rawHouses.filter((h) => canManageHouse(h));
+                const existingSamePrefix = myHouses.filter((h) => (h.code || '').toUpperCase().startsWith(staffPrefix));
+                existingSamePrefix.forEach((h) => {
+                  const match = (h.code || '').match(new RegExp(`${staffPrefix}-(\\d+)`, 'i'));
                   if (match) {
                     const n = parseInt(match[1], 10);
                     if (n >= nextNum) nextNum = n + 1;
                   }
                 });
-                const autoCode = `CS-${String(nextNum).padStart(2, '0')}`;
+                const autoCode = `${staffPrefix}-${String(nextNum).padStart(2, '0')}`;
                 setNewHouse((prev) => ({
                   ...prev,
                   code: autoCode,

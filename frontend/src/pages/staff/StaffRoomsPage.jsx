@@ -93,108 +93,8 @@ export function isDuplicateRoom(existingRooms, targetNumber, targetHouseCode, ex
 }
 
 export function healBoardingHousesList(list) {
-  if (!Array.isArray(list) || list.length === 0) return list;
-
-  let changed = false;
-  const usedCodes = new Set();
-  const codeRenames = {};
-
-  // Nếu staff2 đã có cơ sở thực tế (S2-CS-* hoặc id > 1000), loại bỏ triệt để cơ sở mẫu cũ CS-02 (Hai Bà Trưng)
-  const hasStaff2Custom = list.some((h) => 
-    (h.createdBy === 'staff2' || h.managerUsername === 'staff2') &&
-    ((h.code || '').toUpperCase().startsWith('S2-') || (typeof h.id === 'number' && h.id > 1000))
-  );
-
-  let cleanList = list;
-  if (hasStaff2Custom) {
-    cleanList = list.filter((h) => {
-      const isLegacyCs02 = h.code === 'CS-02' || (h.id === 2 && (h.name || '').includes('Bách Khoa'));
-      if (isLegacyCs02) {
-        changed = true;
-        return false;
-      }
-      return true;
-    });
-  }
-
-  const healed = cleanList.map((h) => {
-    if ((h.code === 'CS-01' || (h.name && h.name.includes('Cầu Giấy'))) && h.floors === 5) {
-      h = { ...h, floors: 4, totalFloors: 4 };
-      changed = true;
-    }
-    const isCustom = (typeof h.id === 'number' && h.id > 1000) || h.createdAtMs || (h.createdAt && !h.features);
-    let code = (h.code || '').trim().toUpperCase();
-    const u = (h.createdBy || h.managerUsername || '').toLowerCase();
-
-    let prefix = 'CS';
-    if (u === 'staff' || u === 'staff1') prefix = 'S1-CS';
-    else if (u === 'staff2') prefix = 'S2-CS';
-    else if (u && u !== 'admin') prefix = `${u.toUpperCase()}-CS`;
-
-    if (isCustom && (code === 'CS-02' || code === 'CS-03')) {
-      code = '';
-    }
-
-    if (!code || usedCodes.has(code)) {
-      let preferredNum = null;
-      const numMatch = (h.name || '').match(/(\d+)/);
-      if (numMatch) {
-        const candidateNum = parseInt(numMatch[1], 10);
-        const candidateCode = `${prefix}-${String(candidateNum).padStart(2, '0')}`;
-        if (!usedCodes.has(candidateCode)) {
-          preferredNum = candidateNum;
-        }
-      }
-
-      let seq = preferredNum || 1;
-      let newCode = `${prefix}-${String(seq).padStart(2, '0')}`;
-      while (usedCodes.has(newCode)) {
-        seq++;
-        newCode = `${prefix}-${String(seq).padStart(2, '0')}`;
-      }
-
-      if (h.code && h.code !== newCode) {
-        codeRenames[h.code] = newCode;
-      }
-      code = newCode;
-      changed = true;
-    }
-
-    usedCodes.add(code);
-    return code !== h.code ? { ...h, code } : h;
-  });
-
-  if (changed) {
-    try {
-      localStorage.setItem('rental_boarding_houses', JSON.stringify(healed));
-    } catch {}
-
-    try {
-      const savedRooms = localStorage.getItem('rental_rooms');
-      if (savedRooms) {
-        const parsedRooms = JSON.parse(savedRooms);
-        if (Array.isArray(parsedRooms)) {
-          let roomsChanged = false;
-          const updatedRooms = parsedRooms.map((r) => {
-            const matchedHouse = healed.find((h) =>
-              (h.name && r.house && (h.name === r.house || String(r.house).trim() === String(h.name).trim())) ||
-              (codeRenames[r.houseCode] && h.code === codeRenames[r.houseCode])
-            );
-            if (matchedHouse && matchedHouse.code !== r.houseCode) {
-              roomsChanged = true;
-              return { ...r, houseCode: matchedHouse.code, house: matchedHouse.name };
-            }
-            return r;
-          });
-          if (roomsChanged) {
-            localStorage.setItem('rental_rooms', JSON.stringify(updatedRooms));
-          }
-        }
-      }
-    } catch {}
-  }
-
-  return healed;
+  if (!Array.isArray(list)) return [];
+  return list;
 }
 
 const isZeroSandbox = typeof window === 'undefined' || localStorage.getItem('rental_is_zero_sandbox') !== 'false';
@@ -301,11 +201,7 @@ export default function StaffRoomsPage() {
         if (Array.isArray(parsed)) return healBoardingHousesList(parsed);
       }
     } catch {}
-    return isZeroSandbox ? [] : [
-      { id: 1, code: 'CS-01', name: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', managerUsername: 'staff', createdBy: 'staff', status: 'ACTIVE', floors: 4 },
-      { id: 2, code: 'CS-02', name: 'Nhà Trọ Bách Khoa - Cơ Sở 2', managerUsername: 'staff2', createdBy: 'staff2', status: 'ACTIVE', floors: 4 },
-      { id: 3, code: 'CS-03', name: 'Nhà Trọ Đống Đa - Cơ Sở 3', managerUsername: 'admin', createdBy: 'admin', status: 'ACTIVE', floors: 6 }
-    ];
+    return [];
   });
 
   useEffect(() => {

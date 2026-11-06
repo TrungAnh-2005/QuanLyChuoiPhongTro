@@ -22,7 +22,9 @@ import {
   DollarSign,
   CheckSquare,
   Inbox,
-  Lock
+  Lock,
+  RotateCcw,
+  AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
@@ -93,7 +95,7 @@ export function getHouseDistrict(h) {
   const addr = getHouseFullAddress(h);
   const name = h?.name || '';
   const districts = [
-    'Cầu Giấy', 'Đống Đa', 'Hai Bà Trưng', 'Thanh Xuân', 'Ba Đình', 
+    'Cầu Giấy', 'Đống Đa', 'Hai Bà Trưng', 'Thanh Xuân', 'Ba Đình',
     'Hoàn Kiếm', 'Hoàng Mai', 'Nam Từ Liêm', 'Bắc Từ Liêm', 'Hà Đông', 'Tây Hồ', 'Long Biên'
   ];
   for (const d of districts) {
@@ -108,108 +110,8 @@ export function getHouseDistrict(h) {
 }
 
 export function healBoardingHousesList(list) {
-  if (!Array.isArray(list) || list.length === 0) return list;
-
-  let changed = false;
-  const usedCodes = new Set();
-  const codeRenames = {};
-
-  // Nếu staff2 đã có cơ sở thực tế (S2-CS-* hoặc id > 1000), loại bỏ triệt để cơ sở mẫu cũ CS-02 (Hai Bà Trưng)
-  const hasStaff2Custom = list.some((h) => 
-    (h.createdBy === 'staff2' || h.managerUsername === 'staff2' || (h.manager && h.manager.toLowerCase().includes('táo'))) &&
-    ((h.code || '').toUpperCase().startsWith('S2-') || (typeof h.id === 'number' && h.id > 1000) || (h.name && (h.name.includes('Hoàng Mai') || (h.name.includes('Đống Đa') && (h.manager || '').includes('Táo')))))
-  );
-
-  let cleanList = list;
-  if (hasStaff2Custom) {
-    cleanList = list.filter((h) => {
-      const isLegacyCs02 = h.code === 'CS-02' || (h.id === 2 && (h.name || '').includes('Bách Khoa')) || ((h.name || '').includes('Bách Khoa') && (h.manager || '').toLowerCase().includes('táo'));
-      if (isLegacyCs02) {
-        changed = true;
-        return false;
-      }
-      return true;
-    });
-  }
-
-  const healed = cleanList.map((h) => {
-    if ((h.code === 'CS-01' || (h.name && h.name.includes('Cầu Giấy'))) && h.floors === 5) {
-      h = { ...h, floors: 4, totalFloors: 4 };
-      changed = true;
-    }
-    const isCustom = (typeof h.id === 'number' && h.id > 1000) || h.createdAtMs || (h.createdAt && !h.features);
-    let code = (h.code || '').trim().toUpperCase();
-    const u = (h.createdBy || h.managerUsername || '').toLowerCase();
-
-    let prefix = 'CS';
-    if (u === 'staff' || u === 'staff1') prefix = 'S1-CS';
-    else if (u === 'staff2') prefix = 'S2-CS';
-    else if (u && u !== 'admin') prefix = `${u.toUpperCase()}-CS`;
-
-    if (isCustom && (code === 'CS-02' || code === 'CS-03')) {
-      code = '';
-    }
-
-    if (!code || usedCodes.has(code)) {
-      let preferredNum = null;
-      const numMatch = (h.name || '').match(/(\d+)/);
-      if (numMatch) {
-        const candidateNum = parseInt(numMatch[1], 10);
-        const candidateCode = `${prefix}-${String(candidateNum).padStart(2, '0')}`;
-        if (!usedCodes.has(candidateCode)) {
-          preferredNum = candidateNum;
-        }
-      }
-
-      let seq = preferredNum || 1;
-      let newCode = `${prefix}-${String(seq).padStart(2, '0')}`;
-      while (usedCodes.has(newCode)) {
-        seq++;
-        newCode = `${prefix}-${String(seq).padStart(2, '0')}`;
-      }
-
-      if (h.code && h.code !== newCode) {
-        codeRenames[h.code] = newCode;
-      }
-      code = newCode;
-      changed = true;
-    }
-
-    usedCodes.add(code);
-    return code !== h.code ? { ...h, code } : h;
-  });
-
-  if (changed) {
-    try {
-      localStorage.setItem('rental_boarding_houses', JSON.stringify(healed));
-    } catch {}
-
-    try {
-      const savedRooms = localStorage.getItem('rental_rooms');
-      if (savedRooms) {
-        const parsedRooms = JSON.parse(savedRooms);
-        if (Array.isArray(parsedRooms)) {
-          let roomsChanged = false;
-          const updatedRooms = parsedRooms.map((r) => {
-            const matchedHouse = healed.find((h) =>
-              (h.name && r.house && (h.name === r.house || String(r.house).trim() === String(h.name).trim())) ||
-              (codeRenames[r.houseCode] && h.code === codeRenames[r.houseCode])
-            );
-            if (matchedHouse && matchedHouse.code !== r.houseCode) {
-              roomsChanged = true;
-              return { ...r, houseCode: matchedHouse.code, house: matchedHouse.name };
-            }
-            return r;
-          });
-          if (roomsChanged) {
-            localStorage.setItem('rental_rooms', JSON.stringify(updatedRooms));
-          }
-        }
-      }
-    } catch {}
-  }
-
-  return healed;
+  if (!Array.isArray(list)) return [];
+  return list;
 }
 
 const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
@@ -234,30 +136,81 @@ export default function UserRoomsPage() {
     cancelRoomRequest
   } = useData();
 
+  const isRoomCheckedOut = useCallback((rNum) => {
+    if (!rNum) return false;
+    const clean = normalizeRoomNumber(rNum);
+
+    // NẾU PHÒNG ĐANG CÓ HỢP ĐỒNG ACTIVE -> TUYỆT ĐỐI KHÔNG COI LÀ CHECKED OUT!
+    const roomContracts = (contracts || []).filter(c => normalizeRoomNumber(c.roomNumber) === clean);
+    const hasActive = roomContracts.some(c => c.status === 'ACTIVE');
+    if (hasActive) return false;
+
+    // 1. Kiểm tra đơn CHECKOUT / RETURN đã được duyệt
+    const reqOut = (roomRequests || []).some(
+      (r) =>
+        (r.type === 'CHECKOUT' || r.type === 'RETURN') &&
+        normalizeRoomNumber(r.targetRoom || r.currentRoom || r.roomNumber) === clean &&
+        (r.status === 'APPROVED' || r.status === 'CHECKOUT_SETTLED' || r.status === 'SETTLED' || r.settledAt)
+    );
+    if (reqOut) return true;
+
+    // 2. Kiểm tra biên bản quyết toán
+    try {
+      const sSt = localStorage.getItem('rental_move_out_settlements');
+      if (sSt) {
+        const sts = JSON.parse(sSt);
+        if (Array.isArray(sts) && sts.some(s => normalizeRoomNumber(s.roomNumber) === clean && (s.settledAt || s.refundStatus === 'COMPLETED' || s.status === 'SETTLED'))) {
+          return true;
+        }
+      }
+    } catch { }
+
+    // 3. Kiểm tra danh mục phòng: nếu phòng mang trạng thái AVAILABLE hoặc occupants === 0
+    const matchedRoom = (rooms || []).find(r => normalizeRoomNumber(r.number) === clean);
+    if (matchedRoom && (matchedRoom.status === 'AVAILABLE' || matchedRoom.occupants === 0)) {
+      return true;
+    }
+
+    if (!hasActive && roomContracts.length > 0) {
+      return true;
+    }
+
+    return false;
+  }, [roomRequests, rooms, contracts]);
+
   // Hàm tính toán số cư dân thực tế trong phòng chuẩn xác theo roomMembers & hợp đồng ACTIVE
-  const getActualOccupants = (room) => {
+  const getActualOccupants = useCallback((room) => {
     if (!room || room.status === 'LOCKED' || room.status === 'MAINTENANCE') return 0;
-    const cleanNum = String(room.number || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase();
-    const roomHouse = String(room.houseCode || 'CS-01').trim().toUpperCase();
+    const cleanNum = normalizeRoomNumber(room.number);
+    const roomHouse = normalizeHouseCode(room.houseCode || 'CS-01');
+
+    // NẾU PHÒNG LÀ AVAILABLE HOẶC occupants === 0 HOẶC ĐÃ CHECKOUT:
+    // BẮT BUỘC TRẢ VỀ 0 NGƯỜI (đồng bộ 100% với logic Quản lý phòng StaffRoomsPage)
+    if (room.status === 'AVAILABLE' || room.occupants === 0 || isRoomCheckedOut(room.number)) {
+      return 0;
+    }
+
+    // 1.1. Kiểm tra hợp đồng: nếu phòng không còn hợp đồng ACTIVE nào
+    const roomContracts = (contracts || []).filter(c =>
+      normalizeRoomNumber(c.roomNumber) === cleanNum &&
+      (!c.houseCode || isSameHouse(c.houseCode, roomHouse))
+    );
+    const hasActiveContract = roomContracts.some(c => c.status === 'ACTIVE');
+    if (roomContracts.length > 0 && !hasActiveContract) {
+      return 0;
+    }
 
     // 1. Đếm số thành viên còn đang cư trú thực tế trong phòng
     const activeMems = (roomMembers || []).filter((m) => {
-      const mClean = String(m.roomNumber || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase();
+      const mClean = normalizeRoomNumber(m.roomNumber);
       const matchRoom = mClean === cleanNum;
-      const mHouse = String(m.houseCode || 'CS-01').trim().toUpperCase();
-      const matchHouse = mHouse === roomHouse;
-      return matchRoom && matchHouse && m.status !== 'MOVED_OUT';
+      const mHouse = normalizeHouseCode(m.houseCode || 'CS-01');
+      const matchHouse = isSameHouse(mHouse, roomHouse);
+      return matchRoom && matchHouse && m.status !== 'MOVED_OUT' && m.status !== 'INACTIVE';
     });
     if (activeMems.length > 0) return activeMems.length;
 
     // 2. Nếu có hợp đồng ACTIVE tại phòng này
-    const hasActiveContract = (contracts || []).some((c) => {
-      const cClean = String(c.roomNumber || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase();
-      const matchRoom = cClean === cleanNum;
-      const cHouse = String(c.houseCode || 'CS-01').trim().toUpperCase();
-      const matchHouse = cHouse === roomHouse;
-      return matchRoom && matchHouse && c.status === 'ACTIVE';
-    });
     if (hasActiveContract) return 1;
 
     // 3. Kiểm tra tenants (phải khớp đúng cơ sở!)
@@ -266,7 +219,7 @@ export default function UserRoomsPage() {
       const matchHouse = isSameHouse(t.houseCode, roomHouse) || (!t.houseCode && isSameHouse('CS-01', roomHouse));
       if (!matchHouse) return false;
       const tRooms = t.rooms || (t.room ? [t.room] : []);
-      return tRooms.some(rn => String(rn || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase() === cleanNum);
+      return tRooms.some(rn => normalizeRoomNumber(rn) === cleanNum);
     });
     if (hasActiveTenant) return 1;
 
@@ -275,84 +228,197 @@ export default function UserRoomsPage() {
       return room.occupants;
     }
     return 0;
-  };
+  }, [contracts, roomMembers, tenants, isRoomCheckedOut]);
 
-  // Kiểm tra xem phòng có khách đang nộp cọc / giữ chỗ mà CHƯA KÝ HỢP ĐỒNG điện tử hay không
-  // (Nếu khách 1 đã nộp cọc mà chưa ký HĐ, hoặc phòng chưa có HĐ active chính thức -> khóa nút ở ghép của khách khác)
-  const isRoomAwaitingContractSignature = useCallback((room) => {
-    if (!room) return false;
-    const cleanRoomNum = normalizeRoomNumber(room.number);
-    const rHouseCode = room.houseCode || 'CS-01';
+  // Kiểm tra chi tiết trạng thái Giữ cọc / Đặt chỗ của phòng:
+  // Trả về { isHeld, isDepositPaid, isPending, isMine, contract, request, text }
+  const getRoomHoldingOrDepositStatus = useCallback((room) => {
+    if (!room) return { isHeld: false, isDepositPaid: false, isPending: false, isMine: false, text: '' };
+    if (isRoomCheckedOut(room.number)) return { isHeld: false, isDepositPaid: false, isPending: false, isMine: false, text: '' };
 
-    // Nếu phòng đã có bất kỳ hợp đồng ACTIVE nào ĐÃ KÝ ĐIỆN TỬ chính thức -> Đã có cư dân sống hợp lệ
-    const hasSignedActiveContract = (contracts || []).some((c) => {
-      const cRoomClean = normalizeRoomNumber(c.roomNumber);
-      if (cRoomClean !== cleanRoomNum) return false;
-      if (c.houseCode && !isSameHouse(c.houseCode, rHouseCode)) return false;
-      return c.status === 'ACTIVE' && c.signedElectronically;
-    });
-    if (hasSignedActiveContract) return false;
+    const cleanRoom = normalizeRoomNumber(room.number);
+    const rHouse = room.houseCode || 'CS-01';
+    const uUsername = (user?.username || '').toLowerCase().trim();
 
-    // 1. Kiểm tra contracts xem có hợp đồng PENDING_SIGN (đã cọc chờ ký) hoặc PENDING_DEPOSIT
-    const hasPendingSignContract = (contracts || []).some((c) => {
-      const cRoomClean = normalizeRoomNumber(c.roomNumber);
-      if (cRoomClean !== cleanRoomNum) return false;
-      if (c.houseCode && !isSameHouse(c.houseCode, rHouseCode)) return false;
+    // 1. Kiểm tra trong danh sách Hợp Đồng (contracts)
+    const matchedContract = (contracts || []).find((c) => {
+      if (!isSameRoom(c.roomNumber, cleanRoom)) return false;
+      if (c.houseCode && !isSameHouse(c.houseCode, rHouse)) return false;
 
       const isDepositPaid = Boolean(
         c.depositPaid ||
         (typeof localStorage !== 'undefined' && (
           localStorage.getItem(`rental_deposit_paid_${c.id}`) === 'true' ||
           localStorage.getItem(`rental_deposit_paid_${c.roomNumber}`) === 'true' ||
-          localStorage.getItem(`rental_deposit_paid_${cleanRoomNum}`) === 'true'
+          localStorage.getItem(`rental_deposit_paid_${cleanRoom}`) === 'true'
         ))
       );
-      const isSigned = Boolean(c.signedElectronically && c.status === 'ACTIVE');
-
-      return c.status === 'PENDING_SIGN' || (isDepositPaid && !isSigned) || (c.status === 'PENDING_DEPOSIT');
+      const isPendingDeposit = c.status === 'PENDING_DEPOSIT';
+      const isPendingSign = c.status === 'PENDING_SIGN';
+      const isHolding = c.status === 'HOLDING';
+      const isAwaiting = isPendingDeposit || isPendingSign || isHolding || (isDepositPaid && (!c.signedElectronically || c.status !== 'ACTIVE'));
+      return isAwaiting;
     });
-    if (hasPendingSignContract) return true;
 
-    // 2. Kiểm tra cờ localStorage nộp cọc theo phòng
-    if (typeof localStorage !== 'undefined') {
-      const isPaidInStorage =
-        localStorage.getItem(`rental_deposit_paid_${room.number}`) === 'true' ||
-        localStorage.getItem(`rental_deposit_paid_${cleanRoomNum}`) === 'true';
-      if (isPaidInStorage) return true;
+    if (matchedContract) {
+      const cTenant = (matchedContract.tenantName || '').toLowerCase().trim();
+      const cPhone = (matchedContract.tenantPhone || '').trim();
+      const cUsername = (matchedContract.tenantUsername || '').toLowerCase().trim();
+
+      const isMine = (uUsername && cUsername === uUsername) ||
+                     (uName && (cTenant.includes(uName) || uName.includes(cTenant))) ||
+                     (uPhone && cPhone === uPhone);
+
+      const isDepositPaid = Boolean(
+        matchedContract.depositPaid ||
+        (typeof localStorage !== 'undefined' && (
+          localStorage.getItem(`rental_deposit_paid_${matchedContract.id}`) === 'true' ||
+          localStorage.getItem(`rental_deposit_paid_${matchedContract.roomNumber}`) === 'true' ||
+          localStorage.getItem(`rental_deposit_paid_${cleanRoom}`) === 'true'
+        ))
+      );
+
+      return {
+        isHeld: true,
+        isDepositPaid,
+        isPending: false,
+        isMine,
+        contract: matchedContract,
+        text: isDepositPaid ? 'Đã Nộp Cọc (Chờ Ký HĐ)' : 'Đang Giữ Chỗ (Chờ Nộp Cọc)'
+      };
     }
 
-    // 3. Kiểm tra đơn giữ chỗ đã duyệt
-    const hasApprovedRentReq = (roomRequests || []).some((req) => {
-      const isRent = req.type === 'RENT' || req.type === 'NEW_RENT' || req.type === 'RENTAL';
+    // 2. Kiểm tra đơn giữ chỗ đã duyệt (APPROVED)
+    const approvedReq = (roomRequests || []).find((req) => {
+      const isRent = req.type === 'RENT' || req.type === 'NEW_RENT' || req.type === 'RENTAL' || req.type === 'HOLD';
       if (!isRent || req.status !== 'APPROVED') return false;
-      const reqRoom = normalizeRoomNumber(req.targetRoom || req.roomNumber);
-      if (reqRoom !== cleanRoomNum) return false;
-      if (req.houseCode && !isSameHouse(req.houseCode, rHouseCode)) return false;
+      if (!isSameRoom(req.targetRoom || req.roomNumber, cleanRoom)) return false;
+      if (req.houseCode && !isSameHouse(req.houseCode, rHouse)) return false;
       return true;
     });
-    if (hasApprovedRentReq) return true;
 
-    // 4. Nếu phòng đang ở trạng thái HOLDING
-    if (room.status === 'HOLDING') return true;
+    if (approvedReq) {
+      const rTenant = (approvedReq.tenant || approvedReq.tenantName || '').toLowerCase().trim();
+      const rPhone = (approvedReq.phone || approvedReq.tenantPhone || '').trim();
+      const rUsername = (approvedReq.username || '').toLowerCase().trim();
 
-    return false;
-  }, [contracts, roomRequests]);
+      const isMine = (uUsername && rUsername === uUsername) ||
+                     (uName && (rTenant.includes(uName) || uName.includes(rTenant))) ||
+                     (uPhone && rPhone === uPhone);
+
+      return {
+        isHeld: true,
+        isDepositPaid: false,
+        isPending: false,
+        isMine,
+        request: approvedReq,
+        text: 'Đã Duyệt (Chờ Nộp Cọc)'
+      };
+    }
+
+    // 3. Kiểm tra đơn giữ chỗ đang chờ duyệt (PENDING)
+    const pendingReq = (roomRequests || []).find((req) => {
+      const isRent = req.type === 'RENT' || req.type === 'NEW_RENT' || req.type === 'RENTAL' || req.type === 'HOLD';
+      if (!isRent || req.status !== 'PENDING') return false;
+      if (!isSameRoom(req.targetRoom || req.roomNumber, cleanRoom)) return false;
+      if (req.houseCode && !isSameHouse(req.houseCode, rHouse)) return false;
+      return true;
+    });
+
+    if (pendingReq) {
+      const rTenant = (pendingReq.tenant || pendingReq.tenantName || '').toLowerCase().trim();
+      const rPhone = (pendingReq.phone || pendingReq.tenantPhone || '').trim();
+      const rUsername = (pendingReq.username || '').toLowerCase().trim();
+
+      const isMine = (uUsername && rUsername === uUsername) ||
+                     (uName && (rTenant.includes(uName) || uName.includes(rTenant))) ||
+                     (uPhone && rPhone === uPhone);
+
+      return {
+        isHeld: true,
+        isDepositPaid: false,
+        isPending: true,
+        isMine,
+        request: pendingReq,
+        text: 'Chờ Quản Lý Duyệt'
+      };
+    }
+
+    // 4. Kiểm tra xem phòng có cờ status === 'HOLDING' hay không
+    if (room.status === 'HOLDING') {
+      const isDepositPaid = Boolean(
+        typeof localStorage !== 'undefined' && (
+          localStorage.getItem(`rental_deposit_paid_${room.number}`) === 'true' ||
+          localStorage.getItem(`rental_deposit_paid_${cleanRoom}`) === 'true'
+        )
+      );
+      return {
+        isHeld: true,
+        isDepositPaid,
+        isPending: false,
+        isMine: false,
+        text: isDepositPaid ? 'Đã Nộp Cọc' : 'Đang Giữ Chỗ'
+      };
+    }
+
+    return { isHeld: false, isDepositPaid: false, isPending: false, isMine: false, text: '' };
+  }, [contracts, roomRequests, user, uName, uPhone, isRoomCheckedOut]);
+
+  // Kiểm tra xem phòng có khách đang nộp cọc / giữ chỗ mà CHƯA KÝ HỢP ĐỒNG điện tử hay không
+  const isRoomAwaitingContractSignature = useCallback((room) => {
+    return getRoomHoldingOrDepositStatus(room).isHeld;
+  }, [getRoomHoldingOrDepositStatus]);
 
   // State cho Modal Đăng ký Giữ trọ đặt cọc chờ Staff duyệt
   const [rentModalRoom, setRentModalRoom] = useState(null);
 
-  // Tự động mở Modal Lịch Sử Đơn khi tenant click từ Thông Báo Navbar
+  // Tự động mở Modal Lịch Sử Đơn hoặc Yêu Cầu Chờ Duyệt khi tenant click từ Thông Báo Navbar
   useEffect(() => {
     const action = searchParams.get('action');
-    if (action === 'history' || action === 'review-requests') {
+    if (action === 'review-pending' || action === 'pending-review' || action === 'vote') {
+      setShowPendingReviewModal(true);
+      setShowRequestsHistory(false);
+    } else if (action === 'history' || action === 'review-requests') {
       setShowRequestsHistory(true);
+      setShowPendingReviewModal(false);
     }
   }, [searchParams]);
 
   useEffect(() => {
-    const handleOpenHistory = () => setShowRequestsHistory(true);
-    window.addEventListener('rental:open-requests-manager', handleOpenHistory);
-    return () => window.removeEventListener('rental:open-requests-manager', handleOpenHistory);
+    const handleOpenPendingReview = () => {
+      setShowPendingReviewModal(true);
+      setShowRequestsHistory(false);
+    };
+
+    const handleOpenRequestsManager = (e) => {
+      const notif = e?.detail?.notif;
+      const title = (notif?.title || '').toLowerCase();
+      const id = String(notif?.id || '').toLowerCase();
+      const link = String(notif?.link || '').toLowerCase();
+      const action = e?.detail?.action;
+
+      if (
+        action === 'review-pending' ||
+        link.includes('action=review-pending') ||
+        id.includes('vote') ||
+        title.includes('biểu quyết') ||
+        title.includes('cần biểu quyết') ||
+        title.includes('chờ bạn duyệt')
+      ) {
+        setShowPendingReviewModal(true);
+        setShowRequestsHistory(false);
+      } else {
+        setShowRequestsHistory(true);
+        setShowPendingReviewModal(false);
+      }
+    };
+
+    window.addEventListener('rental:open-pending-review', handleOpenPendingReview);
+    window.addEventListener('rental:open-requests-manager', handleOpenRequestsManager);
+    return () => {
+      window.removeEventListener('rental:open-pending-review', handleOpenPendingReview);
+      window.removeEventListener('rental:open-requests-manager', handleOpenRequestsManager);
+    };
   }, []);
   const [rentNote, setRentNote] = useState('');
   const [isSubmittingRent, setIsSubmittingRent] = useState(false);
@@ -369,9 +435,10 @@ export default function UserRoomsPage() {
       if (c.status !== 'PENDING_DEPOSIT' && c.status !== 'PENDING_SIGN') return false;
       const cName = (c.tenantName || '').toLowerCase().trim();
       const cPhone = (c.tenantPhone || '').trim();
-      const matchUser = ((uName && (cName.includes(uName) || uName.includes(cName))) ||
-                         (uPhone && cPhone === uPhone) ||
-                         (user?.username === 'tenant_new'));
+      const matchUsername = user?.username && (c.username === user.username || (c.userId && c.userId === user.id));
+      const matchName = uName && (cName.includes(uName) || uName.includes(cName));
+      const matchPhone = uPhone && cPhone === uPhone;
+      const matchUser = matchUsername || matchName || matchPhone;
       if (!matchUser) return false;
       if (c.holdingUntil && Date.now() > c.holdingUntil) return false;
       return true;
@@ -381,7 +448,7 @@ export default function UserRoomsPage() {
     const holdingRoom = (rooms || []).find((r) => {
       if (r.status !== 'HOLDING') return false;
       const matchUser = ((uName && (r.holdingBy?.toLowerCase().includes(uName) || uName.includes(r.holdingBy?.toLowerCase()))) ||
-                         (uPhone && r.holdingPhone === uPhone));
+        (uPhone && r.holdingPhone === uPhone));
       if (!matchUser) return false;
       if (r.holdingUntil && Date.now() > r.holdingUntil) return false;
       return true;
@@ -407,9 +474,12 @@ export default function UserRoomsPage() {
     return (roomRequests || []).find((r) => {
       const isRent = (r.type === 'RENT' || r.type === 'NEW_RENT' || r.type === 'RENTAL');
       if (!isRent || r.status !== 'APPROVED') return false;
-      const matchUser = ((uName && (r.tenant?.toLowerCase().includes(uName) || r.tenantName?.toLowerCase().includes(uName))) ||
-                         (uPhone && r.phone === uPhone) ||
-                         (user?.username === 'tenant_new'));
+      const rTenant = (r.tenant || r.tenantName || '').toLowerCase().trim();
+      const rPhone = (r.phone || r.tenantPhone || '').trim();
+      const matchUsername = user?.username && (r.username === user.username || (r.userId && r.userId === user.id));
+      const matchName = uName && (rTenant.includes(uName) || uName.includes(rTenant));
+      const matchPhone = uPhone && rPhone === uPhone;
+      const matchUser = matchUsername || matchName || matchPhone;
       if (!matchUser) return false;
       const rClean = String(r.targetRoom || r.roomNumber || '').replace(/^P\.?/i, '').trim();
       return !targetRoomClean || rClean === targetRoomClean;
@@ -427,24 +497,33 @@ export default function UserRoomsPage() {
   // Kiểm tra xem phòng có đơn PENDING từ bất kỳ ai đang chờ Quản lý duyệt hay không
   const isRoomPendingApproval = (roomNumber, houseCode) => {
     return (roomRequests || []).some((r) => {
-      const matchRoom = (r.targetRoom === roomNumber || r.roomNumber === roomNumber);
-      const matchHouse = !houseCode || !r.houseCode || r.houseCode === houseCode;
-      const isRentType = r.type === 'RENT' || r.type === 'NEW_RENT' || r.type === 'RENTAL';
+      const matchRoom = isSameRoom(r.targetRoom || r.roomNumber, roomNumber);
+      const matchHouse = !houseCode || !r.houseCode || isSameHouse(r.houseCode, houseCode);
+      const isRentType = r.type === 'RENT' || r.type === 'NEW_RENT' || r.type === 'RENTAL' || r.type === 'HOLD';
       return matchRoom && matchHouse && isRentType && r.status === 'PENDING';
     });
   };
 
   const myPendingRequest = useMemo(() => {
-    return (roomRequests || []).find((r) =>
-      (r.type === 'RENT' || r.type === 'NEW_RENT' || r.type === 'RENTAL') &&
-      r.status === 'PENDING' &&
-      ((uName && (r.tenant?.toLowerCase().includes(uName) || r.tenantName?.toLowerCase().includes(uName))) ||
-       (uPhone && r.phone === uPhone) ||
-       (user?.username === 'tenant_new'))
-    );
+    if (!user) return null;
+    const uUsername = (user?.username || '').toLowerCase().trim();
+    return (roomRequests || []).find((r) => {
+      const isRent = (r.type === 'RENT' || r.type === 'NEW_RENT' || r.type === 'RENTAL');
+      if (!isRent || r.status !== 'PENDING') return false;
+
+      const rTenant = (r.tenant || r.tenantName || '').toLowerCase().trim();
+      const rPhone = (r.phone || r.tenantPhone || '').trim();
+      const rUsername = (r.username || '').toLowerCase().trim();
+
+      const matchUsername = uUsername && rUsername === uUsername;
+      const matchName = uName && (rTenant.includes(uName) || uName.includes(rTenant));
+      const matchPhone = uPhone && rPhone === uPhone;
+
+      return matchUsername || matchName || matchPhone;
+    });
   }, [user, roomRequests, uName, uPhone]);
 
-  
+
 
   const [storedBoardingHouses, setStoredBoardingHouses] = useState(() => {
     try {
@@ -455,12 +534,8 @@ export default function UserRoomsPage() {
           return healBoardingHousesList(parsed);
         }
       }
-    } catch {}
-    return isZeroSandbox ? [] : [
-      { id: 1, code: 'CS-01', name: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', address: 'Số 45, Ngõ 165 Cầu Giấy, Phường Dịch Vọng, Quận Cầu Giấy, Hà Nội', manager: 'Lê Thị Thu Ngân (Staff CS1)', managerUsername: 'staff', createdBy: 'staff', status: 'ACTIVE', floors: 4 },
-      { id: 2, code: 'CS-02', name: 'Nhà Trọ Bách Khoa - Cơ Sở 2', address: 'Số 18, Ngõ Tự Do, Phường Đồng Tâm, Quận Hai Bà Trưng, Hà Nội', manager: 'Đàm Văn Táo (Staff CS2)', managerUsername: 'staff2', createdBy: 'staff2', status: 'ACTIVE', floors: 4 },
-      { id: 3, code: 'CS-03', name: 'Nhà Trọ Đống Đa - Cơ Sở 3', address: 'Số 92, Phố Chùa Láng, Phường Láng Thượng, Quận Đống Đa, Hà Nội', manager: 'Phạm Quốc Hùng', managerUsername: 'admin', createdBy: 'admin', status: 'ACTIVE', floors: 6 }
-    ];
+    } catch { }
+    return [];
   });
 
   useEffect(() => {
@@ -473,7 +548,7 @@ export default function UserRoomsPage() {
             setStoredBoardingHouses(healBoardingHousesList(parsed));
           }
         }
-      } catch {}
+      } catch { }
     };
     window.addEventListener('storage', handleSyncHouses);
     return () => window.removeEventListener('storage', handleSyncHouses);
@@ -496,6 +571,7 @@ export default function UserRoomsPage() {
 
   // State cho Modal Xin Vào Ở Ghép (Phòng có người nhưng chưa đầy)
   const [joinRoomModalData, setJoinRoomModalData] = useState(null);
+  const [isReapplying, setIsReapplying] = useState(false);
   const [joinNote, setJoinNote] = useState('');
   const [joinPhone, setJoinPhone] = useState('');
   const [joinCccd, setJoinCccd] = useState('');
@@ -534,7 +610,8 @@ export default function UserRoomsPage() {
       cccd: joinCccd || user?.cccd || '001201012345',
       hometown: joinHometown || 'Hà Nội',
       note: joinNote,
-      status: 'WAITING_ROOMMATES'
+      status: 'WAITING_ROOMMATES',
+      isReapply: isReapplying
     });
 
     if (res?.error) {
@@ -543,7 +620,11 @@ export default function UserRoomsPage() {
     }
 
     setJoinRoomModalData(null);
-    setActionToast(`🎉 Đã gửi đơn xin vào ở ghép phòng ${joinRoomModalData.number}! Đang chờ các bạn cùng phòng biểu quyết đồng ý.`);
+    const successMsg = isReapplying
+      ? `🔄 Đã gửi lại đơn xin vào ở ghép phòng ${joinRoomModalData.number}! Đang chờ các bạn cùng phòng biểu quyết duyệt lại.`
+      : `🎉 Đã gửi đơn xin vào ở ghép phòng ${joinRoomModalData.number}! Đang chờ các bạn cùng phòng biểu quyết đồng ý.`;
+    setIsReapplying(false);
+    setActionToast(successMsg);
     setTimeout(() => setActionToast(null), 5000);
   };
 
@@ -572,65 +653,63 @@ export default function UserRoomsPage() {
 
   const getLandlordKeyFromHouse = useCallback((h) => {
     if (!h) return null;
-    const direct = resolveLandlordKey(h.code, h.name);
-    if (direct) return direct;
-    const code = (h.code || '').toUpperCase();
     const c = (h.createdBy || '').toLowerCase();
     const mU = (h.managerUsername || '').toLowerCase();
     const m = (h.manager || '').toLowerCase();
-    if (c === 'staff' || c === 'staff1' || mU === 'staff' || m.includes('ngân') || code === 'CS-01' || code.startsWith('S1-')) return 'staff';
-    if (c === 'staff2' || mU === 'staff2' || m.includes('táo') || code === 'CS-02' || code.startsWith('S2-')) return 'staff2';
-    if (c === 'admin' || mU === 'admin' || m.includes('hùng') || code === 'CS-03' || code.startsWith('S3-')) return 'admin';
-    return c || mU || 'other';
+    const lName = (h.landlordName || '').toLowerCase();
+    const code = (h.code || '').toUpperCase();
+    const name = (h.name || '').toLowerCase();
+
+    // 1. Kiểm tra Staff 2 (Đàm Văn Táo)
+    if (c === 'staff2' || mU === 'staff2' || m.includes('táo') || lName.includes('táo') || name.includes('táo') || code === 'CS-02' || code.startsWith('S2-')) {
+      return 'staff2';
+    }
+
+    // 2. Kiểm tra Staff 1 (Lê Thị Thu Ngân)
+    if (c === 'staff' || c === 'staff1' || mU === 'staff' || m.includes('ngân') || lName.includes('ngân') || name.includes('ngân') || code === 'CS-01' || code.startsWith('S1-')) {
+      return 'staff';
+    }
+
+    // 3. Kiểm tra Admin (Ban QL Chuỗi)
+    if (c === 'admin' || mU === 'admin' || m.includes('hùng') || lName.includes('hùng') || name.includes('hùng') || code === 'CS-03' || code.startsWith('S3-')) {
+      return 'admin';
+    }
+
+    const direct = resolveLandlordKey(h.code, h.name);
+    if (direct) return direct;
+
+    return c || mU || (h.landlordId ? String(h.landlordId) : null) || 'other';
   }, [resolveLandlordKey]);
 
-  const isRoomCheckedOut = useCallback((rNum) => {
-    if (!rNum) return false;
-    const clean = normalizeRoomNumber(rNum);
-
-    // 1. Kiểm tra đơn CHECKOUT / RETURN đã được duyệt
-    const reqOut = (roomRequests || []).some(
-      (r) =>
-        (r.type === 'CHECKOUT' || r.type === 'RETURN') &&
-        normalizeRoomNumber(r.targetRoom || r.currentRoom || r.roomNumber) === clean &&
-        (r.status === 'APPROVED' || r.status === 'CHECKOUT_SETTLED' || r.status === 'SETTLED' || r.settledAt)
-    );
-    if (reqOut) return true;
-
-    // 2. Kiểm tra biên bản quyết toán
-    try {
-      const sSt = localStorage.getItem('rental_move_out_settlements');
-      if (sSt) {
-        const sts = JSON.parse(sSt);
-        if (Array.isArray(sts) && sts.some(s => normalizeRoomNumber(s.roomNumber) === clean && (s.settledAt || s.refundStatus === 'COMPLETED' || s.status === 'SETTLED'))) {
-          return true;
-        }
-      }
-    } catch {}
-
-    // 3. Kiểm tra danh mục phòng: nếu phòng mang trạng thái AVAILABLE hoặc occupants === 0
-    const matchedRoom = (rooms || []).find(r => normalizeRoomNumber(r.number) === clean);
-    if (matchedRoom && (matchedRoom.status === 'AVAILABLE' || matchedRoom.occupants === 0)) {
-      return true;
-    }
-
-    // 4. Kiểm tra hợp đồng: nếu phòng có hợp đồng nhưng không còn hợp đồng ACTIVE
-    const roomContracts = (contracts || []).filter(c => normalizeRoomNumber(c.roomNumber) === clean);
-    const hasActive = roomContracts.some(c => c.status === 'ACTIVE');
-    if (!hasActive && roomContracts.length > 0) {
-      return true;
-    }
-
-    return false;
-  }, [roomRequests, rooms, contracts]);
-
   const myCurrentRoom = useMemo(() => {
-    if (user?.username === 'tenant_new') return null;
-
     const uName = (user?.fullName || '').toLowerCase().trim();
+    const uPhone = (user?.phone || '').trim();
     const myUname = (user?.username || '').toLowerCase().trim();
 
-    // 0. Kiểm tra trực tiếp rental_tenant_rooms từ localStorage (nguồn chuẩn sự thật)
+    // 1. NGUỒN SỰ THẬT TỐI CAO: Hợp đồng ACTIVE của chính khách này
+    const activeContract = (contracts || []).find((c) => {
+      if (c.status !== 'ACTIVE') return false;
+      const cName = (c.tenantName || '').toLowerCase().trim();
+      const cPhone = (c.tenantPhone || '').trim();
+      return (uName && (cName.includes(uName) || uName.includes(cName))) || (uPhone && cPhone === uPhone);
+    });
+    if (activeContract?.roomNumber) return activeContract.roomNumber;
+
+    // 2. Thành viên đang cư trú trong roomMembers (dành cho người ở ghép cùng phòng)
+    const activeMember = (roomMembers || []).find((m) => {
+      if (m.status === 'MOVED_OUT' || m.status === 'INACTIVE') return false;
+      const mName = (m.fullName || '').toLowerCase().trim();
+      const match = (uName && (mName.includes(uName) || uName.includes(mName))) || (uPhone && m.phone === uPhone);
+      return match;
+    });
+    if (activeMember) return activeMember.roomNumber || activeMember.room;
+
+    // 3. Nếu là khách mới hoặc user explicitly không có phòng
+    if (user?.username === 'tenant_new' || user?.hasRentedRoom === false) {
+      return null;
+    }
+
+    // 4. Kiểm tra trực tiếp rental_tenant_rooms từ localStorage (nguồn chuẩn sự thật)
     try {
       const sTR = localStorage.getItem('rental_tenant_rooms');
       if (sTR) {
@@ -651,13 +730,12 @@ export default function UserRoomsPage() {
         if (Array.isArray(storedList)) {
           if (storedList.length === 0) return null;
           const valid = storedList.find((rn) => !isRoomCheckedOut(rn));
-          if (!valid) return null;
-          return valid;
+          if (valid) return valid;
         }
       }
-    } catch {}
+    } catch { }
 
-    // 1. Kiểm tra trong tenantRooms (AuthContext)
+    // 5. Kiểm tra trong tenantRooms (AuthContext)
     let stored = myUname && tenantRooms?.[myUname] !== undefined
       ? tenantRooms[myUname]
       : (user?.fullName && tenantRooms?.[user.fullName] !== undefined ? tenantRooms[user.fullName] : undefined);
@@ -667,107 +745,214 @@ export default function UserRoomsPage() {
         stored = tenantRooms?.tenant2 !== undefined ? tenantRooms.tenant2 : tenantRooms?.['Phạm Minh Cường'];
       } else if (myUname === 'tenant1' || uName.includes('an')) {
         stored = tenantRooms?.tenant1 !== undefined ? tenantRooms.tenant1 : tenantRooms?.['Nguyễn Văn An'];
-      } else if (myUname === 'tenant_new' || uName.includes('nam')) {
-        stored = tenantRooms?.tenant_new !== undefined ? tenantRooms.tenant_new : tenantRooms?.['Hoàng Văn Nam'];
       }
     }
 
     if (Array.isArray(stored)) {
       if (stored.length === 0) return null;
       const validRoom = stored.find((rn) => !isRoomCheckedOut(rn));
-      if (!validRoom) return null;
-      return validRoom;
+      if (validRoom) return validRoom;
     }
     if (typeof stored === 'string') {
-      if (!stored || isRoomCheckedOut(stored)) return null;
-      return stored;
+      if (stored && !isRoomCheckedOut(stored)) return stored;
     }
 
-    // 2. Nếu user object có rooms rỗng
-    if (user?.rooms && Array.isArray(user.rooms) && user.rooms.length === 0) return null;
-    if (user?.room === null || user?.room === '') return null;
-
-    // 3. Kiểm tra xem có Hợp đồng ACTIVE nào chưa trả phòng không
-    const activeContract = (contracts || []).find((c) => {
-      if (c.status !== 'ACTIVE') return false;
-      const cName = (c.tenantName || '').toLowerCase().trim();
-      const cPhone = (c.tenantPhone || '').trim();
-      const match = (uName && (cName.includes(uName) || uName.includes(cName))) || (user?.phone && cPhone === user.phone);
-      if (!match) return false;
-      if (isRoomCheckedOut(c.roomNumber)) return false;
-      return true;
-    });
-    if (activeContract) return activeContract.roomNumber;
-
-    // 4. Kiểm tra trong roomMembers
-    const activeMember = (roomMembers || []).find((m) => {
-      if (m.status === 'MOVED_OUT' || m.status === 'INACTIVE') return false;
-      const mName = (m.fullName || '').toLowerCase().trim();
-      const match = (uName && (mName.includes(uName) || uName.includes(mName))) || (user?.phone && m.phone === user.phone);
-      if (!match) return false;
-      if (isRoomCheckedOut(m.roomNumber || m.room)) return false;
-      return true;
-    });
-    if (activeMember) return activeMember.roomNumber || activeMember.room;
-
-    // 5. Nếu user object có room
+    // 6. Nếu user object có room fallback
     const fallbackRooms = Array.isArray(user?.rooms) ? user.rooms : (user?.room ? [user.room] : []);
     const validFallback = fallbackRooms.find((rn) => !isRoomCheckedOut(rn));
     return validFallback || null;
   }, [user, tenantRooms, contracts, roomMembers, isRoomCheckedOut]);
 
   const tenantAssociatedLandlordKey = useMemo(() => {
-    // NẾU KHÁCH KHÔNG CÓ PHÒNG ĐANG THUÊ THỰC SỰ HOẶC ĐÃ THOÁT PHÒNG / TRẢ PHÒNG:
-    // TUYỆT ĐỐI TRẢ VỀ NULL ĐỂ KHÁCH ĐƯỢC XEM TOÀN BỘ PHÒNG & CƠ SỞ CỦA TẤT CẢ CHỦ TRỌ!
-    const uName = (user?.fullName || '').toLowerCase().trim();
-    const uPhone = (user?.phone || '').trim();
-
-    // 1. Chỉ khóa chủ trọ khi khách đang có đơn cọc giữ chỗ pending
-    const validPendingContract = (contracts || []).find((c) => {
-      if (c.status !== 'PENDING_DEPOSIT' && c.status !== 'PENDING_SIGN') return false;
-      const cName = (c.tenantName || '').toLowerCase().trim();
-      const cPhone = (c.tenantPhone || '').trim();
-      const isMine =
-        (uName && (cName.includes(uName) || uName.includes(cName))) ||
-        (uPhone && cPhone === uPhone) ||
-        (user?.username === 'tenant_new' && (c.tenantName?.toLowerCase().includes('nam') || c.contractCode === 'HD-2026-007'));
-      if (!isMine) return false;
-      if (c.holdingUntil && Date.now() > c.holdingUntil) return false;
-      return true;
-    });
-
-    if (!myCurrentRoom) {
-      if (validPendingContract) {
-        const directKey = resolveLandlordKey(validPendingContract.houseCode, validPendingContract.houseName);
-        if (directKey) return directKey;
-        if (validPendingContract.houseCode) {
-          const h = storedBoardingHouses.find((house) => isSameHouse(house.code, validPendingContract.houseCode));
-          if (h) return getLandlordKeyFromHouse(h);
-        }
-      }
+    // Chỉ áp dụng logic khóa theo chủ trọ cho tài khoản TENANT / Khách thuê
+    if (user?.role === 'ADMIN' || (user?.role === 'STAFF' && user?.username !== 'tenant1' && user?.username !== 'tenant2' && user?.username !== 'tenant_new')) {
       return null;
     }
 
-    // 2. KHÁCH ĐANG THỰC SỰ CƯ TRÚ TRONG PHÒNG (ACTIVE RENTAL)
-    const matchRoom = (rooms || []).find((r) => normalizeRoomNumber(r.number) === normalizeRoomNumber(myCurrentRoom));
-    const targetHouseCode = matchRoom?.houseCode || user?.houseCode;
-    const targetHouseName = matchRoom?.house || user?.houseName;
-    if (targetHouseCode) {
-      const directKey = resolveLandlordKey(targetHouseCode, targetHouseName);
-      if (directKey) return directKey;
-      const h = storedBoardingHouses.find((house) => isSameHouse(house.code, targetHouseCode));
-      if (h) return getLandlordKeyFromHouse(h);
+    const uName = (user?.fullName || '').toLowerCase().trim();
+    const uPhone = (user?.phone || '').trim();
+    const uUsername = (user?.username || '').toLowerCase().trim();
+    const uCccd = (user?.cccd || '').trim();
+
+    // Helper: kiểm tra xem bản ghi có khớp với khách đang đăng nhập hay không
+    const matchesCurrentTenant = (tName, tPhone, tUser, tCccd) => {
+      if (uUsername && tUser && tUser.toLowerCase().trim() === uUsername) return true;
+      if (uPhone && tPhone && tPhone.trim() === uPhone) return true;
+      if (uCccd && tCccd && tCccd.trim() === uCccd) return true;
+      if (uName && tName) {
+        const n = tName.toLowerCase().trim();
+        if (n === uName || n.includes(uName) || uName.includes(n)) return true;
+        if (uName.includes('an') && n.includes('an')) return true;
+        if (uName.includes('cường') && n.includes('cường')) return true;
+        if (uName.includes('nam') && n.includes('nam')) return true;
+      }
+      return false;
+    };
+
+    // Helper: trích xuất key chủ trọ từ mã cơ sở hoặc tên cơ sở
+    const findLandlordKeyForHouse = (hCode, hName) => {
+      if (hCode) {
+        const found = storedBoardingHouses.find((h) => isSameHouse(h.code, hCode));
+        if (found) {
+          const k = getLandlordKeyFromHouse(found);
+          if (k) return k;
+        }
+      }
+      return resolveLandlordKey(hCode, hName);
+    };
+
+    // Helper: trích xuất key chủ trọ từ số phòng
+    const findLandlordKeyForRoom = (roomNum, hintHouseCode) => {
+      if (!roomNum) return null;
+      const cleanR = normalizeRoomNumber(roomNum);
+      const matched = (rooms || []).find((r) =>
+        normalizeRoomNumber(r.number) === cleanR &&
+        (!hintHouseCode || isSameHouse(r.houseCode, hintHouseCode))
+      );
+      if (matched?.houseCode) {
+        return findLandlordKeyForHouse(matched.houseCode, matched.house);
+      }
+      return null;
+    };
+
+    // =========================================================================
+    // QUY TẮC 1: GIỮ PHÒNG / GIỮ CỌC (Holding, Pending Deposit, Pending Signature, Approved/Pending Request)
+    // "Giữ chỗ của staff 1 là vào phần phòng thuộc chuỗi chỉ thấy của staff 1 không thấy của các staff khác nữa"
+    // =========================================================================
+
+    // 1.1 Kiểm tra hợp đồng đang trong quá trình giữ chỗ / nộp cọc / ký hợp đồng (chưa ACTIVE và chưa TERMINATED/CANCELLED)
+    const holdingContract = (contracts || []).find((c) => {
+      if (c.status === 'TERMINATED' || c.status === 'CANCELLED' || c.status === 'COMPLETED') return false;
+      const isHoldingStatus =
+        c.status === 'PENDING_DEPOSIT' ||
+        c.status === 'PENDING_SIGN' ||
+        c.status === 'HOLDING' ||
+        c.status === 'WAITING_CONFIRMATION' ||
+        Boolean(c.depositPaid) ||
+        (typeof localStorage !== 'undefined' && localStorage.getItem(`rental_deposit_paid_${c.id}`) === 'true');
+      if (!isHoldingStatus) return false;
+      return matchesCurrentTenant(c.tenantName, c.tenantPhone, c.tenantUsername || c.username, c.tenantCccd);
+    });
+    if (holdingContract) {
+      const lKey = findLandlordKeyForHouse(holdingContract.houseCode, holdingContract.houseName || holdingContract.house) ||
+                   findLandlordKeyForRoom(holdingContract.roomNumber, holdingContract.houseCode);
+      if (lKey) return lKey;
     }
 
+    // 1.2 Kiểm tra đơn đăng ký thuê / giữ chỗ / xin ở ghép đang PENDING hoặc APPROVED của khách này
+    const holdingRequest = (roomRequests || []).find((r) => {
+      const isRentType = r.type === 'RENT' || r.type === 'NEW_RENT' || r.type === 'RENTAL' || r.type === 'HOLD' || r.type === 'JOIN' || r.type === 'STAY_WITH';
+      if (!isRentType) return false;
+      if (r.status !== 'PENDING' && r.status !== 'APPROVED') return false;
+      return matchesCurrentTenant(r.tenant || r.tenantName, r.phone || r.tenantPhone, r.username, r.cccd);
+    });
+    if (holdingRequest) {
+      const lKey = findLandlordKeyForHouse(holdingRequest.houseCode, holdingRequest.house) ||
+                   findLandlordKeyForRoom(holdingRequest.targetRoom || holdingRequest.roomNumber, holdingRequest.houseCode);
+      if (lKey) return lKey;
+    }
+
+    // 1.3 Kiểm tra phòng đang được khách này giữ chỗ trực tiếp (getRoomHoldingOrDepositStatus)
+    const myHeldRoom = (rooms || []).find((r) => {
+      const holdInfo = getRoomHoldingOrDepositStatus(r);
+      return holdInfo.isHeld && holdInfo.isMine;
+    });
+    if (myHeldRoom) {
+      const lKey = findLandlordKeyForHouse(myHeldRoom.houseCode, myHeldRoom.house);
+      if (lKey) return lKey;
+    }
+
+    // =========================================================================
+    // QUY TẮC 2: ĐANG TRONG QUÁ TRÌNH TRẢ PHÒNG CHƯA TRẢ THÀNH CÔNG
+    // "đang trong quá trình trả phòng chưa trả thành công đều nhìn của chủ trọ mình thuê thôi"
+    // =========================================================================
+    const inProgressCheckoutReq = (roomRequests || []).find((r) => {
+      const isCheckoutType = r.type === 'CHECKOUT' || r.type === 'RETURN' || r.type === 'LEAVE';
+      if (!isCheckoutType) return false;
+      if (r.status === 'REJECTED' || r.status === 'CANCELLED') return false;
+      const isSettled = Boolean(r.settledAt || r.status === 'CHECKOUT_SETTLED' || r.status === 'SETTLED');
+      if (isSettled) return false; // Đã trả phòng thành công thì bỏ qua
+      return matchesCurrentTenant(r.tenant || r.tenantName, r.phone || r.tenantPhone, r.username, r.cccd);
+    });
+    if (inProgressCheckoutReq) {
+      const lKey = findLandlordKeyForHouse(inProgressCheckoutReq.houseCode, inProgressCheckoutReq.house) ||
+                   findLandlordKeyForRoom(inProgressCheckoutReq.targetRoom || inProgressCheckoutReq.roomNumber || inProgressCheckoutReq.currentRoom, inProgressCheckoutReq.houseCode);
+      if (lKey) return lKey;
+    }
+
+    // =========================================================================
+    // QUY TẮC 3: ĐANG Ở PHÒNG (ACTIVE RENTAL)
+    // "ở phòng... nhìn của chủ trọ mình thuê thôi"
+    // =========================================================================
+
+    // 3.1 Kiểm tra Hợp đồng ACTIVE của chính khách này
+    const activeContract = (contracts || []).find((c) => {
+      if (c.status !== 'ACTIVE' && c.status !== 'CHECKOUT_REQUESTED' && c.status !== 'PENDING_TERMINATION') return false;
+      return matchesCurrentTenant(c.tenantName, c.tenantPhone, c.tenantUsername || c.username, c.tenantCccd);
+    });
+    if (activeContract) {
+      const cleanR = normalizeRoomNumber(activeContract.roomNumber);
+      const isSettled = (roomRequests || []).some((r) =>
+        (r.type === 'CHECKOUT' || r.type === 'RETURN') &&
+        normalizeRoomNumber(r.targetRoom || r.roomNumber || r.currentRoom) === cleanR &&
+        (r.settledAt || r.status === 'CHECKOUT_SETTLED' || r.status === 'SETTLED')
+      );
+      if (!isSettled) {
+        const lKey = findLandlordKeyForHouse(activeContract.houseCode, activeContract.houseName || activeContract.house) ||
+                     findLandlordKeyForRoom(activeContract.roomNumber, activeContract.houseCode);
+        if (lKey) return lKey;
+      }
+    }
+
+    // 3.2 Kiểm tra phòng đang ở thực tế (myCurrentRoom)
+    if (myCurrentRoom) {
+      const cleanR = normalizeRoomNumber(myCurrentRoom);
+      const isSettled = (roomRequests || []).some((r) =>
+        (r.type === 'CHECKOUT' || r.type === 'RETURN') &&
+        normalizeRoomNumber(r.targetRoom || r.roomNumber || r.currentRoom) === cleanR &&
+        (r.settledAt || r.status === 'CHECKOUT_SETTLED' || r.status === 'SETTLED')
+      );
+      if (!isSettled) {
+        const matchRoom = (rooms || []).find((r) => normalizeRoomNumber(r.number) === cleanR);
+        const targetHouseCode = matchRoom?.houseCode || user?.houseCode;
+        const targetHouseName = matchRoom?.house || user?.houseName;
+        const lKey = findLandlordKeyForHouse(targetHouseCode, targetHouseName);
+        if (lKey) return lKey;
+      }
+    }
+
+    // 3.3 Kiểm tra cư dân đang ở trong roomMembers (người ở cùng phòng)
+    const activeMember = (roomMembers || []).find((m) => {
+      if (m.status === 'MOVED_OUT' || m.status === 'INACTIVE') return false;
+      return matchesCurrentTenant(m.fullName, m.phone, m.username, m.cccd);
+    });
+    if (activeMember) {
+      const cleanR = normalizeRoomNumber(activeMember.roomNumber || activeMember.room);
+      const isSettled = (roomRequests || []).some((r) =>
+        (r.type === 'CHECKOUT' || r.type === 'RETURN') &&
+        normalizeRoomNumber(r.targetRoom || r.roomNumber || r.currentRoom) === cleanR &&
+        (r.settledAt || r.status === 'CHECKOUT_SETTLED' || r.status === 'SETTLED')
+      );
+      if (!isSettled) {
+        const lKey = findLandlordKeyForHouse(activeMember.houseCode, activeMember.house) ||
+                     findLandlordKeyForRoom(cleanR, activeMember.houseCode);
+        if (lKey) return lKey;
+      }
+    }
+
+    // =========================================================================
+    // QUY TẮC 4: KHÔNG Ở PHÒNG NÀO, KHÔNG THUÊ PHÒNG NÀO, TRẢ PHÒNG THÀNH CÔNG RỒI
+    // "còn ko ở phòng nào không thuê phòng nào trả phòng thành công rồi mới được xem của các phòng và các cơ sở của các staff khác"
+    // =========================================================================
     return null;
-  }, [user, contracts, storedBoardingHouses, myCurrentRoom, rooms, resolveLandlordKey, getLandlordKeyFromHouse]);
+  }, [user, storedBoardingHouses, myCurrentRoom, rooms, contracts, roomRequests, roomMembers, getRoomHoldingOrDepositStatus, resolveLandlordKey, getLandlordKeyFromHouse]);
 
   // CHỈ HIỂN THỊ CƠ SỞ CỦA CHỦ TRỌ MÀ KHÁCH ĐANG ĐẶT CỌC / THUÊ (LỌC BỎ HOÀN TOÀN CƠ SỞ CỦA CHỦ TRỌ KHÁC)
   const visibleHousesForUser = useMemo(() => {
     const active = storedBoardingHouses.filter((h) => h.status === 'ACTIVE');
     if (tenantAssociatedLandlordKey) {
       const landlordHouses = active.filter((h) => getLandlordKeyFromHouse(h) === tenantAssociatedLandlordKey);
-      if (landlordHouses.length > 0) return landlordHouses;
+      return landlordHouses;
     }
     return active;
   }, [storedBoardingHouses, tenantAssociatedLandlordKey, getLandlordKeyFromHouse]);
@@ -870,8 +1055,8 @@ export default function UserRoomsPage() {
   const isTenantNew = user?.username === 'tenant_new' || user?.fullName?.includes('Nam');
   const userRoom = !isTenantNew
     ? (user?.room !== undefined && user?.room !== null
-        ? user.room
-        : (tenantRooms?.[user?.username] || tenantRooms?.[user?.fullName] || null))
+      ? user.room
+      : (tenantRooms?.[user?.username] || tenantRooms?.[user?.fullName] || null))
     : null;
 
   const myRentedRooms = useMemo(() => {
@@ -879,8 +1064,8 @@ export default function UserRoomsPage() {
     if (currentTenant?.status === 'INACTIVE' || currentTenant?.status === 'WAITING_ROOM') return [];
     const checkedOutRooms = (roomRequests || [])
       .filter(r => (r.type === 'CHECKOUT' || r.type === 'LEAVE_ROOM' || r.type === 'RETURN') &&
-                   (r.status === 'APPROVED' || r.status === 'CHECKOUT_SETTLED' || r.status === 'SETTLED' || r.settledAt) &&
-                   ((uName && (r.tenant?.toLowerCase().includes(uName) || r.tenantName?.toLowerCase().includes(uName))) || (uPhone && r.phone === uPhone)))
+        (r.status === 'APPROVED' || r.status === 'CHECKOUT_SETTLED' || r.status === 'SETTLED' || r.settledAt) &&
+        ((uName && (r.tenant?.toLowerCase().includes(uName) || r.tenantName?.toLowerCase().includes(uName))) || (uPhone && r.phone === uPhone)))
       .map(r => r.targetRoom || r.currentRoom || r.roomNumber);
 
     let list = [];
@@ -969,8 +1154,9 @@ export default function UserRoomsPage() {
         if (!h || getHouseDistrict(h) !== tenantLocation) return false;
       }
       const actualOcc = getActualOccupants(room);
-      if (filterStatus === 'AVAILABLE' && (room.status !== 'AVAILABLE' || actualOcc > 0)) return false;
-      if (filterStatus === 'HOLDING' && room.status !== 'HOLDING') return false;
+      const holdStatus = getRoomHoldingOrDepositStatus(room);
+      if (filterStatus === 'AVAILABLE' && (room.status !== 'AVAILABLE' || actualOcc > 0 || holdStatus.isHeld)) return false;
+      if (filterStatus === 'HOLDING' && (room.status !== 'HOLDING' && !holdStatus.isHeld)) return false;
       if (filterStatus === 'OCCUPIED' && room.status !== 'OCCUPIED' && actualOcc === 0) return false;
 
       if (priceRange === 'UNDER_3M' && room.price >= 3000000) return false;
@@ -987,28 +1173,34 @@ export default function UserRoomsPage() {
 
       return true;
     });
-  }, [rooms, selectedHouse, tenantLocation, tenantViewAllFlat, visibleHousesForUser, filterStatus, priceRange, searchTerm]);
+  }, [rooms, selectedHouse, tenantLocation, tenantViewAllFlat, visibleHousesForUser, filterStatus, priceRange, searchTerm, getRoomHoldingOrDepositStatus]);
 
   const handleDepositClick = (room) => {
-    if (myApprovedRequest && (myApprovedRequest.targetRoom === room.number || myApprovedRequest.roomNumber === room.number)) {
-      navigate('/');
+    const holdStatus = getRoomHoldingOrDepositStatus(room);
+    if (holdStatus.isHeld && !holdStatus.isMine) {
+      setActionToast(holdStatus.isDepositPaid
+        ? `⚠️ Phòng ${room.number} đã có khách nộp cọc giữ phòng và đang chờ hoàn tất ký hợp đồng! Vui lòng chọn phòng khác.`
+        : `⚠️ Phòng ${room.number} đang có khách đăng ký giữ chỗ và chờ Quản lý duyệt! Vui lòng chọn phòng khác.`
+      );
+      setTimeout(() => setActionToast(null), 4000);
       return;
     }
-    if (isRoomPendingApproval(room.number, room.houseCode)) {
-      const isMine = myPendingRequest && (myPendingRequest.targetRoom === room.number || myPendingRequest.roomNumber === room.number);
-      if (isMine) {
+
+    if (holdStatus.isHeld && holdStatus.isMine) {
+      if (holdStatus.isPending) {
         setActionToast('ℹ️ Đơn giữ trọ phòng ' + room.number + ' của bạn đang chờ Quản lý cơ sở phê duyệt hồ sơ!');
       } else {
-        setActionToast('⚠️ Phòng ' + room.number + ' đang có khách đăng ký giữ chỗ và chờ Quản lý duyệt. Vui lòng chọn phòng khác!');
+        navigate('/');
       }
       setTimeout(() => setActionToast(null), 4000);
       return;
     }
-    if (myPendingRequest && (myPendingRequest.targetRoom === room.number || myPendingRequest.roomNumber === room.number)) {
-      setActionToast('ℹ️ Đơn giữ trọ phòng ' + room.number + ' đang chờ Quản lý phê duyệt hồ sơ!');
-      setTimeout(() => setActionToast(null), 4000);
+
+    if (myApprovedRequest && isSameRoom(myApprovedRequest.targetRoom || myApprovedRequest.roomNumber, room.number)) {
+      navigate('/');
       return;
     }
+
     setRentModalRoom(room);
     setRentNote('');
   };
@@ -1057,27 +1249,27 @@ export default function UserRoomsPage() {
               {selectedHouse !== 'ALL'
                 ? `Cơ sở: ${visibleHousesForUser.find((h) => h.code === selectedHouse)?.name || selectedHouse}`
                 : tenantLocation && !tenantViewAllFlat
-                ? `Khu vực: ${tenantLocation}`
-                : 'Tra Cứu Phòng Trọ Theo Địa Chỉ & Cơ Sở'}
+                  ? `Khu vực: ${tenantLocation}`
+                  : 'Tra Cứu Phòng Trọ Theo Địa Chỉ & Cơ Sở'}
             </span>
           </div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
             {selectedHouse !== 'ALL'
               ? `Danh Sách Phòng: ${visibleHousesForUser.find((h) => h.code === selectedHouse)?.name || selectedHouse}`
               : tenantLocation && !tenantViewAllFlat
-              ? `Các Cơ Sở Nhà Trọ Tại ${tenantLocation}`
-              : tenantViewAllFlat
-              ? 'Toàn Bộ Phòng Đang Mở Cho Thuê'
-              : 'Tìm Trọ Theo Địa Chỉ & Cơ Sở'}
+                ? `Các Cơ Sở Nhà Trọ Tại ${tenantLocation}`
+                : tenantViewAllFlat
+                  ? 'Toàn Bộ Phòng Đang Mở Cho Thuê'
+                  : 'Tìm Trọ Theo Địa Chỉ & Cơ Sở'}
           </h1>
           <p className="text-slate-500 text-sm mt-0.5 font-medium">
             {selectedHouse !== 'ALL'
               ? `Địa chỉ: ${getHouseFullAddress(visibleHousesForUser.find((h) => h.code === selectedHouse))} • Quản lý: ${visibleHousesForUser.find((h) => h.code === selectedHouse)?.manager || 'Chủ trọ'}`
               : tenantLocation && !tenantViewAllFlat
-              ? 'Chọn cơ sở bạn muốn xem để khám phá các phòng trống, tiện ích và giá niêm yết.'
-              : tenantViewAllFlat
-              ? (tenantAssociatedLandlordKey ? `Đang hiển thị toàn bộ phòng thuộc chuỗi nhà trọ của ${getLandlordDisplayName(visibleHousesForUser[0])}.` : 'Đang hiển thị toàn bộ phòng của tất cả các cơ sở trên toàn sàn.')
-              : (tenantAssociatedLandlordKey ? `Hiển thị các cơ sở & phòng thuộc chuỗi nhà trọ của ${getLandlordDisplayName(visibleHousesForUser[0])} mà bạn đang đặt cọc / thuê.` : 'Chọn địa chỉ hoặc khu vực bạn muốn tìm phòng để xem các cơ sở của từng chủ trọ uy tín.')}
+                ? 'Chọn cơ sở bạn muốn xem để khám phá các phòng trống, tiện ích và giá niêm yết.'
+                : tenantViewAllFlat
+                  ? (tenantAssociatedLandlordKey ? `Đang hiển thị toàn bộ phòng thuộc chuỗi nhà trọ của ${getLandlordDisplayName(visibleHousesForUser[0])}.` : 'Đang hiển thị toàn bộ phòng của tất cả các cơ sở trên toàn sàn.')
+                  : (tenantAssociatedLandlordKey ? `Hiển thị các cơ sở & phòng thuộc chuỗi nhà trọ của ${getLandlordDisplayName(visibleHousesForUser[0])} mà bạn đang đặt cọc / thuê.` : 'Chọn địa chỉ hoặc khu vực bạn muốn tìm phòng để xem các cơ sở của từng chủ trọ uy tín.')}
           </p>
         </div>
 
@@ -1086,20 +1278,18 @@ export default function UserRoomsPage() {
           <button
             type="button"
             onClick={() => setShowPendingReviewModal(true)}
-            className={`flex items-center gap-2 px-4 py-2 border text-xs font-bold rounded-xl shadow-xs transition-all btn-press cursor-pointer ${
-              pendingReviewRequests.length > 0
-                ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-amber-500/20'
-                : 'bg-white border-purple-200 text-purple-700 hover:bg-purple-50'
-            }`}
+            className={`flex items-center gap-2 px-4 py-2 border text-xs font-bold rounded-xl shadow-xs transition-all btn-press cursor-pointer ${pendingReviewRequests.length > 0
+              ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-amber-500/20'
+              : 'bg-white border-purple-200 text-purple-700 hover:bg-purple-50'
+              }`}
           >
             <CheckSquare className="w-4 h-4" />
             <span>Yêu Cầu Chờ Bạn Duyệt</span>
             <span
-              className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                pendingReviewRequests.length > 0
-                  ? 'bg-white text-amber-800 shadow-2xs'
-                  : 'bg-purple-100 text-purple-700'
-              }`}
+              className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${pendingReviewRequests.length > 0
+                ? 'bg-white text-amber-800 shadow-2xs'
+                : 'bg-purple-100 text-purple-700'
+                }`}
             >
               {pendingReviewRequests.length}
             </span>
@@ -1171,11 +1361,10 @@ export default function UserRoomsPage() {
               setTenantViewAllFlat(false);
               setSelectedHouse('ALL');
             }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-              !tenantLocation && selectedHouse === 'ALL' && !tenantViewAllFlat
-                ? 'bg-purple-600 text-white font-extrabold shadow-sm'
-                : 'text-slate-600 hover:text-purple-700 hover:bg-purple-50'
-            }`}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all cursor-pointer ${!tenantLocation && selectedHouse === 'ALL' && !tenantViewAllFlat
+              ? 'bg-purple-600 text-white font-extrabold shadow-sm'
+              : 'text-slate-600 hover:text-purple-700 hover:bg-purple-50'
+              }`}
           >
             <span>🏠 Tất Cả Địa Chỉ</span>
           </button>
@@ -1186,11 +1375,10 @@ export default function UserRoomsPage() {
               <button
                 type="button"
                 onClick={() => setSelectedHouse('ALL')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                  selectedHouse === 'ALL'
-                    ? 'bg-purple-600 text-white font-extrabold shadow-sm'
-                    : 'text-slate-600 hover:text-purple-700 hover:bg-purple-50'
-                }`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all cursor-pointer ${selectedHouse === 'ALL'
+                  ? 'bg-purple-600 text-white font-extrabold shadow-sm'
+                  : 'text-slate-600 hover:text-purple-700 hover:bg-purple-50'
+                  }`}
               >
                 <MapPin className="w-3.5 h-3.5 text-rose-500" />
                 <span>{tenantLocation}</span>
@@ -1413,7 +1601,7 @@ export default function UserRoomsPage() {
               );
             })}
           </div>
-        </div>      ) : (
+        </div>) : (
         /* BƯỚC 3: Danh Sách Phòng Trọ */
         <div className="space-y-4">
           {/* Banner giới thiệu cơ sở hiện tại dành cho khách thuê ở Bước 3 */}
@@ -1462,11 +1650,10 @@ export default function UserRoomsPage() {
                 <button
                   key={st}
                   onClick={() => setFilterStatus(st)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    filterStatus === st
-                      ? 'bg-purple-600 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${filterStatus === st
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
                 >
                   {st === 'ALL' ? 'Tất Cả' : st === 'AVAILABLE' ? '🟢 Còn Trống' : '🔒 Đang Giữ Chỗ'}
                 </button>
@@ -1509,9 +1696,8 @@ export default function UserRoomsPage() {
                 return (
                   <div
                     key={room.id}
-                    className={`bento-card p-5 flex flex-col justify-between transition-all group bg-white ${
-                      isMyRented ? 'border-2 border-emerald-400 bg-emerald-50/20 shadow-md' : 'border-slate-200/80'
-                    }`}
+                    className={`bento-card p-5 flex flex-col justify-between transition-all group bg-white ${isMyRented ? 'border-2 border-emerald-400 bg-emerald-50/20 shadow-md' : 'border-slate-200/80'
+                      }`}
                   >
                     <div>
                       {/* Ảnh phòng */}
@@ -1526,13 +1712,14 @@ export default function UserRoomsPage() {
 
                         <div className="absolute top-2.5 right-2.5 z-10">
                           {(() => {
-                            const isPendingOther = isRoomPendingApproval(room.number, room.houseCode);
+                            const holdStatus = getRoomHoldingOrDepositStatus(room);
                             const curOccupants = getActualOccupants(room);
                             const maxOcc = room.maxOccupants || 2;
                             const freeSlots = maxOcc - curOccupants;
 
                             // NẾU PHÒNG THỰC TẾ ĐANG CÓ NGƯỜI Ở
-                            if (curOccupants > 0 || room.status === 'OCCUPIED') {
+                            const isEffectivelyOccupied = room.status !== 'AVAILABLE' && curOccupants > 0 && !isRoomCheckedOut(room.number);
+                            if (isEffectivelyOccupied) {
                               if (freeSlots > 0) {
                                 return (
                                   <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white backdrop-blur-md shadow-md flex items-center gap-1">
@@ -1548,19 +1735,19 @@ export default function UserRoomsPage() {
                               );
                             }
 
-                            if (room.status === 'HOLDING') {
-                              return (
-                                <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-amber-500/95 text-white backdrop-blur-md shadow-md animate-pulse">
-                                  🔒 Đang giữ chỗ
-                                </span>
-                              );
-                            }
-
-                            if (isPendingOther) {
+                            if (holdStatus.isHeld) {
+                              if (holdStatus.isDepositPaid) {
+                                return (
+                                  <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-purple-700/95 text-white backdrop-blur-md shadow-md flex items-center gap-1 animate-pulse">
+                                    <Lock className="w-3 h-3" />
+                                    <span>Đã nộp cọc</span>
+                                  </span>
+                                );
+                              }
                               return (
                                 <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-amber-500/95 text-white backdrop-blur-md shadow-md flex items-center gap-1 animate-pulse">
-                                  <span>⏳</span>
-                                  <span>Chờ duyệt</span>
+                                  <Lock className="w-3 h-3" />
+                                  <span>{holdStatus.isPending ? 'Chờ duyệt giữ chỗ' : 'Đang giữ chỗ'}</span>
                                 </span>
                               );
                             }
@@ -1601,11 +1788,29 @@ export default function UserRoomsPage() {
                               <Users className="w-3 h-3 text-indigo-600" />
                               <span>{getActualOccupants(room)}/{room.maxOccupants || 2} người</span>
                             </span>
-                            {getActualOccupants(room) > 0 && getActualOccupants(room) < (room.maxOccupants || 2) && (
-                              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                Còn trống {(room.maxOccupants || 2) - getActualOccupants(room)} chỗ
-                              </span>
-                            )}
+                            {(() => {
+                              const holdStatus = getRoomHoldingOrDepositStatus(room);
+                              if (holdStatus.isHeld) {
+                                return (
+                                  <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold border flex items-center gap-1 ${
+                                    holdStatus.isDepositPaid
+                                      ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                      : 'bg-amber-50 text-amber-700 border-amber-200'
+                                  }`}>
+                                    <Lock className="w-2.5 h-2.5" />
+                                    <span>{holdStatus.isDepositPaid ? 'Đã có người nộp cọc' : 'Đang giữ chỗ'}</span>
+                                  </span>
+                                );
+                              }
+                              if (getActualOccupants(room) > 0 && getActualOccupants(room) < (room.maxOccupants || 2)) {
+                                return (
+                                  <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    Còn trống {(room.maxOccupants || 2) - getActualOccupants(room)} chỗ
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
                         </div>
 
@@ -1638,108 +1843,87 @@ export default function UserRoomsPage() {
                         Chi Tiết
                       </button>
 
-                      {/* 1. Nếu phòng thực sự còn trống (không có ai ở và status là AVAILABLE) */}
-                      {room.status === 'AVAILABLE' && getActualOccupants(room) === 0 && !isMyRented && (
-                        (() => {
-                          const isThisApproved = myApprovedRequest && (myApprovedRequest.targetRoom === room.number || myApprovedRequest.roomNumber === room.number);
-                          const isThisPending = myPendingRequest && (myPendingRequest.targetRoom === room.number || myPendingRequest.roomNumber === room.number);
-                          const isPendingOther = isRoomPendingApproval(room.number, room.houseCode);
+                      {(() => {
+                        const holdStatus = getRoomHoldingOrDepositStatus(room);
+                        const curOcc = getActualOccupants(room);
+                        const maxOcc = room.maxOccupants || 2;
+                        const isFull = curOcc >= maxOcc;
 
-                          if (isThisApproved) {
+                        // 1. Nếu đây là phòng của chính khách hiện tại đang thuê
+                        if (isMyRented) {
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => navigate('/')}
+                              className="text-xs text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 font-bold px-3 py-2 rounded-xl transition-all flex-1 text-center btn-press cursor-pointer flex items-center justify-center gap-1"
+                            >
+                              <span>Phòng Của Bạn</span>
+                            </button>
+                          );
+                        }
+
+                        // 2. Nếu phòng ĐANG ĐƯỢC GIỮ CHỖ hoặc ĐÃ NỘP CỌC
+                        if (holdStatus.isHeld) {
+                          // Nếu do CHÍNH TÔI giữ chỗ / nộp cọc
+                          if (holdStatus.isMine) {
+                            if (holdStatus.isPending) {
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActionToast('ℹ️ Đơn giữ trọ đang chờ Quản lý phê duyệt. Hệ thống sẽ mở cổng nộp cọc ngay khi được duyệt!');
+                                    setTimeout(() => setActionToast(null), 4000);
+                                  }}
+                                  className="text-[11px] text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 font-bold px-2.5 py-2 rounded-xl shadow-xs transition-all flex-1 text-center cursor-pointer flex items-center justify-center gap-1"
+                                >
+                                  <Clock className="w-3.5 h-3.5" />
+                                  <span>Chờ Quản Lý Duyệt</span>
+                                </button>
+                              );
+                            }
                             return (
                               <button
                                 type="button"
                                 onClick={() => navigate('/')}
                                 className="text-xs text-white font-bold px-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-xl shadow-xs transition-all flex-1 text-center btn-press cursor-pointer flex items-center justify-center gap-1 animate-pulse"
                               >
-                                <span>Nộp Cọc & Ký HĐ</span>
+                                <span>{holdStatus.isDepositPaid ? 'Ký Hợp Đồng Ngay' : 'Nộp Cọc & Ký HĐ'}</span>
                                 <ArrowRight className="w-3.5 h-3.5" />
                               </button>
                             );
                           }
 
-                          if (isThisPending) {
-                            return (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setActionToast('ℹ️ Đơn giữ trọ đang chờ Quản lý phê duyệt. Hệ thống sẽ mở cổng nộp cọc ngay khi được duyệt!');
-                                  setTimeout(() => setActionToast(null), 4000);
-                                }}
-                                className="text-[11px] text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 font-bold px-2.5 py-2 rounded-xl shadow-xs transition-all flex-1 text-center cursor-pointer flex items-center justify-center gap-1"
-                              >
-                                <Clock className="w-3.5 h-3.5" />
-                                <span>Chờ Quản Lý Duyệt</span>
-                              </button>
-                            );
-                          }
-
-                          // Nếu có khách khác đang gửi đơn PENDING chờ duyệt -> Khóa nút với Khách khác
-                          if (isPendingOther) {
-                            return (
-                              <button
-                                type="button"
-                                disabled
-                                className="text-[11px] text-amber-900 bg-amber-100/90 border border-amber-300/80 font-bold px-2 py-2 rounded-xl shadow-2xs opacity-85 flex-1 text-center cursor-not-allowed flex items-center justify-center gap-1"
-                                title="Phòng này đang có khách gửi đơn đăng ký giữ chỗ và đang chờ Quản lý duyệt hồ sơ"
-                              >
-                                <Clock className="w-3.5 h-3.5 text-amber-700" />
-                                <span>Đang Có Người Chờ Duyệt</span>
-                              </button>
-                            );
-                          }
-
-                          // Nếu phòng đang chờ ký HĐ điện tử (khách nộp cọc chưa ký) -> Khóa nút đối với khách khác
-                          if (isRoomAwaitingContractSignature(room)) {
-                            return (
-                              <button
-                                type="button"
-                                disabled
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  setActionToast('⚠️ Phòng ' + room.number + ' đang có khách nộp cọc chờ hoàn tất ký hợp đồng điện tử. Sau khi ký xong HĐ mới mở đăng ký ở ghép!');
-                                  setTimeout(() => setActionToast(null), 4000);
-                                }}
-                                title="Phòng đang có khách nộp cọc chờ hoàn tất ký hợp đồng điện tử. Sau khi ký HĐ xong mới mở nhận ở ghép."
-                                className="text-[11px] text-slate-400 bg-slate-100 border border-slate-200 font-bold px-2 py-2 rounded-xl opacity-60 flex-1 text-center cursor-not-allowed flex items-center justify-center gap-1 select-none"
-                              >
-                                <Lock className="w-3.5 h-3.5 text-slate-400" />
-                                <span>Chờ Ký HĐ Mới Mở Ở Ghép</span>
-                              </button>
-                            );
-                          }
-
+                          // Nếu do KHÁCH KHÁC giữ chỗ / nộp cọc -> KHÓA NÚT VỚI KHÁCH NÀY!
                           return (
                             <button
                               type="button"
-                              onClick={() => handleDepositClick(room)}
-                              className="text-xs text-white font-bold px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 rounded-xl shadow-xs transition-all flex-1 text-center btn-press cursor-pointer"
+                              disabled
+                              onClick={(e) => {
+                                e.preventDefault();
+                                setActionToast(holdStatus.isDepositPaid
+                                  ? `⚠️ Phòng ${room.number} đã có khách nộp tiền cọc giữ phòng và đang chờ ký HĐ điện tử. Không thể đăng ký giữ cọc phòng này!`
+                                  : `⚠️ Phòng ${room.number} đang có khách đăng ký giữ chỗ và chờ Quản lý duyệt hồ sơ!`
+                                );
+                                setTimeout(() => setActionToast(null), 4000);
+                              }}
+                              className={`text-[11px] font-bold px-2 py-2 rounded-xl border opacity-85 flex-1 text-center cursor-not-allowed flex items-center justify-center gap-1 select-none ${
+                                holdStatus.isDepositPaid
+                                  ? 'bg-purple-50 text-purple-800 border-purple-200'
+                                  : 'bg-amber-50 text-amber-800 border-amber-200'
+                              }`}
+                              title={holdStatus.isDepositPaid
+                                ? 'Phòng này đã có khách nộp tiền cọc và đang chờ ký hợp đồng'
+                                : 'Phòng này đang có khách gửi đơn đăng ký giữ chỗ chờ duyệt'
+                              }
                             >
-                              Giữ Trọ Đặt Cọc
+                              <Lock className="w-3.5 h-3.5" />
+                              <span>{holdStatus.isDepositPaid ? 'Đã Có Người Nộp Cọc' : 'Đang Có Người Giữ Cọc'}</span>
                             </button>
                           );
-                        })()
-                      )}
+                        }
 
-                      {/* 2. Nếu phòng ĐANG CÓ NGƯỜI Ở HOẶC LÀ PHÒNG CỦA BẠN (OCCUPIED hoặc getActualOccupants > 0) */}
-                      {(room.status !== 'AVAILABLE' || getActualOccupants(room) > 0 || isMyRented) && (
-                        (() => {
-                          const curOcc = getActualOccupants(room);
-                          const maxOcc = room.maxOccupants || 2;
-                          const isFull = curOcc >= maxOcc;
-
-                          if (isMyRented) {
-                            return (
-                              <button
-                                type="button"
-                                onClick={() => navigate('/')}
-                                className="text-xs text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 font-bold px-3 py-2 rounded-xl transition-all flex-1 text-center btn-press cursor-pointer flex items-center justify-center gap-1"
-                              >
-                                <span>Phòng Của Bạn</span>
-                              </button>
-                            );
-                          }
-
+                        // 3. Nếu phòng ĐANG CÓ NGƯỜI Ở (curOcc > 0)
+                        if (curOcc > 0) {
                           if (isFull) {
                             return (
                               <button
@@ -1747,16 +1931,16 @@ export default function UserRoomsPage() {
                                 disabled
                                 className="text-[11px] text-slate-400 bg-slate-100 border border-slate-200 font-bold px-2 py-2 rounded-xl opacity-75 flex-1 text-center cursor-not-allowed flex items-center justify-center gap-1"
                               >
+                                <Lock className="w-3.5 h-3.5 text-slate-400" />
                                 <span>Đã Kín Chỗ ({curOcc}/{maxOcc})</span>
                               </button>
                             );
                           }
 
                           // Phòng chưa đầy (ví dụ 1/2 người): Có thể xin vào ở ghép
-                          const uName = (user?.fullName || '').toLowerCase().trim();
-                          const uPhone = (user?.phone || '').trim();
                           const myRoommateReq = (roomRequests || []).find((req) => {
                             if (req.type !== 'ROOMMATE') return false;
+                            if (req.status === 'CANCELLED' || req.status === 'CANCELLED_BY_CANDIDATE' || req.status === 'CANCELLED_BY_TENANT') return false;
                             const reqRoom = String(req.targetRoom || req.roomNumber || '').replace(/^P\.?/i, '').trim();
                             const currRoom = String(room.number || '').replace(/^P\.?/i, '').trim();
                             if (reqRoom !== currRoom) return false;
@@ -1812,46 +1996,37 @@ export default function UserRoomsPage() {
                               );
                             }
 
-                            if (myRoommateReq.status === 'REJECTED_BY_ROOMMATES') {
+                            if (myRoommateReq.status === 'REJECTED_BY_ROOMMATES' || myRoommateReq.status === 'REJECTED') {
                               return (
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setActionToast('❌ Thành viên trong phòng đã từ chối đơn xin ở ghép này.');
-                                    setTimeout(() => setActionToast(null), 4000);
+                                    setIsReapplying(true);
+                                    setJoinRoomModalData(room);
+                                    setJoinPhone(user?.phone || myRoommateReq.phone || '0987.654.321');
+                                    setJoinCccd(user?.cccd || myRoommateReq.cccd || '001201012345');
+                                    setJoinHometown(user?.hometown || myRoommateReq.hometown || 'Hà Nội');
+                                    setJoinNote(
+                                      myRoommateReq.note
+                                        ? `(Gửi lại) ${myRoommateReq.note}`
+                                        : 'Chào các bạn, mình gửi lại lời giới thiệu để xin ở ghép: tính tình gọn gàng, tôn trọng không gian chung, chia sẻ chi phí minh bạch.'
+                                    );
                                   }}
-                                  className="text-[11px] text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 font-bold px-2 py-2 rounded-xl transition-all flex-1 text-center cursor-pointer flex items-center justify-center gap-1"
+                                  title="Đơn trước đã bị từ chối. Bấm vào đây để cập nhật lời giới thiệu và xin ở ghép lại!"
+                                  className="text-[11px] text-white font-bold px-2 py-2 bg-gradient-to-r from-amber-600 via-rose-600 to-red-600 hover:from-amber-700 hover:to-red-700 rounded-xl shadow-xs transition-all flex-1 text-center btn-press cursor-pointer flex items-center justify-center gap-1.5 animate-pulse"
                                 >
-                                  <span>Phòng Từ Chối</span>
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                  <span>Xin Lại Ở Ghép</span>
                                 </button>
                               );
                             }
-                          }
-
-                          // Nếu phòng đang chờ ký HĐ điện tử (khách nộp cọc chưa ký) -> Khóa nút xin ở ghép đối với khách khác
-                          if (isRoomAwaitingContractSignature(room)) {
-                            return (
-                              <button
-                                type="button"
-                                disabled
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  setActionToast('⚠️ Phòng ' + room.number + ' đang có khách nộp cọc chờ hoàn tất ký hợp đồng điện tử. Sau khi ký xong HĐ mới mở đăng ký ở ghép!');
-                                  setTimeout(() => setActionToast(null), 4000);
-                                }}
-                                title="Phòng đang có khách nộp cọc chờ hoàn tất ký hợp đồng điện tử. Sau khi ký HĐ xong mới mở nhận ở ghép."
-                                className="text-[11px] text-slate-400 bg-slate-100 border border-slate-200 font-bold px-2 py-2 rounded-xl opacity-60 flex-1 text-center cursor-not-allowed flex items-center justify-center gap-1 select-none"
-                              >
-                                <Lock className="w-3.5 h-3.5 text-slate-400" />
-                                <span>Chờ Ký HĐ Mới Mở Ở Ghép</span>
-                              </button>
-                            );
                           }
 
                           return (
                             <button
                               type="button"
                               onClick={() => {
+                                setIsReapplying(false);
                                 setJoinRoomModalData(room);
                                 setJoinPhone(user?.phone || '0987.654.321');
                                 setJoinCccd(user?.cccd || '001201012345');
@@ -1864,8 +2039,19 @@ export default function UserRoomsPage() {
                               <span>Xin Vào Ở Ghép</span>
                             </button>
                           );
-                        })()
-                      )}
+                        }
+
+                        // 4. Phòng hoàn toàn trống và chưa có ai giữ chỗ
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => handleDepositClick(room)}
+                            className="text-xs text-white font-bold px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 rounded-xl shadow-xs transition-all flex-1 text-center btn-press cursor-pointer"
+                          >
+                            Giữ Trọ Đặt Cọc
+                          </button>
+                        );
+                      })()}
                     </div>
                   </div>
                 );
@@ -1948,33 +2134,69 @@ export default function UserRoomsPage() {
                 Đóng
               </button>
 
-              {/* Nếu phòng đang chờ ký HĐ (khách nộp cọc chưa ký) -> Khóa nút với khách khác */}
-              {isRoomAwaitingContractSignature(selectedRoomDetails) && !myRentedRooms.includes(selectedRoomDetails.number) ? (
-                <button
-                  type="button"
-                  disabled
-                  className="px-5 py-2 font-bold bg-slate-100 text-slate-400 border border-slate-200 rounded-xl cursor-not-allowed flex items-center gap-1.5 opacity-60 select-none"
-                  title="Phòng đang có khách nộp cọc chờ hoàn tất ký hợp đồng điện tử. Sau khi ký HĐ xong mới mở nhận ở ghép."
-                >
-                  <Lock className="w-4 h-4 text-slate-400" />
-                  <span>Chờ Ký HĐ Mới Mở Ở Ghép</span>
-                </button>
-              ) : (
-                <>
-                  {selectedRoomDetails.status === 'AVAILABLE' && getActualOccupants(selectedRoomDetails) === 0 && !myRentedRooms.includes(selectedRoomDetails.number) && (
+              {(() => {
+                const holdStatus = getRoomHoldingOrDepositStatus(selectedRoomDetails);
+                const curOcc = getActualOccupants(selectedRoomDetails);
+                const maxOcc = selectedRoomDetails.maxOccupants || 2;
+                const isFull = curOcc >= maxOcc;
+                const isMyRoom = myRentedRooms.includes(selectedRoomDetails.number) || isSameRoom(myCurrentRoom, selectedRoomDetails.number);
+
+                if (isMyRoom) {
+                  return (
                     <button
                       type="button"
                       onClick={() => {
-                        const r = selectedRoomDetails;
                         setSelectedRoomDetails(null);
-                        handleDepositClick(r);
+                        navigate('/');
                       }}
-                      className="px-5 py-2 font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl shadow-md cursor-pointer"
+                      className="px-5 py-2 font-bold bg-emerald-600 text-white rounded-xl shadow-md cursor-pointer"
                     >
-                      Giữ Trọ Đặt Cọc (1 Tháng Tiền Trọ)
+                      Phòng Của Bạn
                     </button>
-                  )}
-                  {(selectedRoomDetails.status !== 'AVAILABLE' || getActualOccupants(selectedRoomDetails) > 0) && getActualOccupants(selectedRoomDetails) < (selectedRoomDetails.maxOccupants || 2) && !myRentedRooms.includes(selectedRoomDetails.number) && (
+                  );
+                }
+
+                if (holdStatus.isHeld) {
+                  if (holdStatus.isMine) {
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedRoomDetails(null);
+                          navigate('/');
+                        }}
+                        className="px-5 py-2 font-bold bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl shadow-md cursor-pointer animate-pulse"
+                      >
+                        {holdStatus.isDepositPaid ? 'Ký Hợp Đồng Nhận Phòng' : 'Nộp Cọc & Ký Hợp Đồng'}
+                      </button>
+                    );
+                  }
+                  return (
+                    <button
+                      type="button"
+                      disabled
+                      className="px-5 py-2 font-bold bg-amber-100 text-amber-900 border border-amber-300 rounded-xl cursor-not-allowed flex items-center gap-1.5 opacity-80 select-none"
+                    >
+                      <Lock className="w-4 h-4 text-amber-700" />
+                      <span>{holdStatus.isDepositPaid ? 'Phòng Đã Có Người Nộp Cọc' : 'Phòng Đang Có Người Giữ Cọc'}</span>
+                    </button>
+                  );
+                }
+
+                if (curOcc > 0) {
+                  if (isFull) {
+                    return (
+                      <button
+                        type="button"
+                        disabled
+                        className="px-5 py-2 font-bold bg-slate-100 text-slate-400 border border-slate-200 rounded-xl cursor-not-allowed flex items-center gap-1.5 opacity-70"
+                      >
+                        <Lock className="w-4 h-4 text-slate-400" />
+                        <span>Phòng Đã Đủ Người ({curOcc}/{maxOcc})</span>
+                      </button>
+                    );
+                  }
+                  return (
                     <button
                       type="button"
                       onClick={() => {
@@ -1991,9 +2213,23 @@ export default function UserRoomsPage() {
                       <UserPlus className="w-4 h-4" />
                       <span>Xin Vào Ở Ghép</span>
                     </button>
-                  )}
-                </>
-              )}
+                  );
+                }
+
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const r = selectedRoomDetails;
+                      setSelectedRoomDetails(null);
+                      handleDepositClick(r);
+                    }}
+                    className="px-5 py-2 font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl shadow-md cursor-pointer"
+                  >
+                    Giữ Trọ Đặt Cọc (1 Tháng Tiền Trọ)
+                  </button>
+                );
+              })()}
             </div>
           </div>
         </Modal>
@@ -2235,8 +2471,8 @@ export default function UserRoomsPage() {
                               const confirmMsg = (req.type === 'CHECKOUT' || req.type === 'LEAVE_ROOM')
                                 ? 'Bạn có chắc chắn muốn rút lại đơn trả phòng để tiếp tục ở không?'
                                 : (req.type === 'ROOMMATE' || req.type === 'JOIN_ROOM')
-                                ? 'Bạn có chắc chắn muốn rút lại đơn xin vào ở ghép không?'
-                                : 'Bạn có chắc chắn muốn rút lại đơn này không?';
+                                  ? 'Bạn có chắc chắn muốn rút lại đơn xin vào ở ghép không?'
+                                  : 'Bạn có chắc chắn muốn rút lại đơn này không?';
                               if (window.confirm(confirmMsg)) {
                                 const res = cancelRoomRequest(req.id);
                                 if (res?.message) {
@@ -2249,6 +2485,50 @@ export default function UserRoomsPage() {
                           >
                             <span>↩️</span>
                             <span>Rút lại đơn</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {isRejected && (
+                        <div className="pt-1.5 flex justify-end items-center border-t border-slate-200/60 gap-2">
+                          {(req.type === 'ROOMMATE' || req.type === 'JOIN_ROOM') && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowRequestsHistory(false);
+                                const targetRoomObj = (rooms || []).find((r) => {
+                                  const rNum = String(r.number || '').replace(/^P\.?/i, '').trim();
+                                  const reqNum = String(req.targetRoom || req.roomNumber || '').replace(/^P\.?/i, '').trim();
+                                  return rNum === reqNum;
+                                });
+                                if (targetRoomObj) {
+                                  setIsReapplying(true);
+                                  setJoinRoomModalData(targetRoomObj);
+                                  setJoinPhone(user?.phone || req.phone || '0987.654.321');
+                                  setJoinCccd(user?.cccd || req.cccd || '001201012345');
+                                  setJoinHometown(user?.hometown || req.hometown || 'Hà Nội');
+                                  setJoinNote(req.note ? `(Gửi lại) ${req.note}` : 'Chào các bạn, mình gửi lại lời giới thiệu để xin ở ghép.');
+                                }
+                              }}
+                              className="px-2.5 py-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-600 hover:text-white rounded-lg border border-indigo-200 transition-all flex items-center gap-1 shadow-xs cursor-pointer"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              <span>Xin lại ở ghép</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm('Bạn có chắc muốn xóa lịch sử đơn bị từ chối này không?')) {
+                                cancelRoomRequest(req.id, { reason: 'Khách xóa đơn bị từ chối khỏi lịch sử' });
+                                setActionToast('Đã xóa đơn bị từ chối khỏi danh sách.');
+                                setTimeout(() => setActionToast(null), 3500);
+                              }
+                            }}
+                            className="px-2.5 py-1 text-[11px] font-bold text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-slate-200 transition-all flex items-center gap-1 cursor-pointer"
+                          >
+                            <X className="w-3 h-3" />
+                            <span>Xóa đơn này</span>
                           </button>
                         </div>
                       )}
@@ -2297,11 +2577,10 @@ export default function UserRoomsPage() {
                     <div key={req.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-3">
                       {/* Tiêu đề loại yêu cầu */}
                       <div className="flex items-center justify-between gap-2">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                          isCheckout ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${isCheckout ? 'bg-amber-100 text-amber-800 border border-amber-300' :
                           isRoommate ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' :
-                          'bg-purple-100 text-purple-700 border border-purple-200'
-                        }`}>
+                            'bg-purple-100 text-purple-700 border border-purple-200'
+                          }`}>
                           {isCheckout ? '🚪 Biểu Quyết Trả Phòng' : isRoommate ? '👤 Xin Vào Ở Ghép' : '👑 Chuyển Quyền Đại Diện HĐ'}
                         </span>
                         <span className="font-semibold text-slate-400 text-[10px]">{req.date || new Date().toLocaleDateString('vi-VN')}</span>
@@ -2416,12 +2695,12 @@ export default function UserRoomsPage() {
             {/* Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold">
-                  <UserPlus className="w-5 h-5" />
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold ${isReapplying ? 'bg-amber-100 text-amber-700' : 'bg-purple-100 text-purple-700'}`}>
+                  {isReapplying ? <RotateCcw className="w-5 h-5" /> : <UserPlus className="w-5 h-5" />}
                 </div>
                 <div>
                   <h3 className="font-extrabold text-sm text-slate-900">
-                    Xin Vào Ở Ghép - Phòng {joinRoomModalData.number}
+                    {isReapplying ? 'Xin Lại Ở Ghép' : 'Xin Vào Ở Ghép'} - Phòng {joinRoomModalData.number}
                   </h3>
                   <p className="text-[11px] text-slate-500 font-medium">
                     {joinRoomModalData.house || joinRoomModalData.houseCode}
@@ -2484,6 +2763,19 @@ export default function UserRoomsPage() {
                 <strong>Vòng 2 (Pháp lý Quản lý):</strong> Khi phòng đã đồng ý, <strong>Ban Quản Lý / Chủ trọ</strong> sẽ thẩm định hồ sơ CCCD, duyệt tiếp nhận và cấp quyền cư dân chính thức cho bạn.
               </p>
             </div>
+
+            {/* Banner hỗ trợ khi Nộp Lại Đơn */}
+            {isReapplying && (
+              <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <div className="font-bold text-amber-800">Đơn trước đây đã bị phòng từ chối:</div>
+                  <div className="text-amber-700 leading-relaxed">
+                    Bạn đang nộp lại đơn xin vào ở ghép phòng này. Hãy kiểm tra lại thông tin và bổ sung lời giới thiệu chi tiết (tính cách, lối sống gọn gàng, giờ giấc sinh hoạt) để các bạn cùng phòng hiểu rõ và đồng ý duyệt cho bạn nhé!
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Form thông tin người xin */}
             <form onSubmit={handleConfirmJoinRoom} className="space-y-3 pt-1">
@@ -2560,8 +2852,8 @@ export default function UserRoomsPage() {
                   type="submit"
                   className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold rounded-xl shadow-md transition-all btn-press cursor-pointer flex items-center gap-1.5"
                 >
-                  <UserPlus className="w-4 h-4" />
-                  <span>Gửi Đơn Xin Vào Ở Ghép</span>
+                  {isReapplying ? <RotateCcw className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+                  <span>{isReapplying ? 'Gửi Lại Đơn Xin Ở Ghép' : 'Gửi Đơn Xin Vào Ở Ghép'}</span>
                 </button>
               </div>
             </form>

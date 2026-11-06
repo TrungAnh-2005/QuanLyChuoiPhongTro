@@ -477,7 +477,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
             desc: `Bạn ${req.tenant} (SĐT: ${req.phone}) vừa gửi đơn xin vào ở ghép: "${req.note}". Hãy vào trang Phòng Trọ để biểu quyết.`,
             time: req.date || 'Hôm nay',
             defaultRead: false,
-            link: '/rooms'
+            link: '/rooms?action=review-pending'
           });
         } else if (isTargetMyRoom && req.status === 'ROOMMATES_APPROVED') {
           addNotif({
@@ -501,7 +501,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
             desc: `Bạn ${req.tenant} đã yêu cầu trả phòng trước hạn. Tất cả thành viên trong phòng cùng đồng ý thì mới chuyển BQL. Hãy vào Cổng Cư Dân biểu quyết.`,
             time: req.date || 'Hôm nay',
             defaultRead: false,
-            link: '/user'
+            link: '/rooms?action=review-pending'
           });
         } else if (isTargetMyRoom && req.status === 'REJECTED_BY_ROOMMATES') {
           addNotif({
@@ -635,7 +635,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
               time: req.date || 'Hôm nay',
               timestampMs: typeof req.id === 'number' && req.id > 1600000000000 ? req.id : Date.now(),
               defaultRead: false,
-              link: '/rooms'
+              link: isMeRequester ? '/rooms?action=history' : '/rooms?action=review-pending'
             });
           } else if (req.status === 'WAITING_ROOMMATES') {
             const isMeRequester = (fullName || '').toLowerCase().includes((req.tenant || '').toLowerCase());
@@ -651,7 +651,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
               time: req.date || 'Hôm nay',
               timestampMs: typeof req.id === 'number' && req.id > 1600000000000 ? req.id : Date.now(),
               defaultRead: false,
-              link: '/rooms'
+              link: isMeRequester ? '/rooms?action=history' : '/rooms?action=review-pending'
             });
           } else if (req.status === 'ROOMMATES_APPROVED') {
             addNotif({
@@ -662,7 +662,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
               time: req.date || 'Hôm nay',
               timestampMs: typeof req.id === 'number' && req.id > 1600000000000 ? req.id : Date.now(),
               defaultRead: false,
-              link: '/rooms'
+              link: isMeRequester ? '/rooms?action=history' : '/rooms?action=review-pending'
             });
           } else {
             addNotif({
@@ -673,7 +673,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
               time: req.date || 'Hôm nay',
               timestampMs: typeof req.id === 'number' && req.id > 1600000000000 ? req.id : Date.now(),
               defaultRead: false,
-              link: '/rooms'
+              link: isMeRequester ? '/rooms?action=history' : '/rooms?action=review-pending'
             });
           }
         } else if (req.type === 'RENEW_CONTRACT') {
@@ -747,9 +747,33 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
     return String(val);
   };
 
-  const tenant1Room = formatRooms(tenantRooms?.tenant1 ?? tenantRooms?.['Nguyễn Văn An'] ?? (user?.username === 'tenant1' ? user.rooms : ['P.101']), '');
-  const tenant2Room = formatRooms(tenantRooms?.tenant2 ?? tenantRooms?.['Phạm Minh Cường'] ?? (user?.username === 'tenant2' ? user.rooms : ['P.103']), '');
-  const tenantNewRoom = formatRooms(tenantRooms?.tenant_new ?? tenantRooms?.['Hoàng Văn Nam'] ?? (user?.username === 'tenant_new' ? user.rooms : []), '');
+  const getTenantRoomDisplay = (username, fullName, defaultRoom) => {
+    // 1. Kiểm tra trực tiếp trong contracts xem có hợp đồng ACTIVE không
+    const activeContract = (dataContext.contracts || []).find((c) => {
+      if (c.status !== 'ACTIVE') return false;
+      const cName = (c.tenantName || '').toLowerCase().trim();
+      return (fullName && cName.includes(fullName.toLowerCase().trim())) || (username && cName.includes(username));
+    });
+    if (activeContract?.roomNumber) return activeContract.roomNumber;
+
+    // 2. Kiểm tra trong tenantRooms từ context
+    const tr = tenantRooms?.[username] ?? tenantRooms?.[fullName];
+    if (tr !== undefined && tr !== null) {
+      const formatted = formatRooms(tr, '');
+      if (formatted) return formatted;
+    }
+
+    // 3. Nếu là current user và có user.rooms
+    if (user?.username === username && user?.rooms && user.rooms.length > 0) {
+      return formatRooms(user.rooms, '');
+    }
+
+    return defaultRoom || '';
+  };
+
+  const tenant1Room = getTenantRoomDisplay('tenant1', 'Nguyễn Văn An', 'P.101');
+  const tenant2Room = getTenantRoomDisplay('tenant2', 'Phạm Minh Cường', 'P.103');
+  const tenantNewRoom = getTenantRoomDisplay('tenant_new', 'Hoàng Văn Nam', '');
 
   const accountKey = user?.username || user?.role || 'ADMIN';
 
@@ -1111,8 +1135,30 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
                       onClick={() => {
                         markSingleAsRead(notif.id);
                         setShowDropdown(false);
+
+                        const titleLower = (notif.title || '').toLowerCase();
+                        const idLower = String(notif.id || '').toLowerCase();
+                        const linkLower = String(notif.link || '').toLowerCase();
+
+                        // Nếu là thông báo biểu quyết hoặc yêu cầu chờ người này duyệt
+                        const isReviewPendingNotif =
+                          linkLower.includes('action=review-pending') ||
+                          idLower.includes('vote') ||
+                          titleLower.includes('biểu quyết') ||
+                          titleLower.includes('cần biểu quyết') ||
+                          titleLower.includes('chờ bạn duyệt');
+
+                        const reqIdMatch = String(notif.id).match(/req-(\d+)/) || (notif.link && notif.link.match(/requestId=(\d+)/));
+                        const targetReqId = reqIdMatch ? Number(reqIdMatch[1]) : null;
+
+                        if (isReviewPendingNotif) {
+                          window.dispatchEvent(new CustomEvent('rental:open-pending-review', { detail: { notif, requestId: targetReqId, action: 'review-pending' } }));
+                          window.dispatchEvent(new CustomEvent('rental:open-requests-manager', { detail: { notif, requestId: targetReqId, action: 'review-pending' } }));
+                          return;
+                        }
+
                         const isReqNotif =
-                          (notif.link && notif.link.includes('action=review-requests')) ||
+                          linkLower.includes('action=review-requests') ||
                           String(notif.id).includes('-req-') ||
                           (notif.title && (
                             notif.title.includes('thuê') ||
@@ -1122,9 +1168,7 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
                             notif.title.includes('ở ghép')
                           ));
                         if (isReqNotif) {
-                          const reqIdMatch = String(notif.id).match(/req-(\d+)/) || (notif.link && notif.link.match(/requestId=(\d+)/));
-                          const targetReqId = reqIdMatch ? Number(reqIdMatch[1]) : null;
-                          window.dispatchEvent(new CustomEvent('rental:open-requests-manager', { detail: { notif, requestId: targetReqId } }));
+                          window.dispatchEvent(new CustomEvent('rental:open-requests-manager', { detail: { notif, requestId: targetReqId, action: 'history' } }));
                         }
                       }}
                       className={`p-3 sm:p-3.5 flex items-start gap-2.5 sm:gap-3 transition-colors hover:bg-slate-50 block ${
