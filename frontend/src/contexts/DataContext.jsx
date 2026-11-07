@@ -3545,7 +3545,7 @@ export const DataProvider = ({ children }) => {
     const newRoomEntry = {
       id: Date.now(),
       number: roomData.number,
-      houseCode: targetHouseCode,
+      houseCode: roomData?.houseCode || targetHouseCode,
       house: facilityName,
       floor: roomData.floor || 'Tầng 1',
       price: Number(roomData.price) || 3500000,

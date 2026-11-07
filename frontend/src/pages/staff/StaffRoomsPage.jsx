@@ -335,12 +335,15 @@ export default function StaffRoomsPage() {
   // Lọc phòng thuộc quyền quản lý
   const staffRooms = useMemo(() => {
     if (user?.role === 'ADMIN') return rooms;
-    return rooms.filter((r) => staffHouseCodes.includes(r.houseCode));
+    return rooms.filter((r) =>
+      staffHouseCodes.some((code) => isSameHouse(code, r.houseCode) || code === r.houseCode) ||
+      (staffHouseCodes.some((c) => isSameHouse(c, 'CS-01')) && !r.houseCode)
+    );
   }, [rooms, staffHouseCodes, user?.role]);
 
   const filteredRooms = useMemo(() => {
     return staffRooms.filter((r) => {
-      if (selectedHouse !== 'ALL' && r.houseCode !== selectedHouse) return false;
+      if (selectedHouse !== 'ALL' && !isSameHouse(r.houseCode, selectedHouse) && r.houseCode !== selectedHouse) return false;
       if (filterStatus !== 'ALL' && r.status !== filterStatus) return false;
       if (searchTerm) {
         const q = searchTerm.toLowerCase();
@@ -574,7 +577,7 @@ export default function StaffRoomsPage() {
     const targetHouses =
       selectedHouse === 'ALL'
         ? staffManageableHouses
-        : staffManageableHouses.filter((h) => h.code === selectedHouse);
+        : staffManageableHouses.filter((h) => isSameHouse(h.code, selectedHouse) || h.code === selectedHouse);
 
     targetHouses.forEach((h) => {
       houseMap.set(h.code, {
@@ -588,7 +591,16 @@ export default function StaffRoomsPage() {
 
     filteredRooms.forEach((r) => {
       const code = r.houseCode || 'CS-01';
-      if (!houseMap.has(code)) {
+      let foundEntry = null;
+      for (const [hCode, grp] of houseMap.entries()) {
+        if (isSameHouse(hCode, code) || hCode === code) {
+          foundEntry = grp;
+          break;
+        }
+      }
+      if (foundEntry) {
+        foundEntry.rooms.push(r);
+      } else {
         const matchedHouse = staffManageableHouses.find((h) => isSameHouse(h.code, code));
         const resolvedCode = matchedHouse ? matchedHouse.code : code;
         if (!houseMap.has(resolvedCode)) {
@@ -601,8 +613,6 @@ export default function StaffRoomsPage() {
           });
         }
         houseMap.get(resolvedCode).rooms.push(r);
-      } else {
-        houseMap.get(code).rooms.push(r);
       }
     });
 
@@ -972,8 +982,8 @@ export default function StaffRoomsPage() {
 
         {staffManageableHouses.map((h) => {
           const theme = getHouseTheme(h.code);
-          const count = rooms.filter((r) => r.houseCode === h.code).length;
-          const isSelected = selectedHouse === h.code;
+          const count = rooms.filter((r) => isSameHouse(r.houseCode, h.code) || r.houseCode === h.code).length;
+          const isSelected = selectedHouse === h.code || isSameHouse(selectedHouse, h.code);
           return (
             <button
               key={h.code}
