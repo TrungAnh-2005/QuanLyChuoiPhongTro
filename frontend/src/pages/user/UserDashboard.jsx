@@ -138,10 +138,21 @@ export default function UserDashboard() {
   const hasApprovedRentalRequest = useMemo(() => {
     const uName = (user?.fullName || '').toLowerCase().trim();
     const uPhone = (user?.phone || '').trim();
+    const uUsername = (user?.username || '').toLowerCase().trim();
+
     return (roomRequests || []).find((r) => {
       const isRent = (r.type === 'RENT' || r.type === 'NEW_RENT');
       if (!isRent || r.status !== 'APPROVED') return false;
-      const matchUser = ((uName && r.tenant?.toLowerCase().includes(uName)) || (uPhone && r.phone === uPhone) || (user?.username === 'tenant_new'));
+
+      const rTenant = (r.tenant || r.tenantName || '').toLowerCase().trim();
+      const rPhone = (r.phone || r.tenantPhone || '').trim();
+      const rUsername = (r.username || '').toLowerCase().trim();
+
+      const matchUser = (
+        (uUsername && rUsername === uUsername) ||
+        (uName && (rTenant.includes(uName) || uName.includes(rTenant))) ||
+        (uPhone && rPhone === uPhone)
+      );
       if (!matchUser) return false;
 
       const targetRoom = r.targetRoom || r.roomNumber;
@@ -172,21 +183,30 @@ export default function UserDashboard() {
     const list = contracts || [];
     const uName = (user?.fullName || '').toLowerCase().trim();
     const uPhone = (user?.phone || '').trim();
+    const uUsername = (user?.username || '').toLowerCase().trim();
 
-    // 1. Ưu tiên số 1: Hợp đồng PENDING_DEPOSIT hoặc PENDING_SIGN
+    const matchesUser = (c) => {
+      if (!c) return false;
+      const cTenant = (c.tenantName || '').toLowerCase().trim();
+      const cPhone = (c.tenantPhone || '').trim();
+      const cUser = (c.tenantUsername || c.username || '').toLowerCase().trim();
+      return (
+        (uUsername && cUser === uUsername) ||
+        (uName && (cTenant.includes(uName) || uName.includes(cTenant))) ||
+        (uPhone && cPhone === uPhone)
+      );
+    };
+
+    // 1. Ưu tiên số 1: Hợp đồng PENDING_DEPOSIT hoặc PENDING_SIGN của chính khách này
     const pendingContract = list.find((c) =>
-      (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN') &&
-      ((uName && c.tenantName?.toLowerCase().includes(uName)) ||
-        (uPhone && c.tenantPhone === uPhone) ||
-        (user?.username === 'tenant_new' && (c.tenantName?.toLowerCase().includes('nam') || c.contractCode === 'HD-2026-007')))
+      (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN') && matchesUser(c)
     );
     if (pendingContract) return pendingContract;
 
     // 2. Nếu khách có đơn thuê phòng đã được Staff APPROVED, tự động sinh hợp đồng Onboarding nếu chưa có
     if (hasApprovedRentalRequest) {
       const matchApproved = list.find((c) =>
-        c.roomNumber === hasApprovedRentalRequest.targetRoom &&
-        ((uName && c.tenantName?.toLowerCase().includes(uName)) || (uPhone && c.tenantPhone === uPhone) || user?.username === 'tenant_new')
+        isSameRoom(c.roomNumber, hasApprovedRentalRequest.targetRoom) && matchesUser(c)
       );
       if (matchApproved) {
         return {
@@ -195,17 +215,17 @@ export default function UserDashboard() {
         };
       }
 
-      const targetRoomObj = (rooms || []).find(r => r.number === hasApprovedRentalRequest.targetRoom);
+      const targetRoomObj = (rooms || []).find(r => isSameRoom(r.number, hasApprovedRentalRequest.targetRoom));
       const price = targetRoomObj?.price || 2800000;
-      const defaultHouseCode = targetRoomObj?.houseCode || (user?.username === 'tenant_new' ? 'CS-02' : 'CS-01');
-      const defaultHouseName = targetRoomObj?.house || (defaultHouseCode === 'CS-02' ? 'Nhà Trọ Bách Khoa - Cơ Sở 2' : 'Nhà Trọ Cầu Giấy - Cơ Sở 1');
+      const defaultHouseCode = targetRoomObj?.houseCode || 'CS-01';
+      const defaultHouseName = targetRoomObj?.house || 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
       return {
         id: Date.now(),
-        contractCode: user?.username === 'tenant_new' ? 'HD-2026-007' : `HD-2026-${String(Date.now()).slice(-4)}`,
+        contractCode: `HD-2026-${String(Date.now()).slice(-4)}`,
         roomNumber: hasApprovedRentalRequest.targetRoom || 'P.101',
         houseCode: hasApprovedRentalRequest.houseCode || defaultHouseCode,
         houseName: hasApprovedRentalRequest.house || defaultHouseName,
-        tenantName: user?.fullName || hasApprovedRentalRequest.tenant || 'Nguyễn Văn An',
+        tenantName: user?.fullName || hasApprovedRentalRequest.tenant || 'Khách thuê',
         tenantPhone: user?.phone || hasApprovedRentalRequest.phone || '0987.654.321',
         startDate: new Date().toLocaleDateString('vi-VN'),
         endDate: '31/12/2026',
@@ -218,12 +238,8 @@ export default function UserDashboard() {
       };
     }
 
-    // 3. Tìm hợp đồng thông thường
-    return (
-      list.find((c) => uName && c.tenantName?.toLowerCase().includes(uName)) ||
-      list.find((c) => uPhone && c.tenantPhone === uPhone) ||
-      (user?.username === 'tenant_new' ? list.find((c) => c.tenantName?.toLowerCase().includes('nam') || c.contractCode === 'HD-2026-007') : null)
-    );
+    // 3. Tìm hợp đồng thông thường (ACTIVE hoặc khác) của chính khách này
+    return list.find(matchesUser) || null;
   }, [contracts, user, hasApprovedRentalRequest, rooms]);
 
   // Kiểm tra hợp đồng đang chờ nộp cọc hoặc chờ ký:
@@ -242,26 +258,32 @@ export default function UserDashboard() {
   const myPendingRentalRequest = useMemo(() => {
     const uName = (user?.fullName || '').toLowerCase().trim();
     const uPhone = (user?.phone || '').trim();
-    return (roomRequests || []).find((r) =>
-      (r.type === 'RENT' || r.type === 'NEW_RENT') &&
-      r.status === 'PENDING' &&
-      ((uName && r.tenant?.toLowerCase().includes(uName)) || (uPhone && r.phone === uPhone) || (user?.username === 'tenant_new'))
-    );
+    const uUsername = (user?.username || '').toLowerCase().trim();
+    return (roomRequests || []).find((r) => {
+      const isRent = (r.type === 'RENT' || r.type === 'NEW_RENT');
+      if (!isRent || r.status !== 'PENDING') return false;
+      const rTenant = (r.tenant || r.tenantName || '').toLowerCase().trim();
+      const rPhone = (r.phone || r.tenantPhone || '').trim();
+      const rUsername = (r.username || '').toLowerCase().trim();
+      return (
+        (uUsername && rUsername === uUsername) ||
+        (uName && (rTenant.includes(uName) || uName.includes(rTenant))) ||
+        (uPhone && rPhone === uPhone)
+      );
+    });
   }, [user, roomRequests]);
 
   // Đếm ngược thời hạn nộp cọc giữ phòng (Countdown Timer cho Onboarding Gate)
   // Reset trạng thái nộp cọc khi đổi hợp đồng / tài khoản
   useEffect(() => {
-    const hasPaid = Boolean(
+    // Chỉ coi là đã nộp cọc khi hợp đồng hiện tại thực sự đã nộp cọc (depositPaid === true hoặc PENDING_SIGN)
+    // hoặc có cờ nộp cọc theo đúng ID hợp đồng này
+    const isPaidThisContract = Boolean(
       myContract?.depositPaid ||
       myContract?.status === 'PENDING_SIGN' ||
-      (myContract?.id && localStorage.getItem(`rental_deposit_paid_${myContract.id}`) === 'true') ||
-      (myContract?.roomNumber && localStorage.getItem(`rental_deposit_paid_${myContract.roomNumber}`) === 'true') ||
-      localStorage.getItem('rental_deposit_paid_current') === 'true'
+      (myContract?.id && localStorage.getItem(`rental_deposit_paid_${myContract.id}`) === 'true')
     );
-    if (hasPaid) {
-      setIsDepositPaid(true);
-    }
+    setIsDepositPaid(isPaidThisContract);
     setSepayDepositStatusMsg(null);
   }, [myContract?.id, myContract?.status, myContract?.depositPaid]);
 
@@ -1142,13 +1164,10 @@ export default function UserDashboard() {
     const transferMemo = `COC ${cleanRoom} + TAM TRU TAM VANG ${cleanTenantName}`.trim();
 
     const isDepositConfirmed = Boolean(
-      isDepositPaid ||
       myContract?.depositPaid ||
       myContract?.status === 'PENDING_SIGN' ||
-      (myContract?.status === 'ACTIVE' && myContract?.depositPaid) ||
-      (myContract?.id && localStorage.getItem(`rental_deposit_paid_${myContract.id}`) === 'true') ||
-      (targetRoomNum && localStorage.getItem(`rental_deposit_paid_${targetRoomNum}`) === 'true') ||
-      localStorage.getItem('rental_deposit_paid_current') === 'true'
+      isDepositPaid ||
+      (myContract?.id && localStorage.getItem(`rental_deposit_paid_${myContract.id}`) === 'true')
     );
 
     let methodBankDisplay = `${bankName} ${bankAccount}`;
@@ -1273,11 +1292,19 @@ export default function UserDashboard() {
           if (res && res.success) {
             setIsDepositPaid(true);
             if (myContract?.id) localStorage.setItem(`rental_deposit_paid_${myContract.id}`, 'true');
-            if (targetRoomNum) localStorage.setItem(`rental_deposit_paid_${targetRoomNum}`, 'true');
-            localStorage.setItem('rental_deposit_paid_current', 'true');
-            if (confirmDepositPaid && myContract?.id) {
-              confirmDepositPaid(myContract.id);
+            if (myContract?.roomNumber) {
+              localStorage.setItem(`rental_deposit_paid_${myContract.roomNumber}`, 'true');
+              const cNorm = String(myContract.roomNumber).replace(/^p\.?/i, '').trim();
+              localStorage.setItem(`rental_deposit_paid_${cNorm}`, 'true');
             }
+            if (confirmDepositPaid && myContract?.id) {
+              confirmDepositPaid({
+                contractId: myContract.id,
+                room: myContract.roomNumber,
+                paymentMethod: 'SePay'
+              });
+            }
+            try { window.dispatchEvent(new Event('storage')); } catch {}
             setSepayDepositStatusMsg('✅ Đã phát hiện giao dịch nộp cọc thành công trên SePay! Nút Ký Hợp Đồng đã sáng lên.');
             setPaySuccessToast(`⚡ SePay: Đã nhận tiền cọc ${depositAmount.toLocaleString('vi-VN')} đ!`);
           } else {

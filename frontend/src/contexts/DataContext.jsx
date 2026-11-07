@@ -1,5 +1,21 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { useAuth } from './AuthContext';
+import {
+  BACKUP_ALL_ROOMS,
+  BACKUP_BOARDING_HOUSES,
+  BACKUP_INVOICES,
+  BACKUP_TICKETS,
+  BACKUP_TENANTS,
+  BACKUP_ROOM_REQUESTS,
+  BACKUP_ROOM_MEMBERS,
+  BACKUP_CONTRACTS,
+  BACKUP_METER_DISPUTES,
+  BACKUP_ROOMMATE_REQUESTS_V2,
+  BACKUP_MOVE_OUT_SETTLEMENTS,
+  BACKUP_LANDLORDS,
+  BACKUP_SAAS_INVOICES,
+  BACKUP_HOUSE_SERVICE_CONFIGS
+} from '../data/mockTemplateBackup';
 
 export function normalizeHouseCode(code) {
   if (!code) return '';
@@ -44,49 +60,8 @@ export function isDuplicateRoom(existingRooms, targetNumber, targetHouseCode, ex
   });
 }
 
-export const ALL_ROOMS = [
-  // CS-01: Nhà Trọ Cầu Giấy (12 phòng)
-  { id: 101, number: 'P.101', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 1', price: 3500000, area: 25, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
-  { id: 102, number: 'P.102', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 1', price: 3800000, area: 28, occupants: 0, maxOccupants: 3, status: 'AVAILABLE', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Ban công'] },
-  { id: 103, number: 'P.103', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 1', price: 3200000, area: 22, occupants: 1, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Nóng lạnh'] },
-  { id: 104, number: 'P.201', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 2', price: 3600000, area: 25, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
-  { id: 105, number: 'P.202', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 2', price: 3500000, area: 25, occupants: 0, maxOccupants: 2, status: 'MAINTENANCE', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
-  { id: 106, number: 'P.203', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 2', price: 4000000, area: 30, occupants: 0, maxOccupants: 3, status: 'AVAILABLE', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Tủ lạnh'] },
-  { id: 107, number: 'P.301', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 3', price: 3700000, area: 26, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
-  { id: 108, number: 'P.302', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 3', price: 3700000, area: 26, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
-  { id: 109, number: 'P.303', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 3', price: 3900000, area: 28, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Ban công'] },
-  { id: 110, number: 'P.401', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 4', price: 3800000, area: 27, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
-  { id: 111, number: 'P.402', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 4', price: 3800000, area: 27, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
-  { id: 112, number: 'P.403', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 4', price: 3800000, area: 28, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Ban công'] },
-
-  // CS-02: Nhà Trọ Bách Khoa (8 phòng)
-  { id: 201, number: 'P.101', houseCode: 'CS-02', house: 'Nhà Trọ Bách Khoa - Cơ Sở 2', floor: 'Tầng 1', price: 2800000, area: 20, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Nóng lạnh', 'Gần ĐH Bách Khoa'] },
-  { id: 202, number: 'P.102', houseCode: 'CS-02', house: 'Nhà Trọ Bách Khoa - Cơ Sở 2', floor: 'Tầng 1', price: 3000000, area: 22, occupants: 0, maxOccupants: 2, status: 'AVAILABLE', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
-  { id: 203, number: 'P.201', houseCode: 'CS-02', house: 'Nhà Trọ Bách Khoa - Cơ Sở 2', floor: 'Tầng 2', price: 3200000, area: 24, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
-  { id: 204, number: 'P.202', houseCode: 'CS-02', house: 'Nhà Trọ Bách Khoa - Cơ Sở 2', floor: 'Tầng 2', price: 3200000, area: 24, occupants: 1, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
-  { id: 205, number: 'P.301', houseCode: 'CS-02', house: 'Nhà Trọ Bách Khoa - Cơ Sở 2', floor: 'Tầng 3', price: 3400000, area: 26, occupants: 0, maxOccupants: 3, status: 'AVAILABLE', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Máy giặt chung'] },
-  { id: 206, number: 'P.302', houseCode: 'CS-02', house: 'Nhà Trọ Bách Khoa - Cơ Sở 2', floor: 'Tầng 3', price: 3400000, area: 26, occupants: 0, maxOccupants: 3, status: 'AVAILABLE', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Máy giặt chung'] },
-  { id: 207, number: 'P.401', houseCode: 'CS-02', house: 'Nhà Trọ Bách Khoa - Cơ Sở 2', floor: 'Tầng 4', price: 3600000, area: 28, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
-  { id: 208, number: 'P.402', houseCode: 'CS-02', house: 'Nhà Trọ Bách Khoa - Cơ Sở 2', floor: 'Tầng 4', price: 3600000, area: 28, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
-
-  // CS-03: Nhà Trọ Đống Đa (16 phòng)
-  { id: 301, number: 'P.101', houseCode: 'CS-03', house: 'Nhà Trọ Đống Đa - Cơ Sở 3', floor: 'Tầng 1', price: 4200000, area: 30, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Thang máy', 'Khóa FaceID'] },
-  { id: 302, number: 'P.102', houseCode: 'CS-03', house: 'Nhà Trọ Đống Đa - Cơ Sở 3', floor: 'Tầng 1', price: 4500000, area: 32, occupants: 2, maxOccupants: 3, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Thang máy', 'Tủ lạnh'] },
-  { id: 303, number: 'P.201', houseCode: 'CS-03', house: 'Nhà Trọ Đống Đa - Cơ Sở 3', floor: 'Tầng 2', price: 4300000, area: 30, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Thang máy'] },
-  { id: 304, number: 'P.202', houseCode: 'CS-03', house: 'Nhà Trọ Đống Đa - Cơ Sở 3', floor: 'Tầng 2', price: 4300000, area: 30, occupants: 0, maxOccupants: 2, status: 'MAINTENANCE', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Thang máy'] },
-  { id: 305, number: 'P.203', houseCode: 'CS-03', house: 'Nhà Trọ Đống Đa - Cơ Sở 3', floor: 'Tầng 2', price: 4400000, area: 31, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Thang máy'] },
-  { id: 306, number: 'P.301', houseCode: 'CS-03', house: 'Nhà Trọ Đống Đa - Cơ Sở 3', floor: 'Tầng 3', price: 4600000, area: 32, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Thang máy', 'Ban công'] },
-  { id: 307, number: 'P.302', houseCode: 'CS-03', house: 'Nhà Trọ Đống Đa - Cơ Sở 3', floor: 'Tầng 3', price: 4800000, area: 34, occupants: 0, maxOccupants: 3, status: 'AVAILABLE', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Thang máy', 'Tủ lạnh', 'Máy giặt'] },
-  { id: 308, number: 'P.303', houseCode: 'CS-03', house: 'Nhà Trọ Đống Đa - Cơ Sở 3', floor: 'Tầng 3', price: 4600000, area: 32, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Thang máy'] },
-  { id: 309, number: 'P.401', houseCode: 'CS-03', house: 'Nhà Trọ Đống Đa - Cơ Sở 3', floor: 'Tầng 4', price: 4500000, area: 30, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Thang máy'] },
-  { id: 310, number: 'P.402', houseCode: 'CS-03', house: 'Nhà Trọ Đống Đa - Cơ Sở 3', floor: 'Tầng 4', price: 4500000, area: 30, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Thang máy'] },
-  { id: 311, number: 'P.403', houseCode: 'CS-03', house: 'Nhà Trọ Đống Đa - Cơ Sở 3', floor: 'Tầng 4', price: 4600000, area: 31, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Thang máy'] },
-  { id: 312, number: 'P.501', houseCode: 'CS-03', house: 'Nhà Trọ Đống Đa - Cơ Sở 3', floor: 'Tầng 5', price: 4700000, area: 33, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Thang máy'] },
-  { id: 313, number: 'P.502', houseCode: 'CS-03', house: 'Nhà Trọ Đống Đa - Cơ Sở 3', floor: 'Tầng 5', price: 4700000, area: 33, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Thang máy'] },
-  { id: 314, number: 'P.503', houseCode: 'CS-03', house: 'Nhà Trọ Đống Đa - Cơ Sở 3', floor: 'Tầng 5', price: 4800000, area: 34, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Thang máy'] },
-  { id: 315, number: 'P.601', houseCode: 'CS-03', house: 'Nhà Trọ Đống Đa - Cơ Sở 3', floor: 'Tầng 6', price: 5000000, area: 38, occupants: 2, maxOccupants: 3, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Thang máy', 'Sân thượng view đẹp'] },
-  { id: 316, number: 'P.602', houseCode: 'CS-03', house: 'Nhà Trọ Đống Đa - Cơ Sở 3', floor: 'Tầng 6', price: 5200000, area: 40, occupants: 2, maxOccupants: 3, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Thang máy', 'Penthouse mini'] }
-];
+// Bảng phòng mặc định được đưa về rỗng sạch (Dữ liệu gốc được lưu trữ trong mockTemplateBackup.js)
+export const ALL_ROOMS = [];
 
 const DataContext = createContext(null);
 
@@ -95,29 +70,9 @@ export function cleanPersonName(name) {
   return name.replace(/\s*\((?:Staff|Chủ trọ)[^)]*\)/gi, '').trim();
 }
 
-const DEFAULT_INVOICES = [
-  // Kh?p ch?nh x?c 100% v?i s? li?u ch?t công tơ Th?ng 9 (2026-09):
-  // P.101: 68 kWh x 3.500? = 238.000?; 6 m? x 25.000? = 150.000? -> T?ng = 3.988.000?
-  { id: 1, code: 'HD-202609-01', room: 'P.101', house: 'Cơ Sở 1 - Cầu Giấy', tenant: 'Nguyễn Văn An', roomFee: 2000, elec: 0, water: 0, service: 0, total: 2000, status: 'UNPAID', paidAt: null },
-  // P.102: 76 kWh x 3.500? = 266.000?; 7 m? x 25.000? = 175.000? -> T?ng = 4.341.000?
-  { id: 2, code: 'HD-202609-02', room: 'P.102', house: 'Cơ Sở 1 - Cầu Giấy', tenant: 'Trần Thị Bình', roomFee: 3800000, elec: 266000, water: 175000, service: 100000, total: 4341000, status: 'UNPAID', paidAt: null },
-  // P.101 (Phạm Minh Cường): 84 kWh x 3.500đ = 294.000đ; 8 m³ x 25.000đ = 200.000đ -> Tổng = 3.794.000đ (Đã thanh toán)
-  { id: 3, code: 'HD-202609-03', room: 'P.101', house: 'Cơ Sở 1 - Cầu Giấy', tenant: 'Phạm Minh Cường', roomFee: 3200000, elec: 294000, water: 200000, service: 100000, total: 3794000, status: 'PAID', paidAt: '07/09/2026' },
-  // P.201: CH? TR? CH?A CH?T S? ?I?N N??C (recorded = false) -> elec = 0, water = 0, tr?ng th?i: PENDING_METER
-  { id: 4, code: 'HD-202609-04', room: 'P.201', house: 'Cơ Sở 1 - Cầu Giấy', tenant: 'Vũ Hoàng Dũng', roomFee: 3600000, elec: 0, water: 0, service: 100000, total: 3700000, status: 'PENDING_METER', paidAt: null },
-  // P.101 CS-02: Đã thanh toán
-  { id: 5, code: 'HD-202609-05', room: 'P.101', house: 'Cơ Sở 2 - Bách Khoa', tenant: 'Hoàng Văn Nam', roomFee: 2800000, elec: 210000, water: 150000, service: 80000, total: 3240000, status: 'PAID', paidAt: '05/09/2026' },
-  // P.101 CS-03
-  { id: 6, code: 'HD-202609-06', room: 'P.101', house: 'Cơ Sở 3 - Đống Đa', tenant: 'Trịnh Thanh Tùng', roomFee: 4200000, elec: 350000, water: 200000, service: 120000, total: 4870000, status: 'UNPAID', paidAt: null },
-];
+const DEFAULT_INVOICES = [];
 
-const DEFAULT_TICKETS = [
-  { id: 1, room: 'P.102', houseCode: 'CS-01', category: 'WATER', issue: 'Hỏng vòi sen nhà tắm bị rò rỉ nước', tenant: 'Trần Thị Bình', date: '20/09/2026', priority: 'HIGH', status: 'IN_PROGRESS' },
-  { id: 2, room: 'P.202', houseCode: 'CS-02', category: 'ELECTRICITY', issue: 'Điều hòa không lạnh, có tiếng kêu to', tenant: 'Vũ Hoàng Dũng', date: '21/09/2026', priority: 'HIGH', status: 'PENDING' },
-  { id: 3, room: 'P.301', houseCode: 'CS-01', category: 'ELECTRICITY', issue: 'Bóng đèn tuýp ban công bị cháy', tenant: 'Đỗ Thị Mai', date: '18/09/2026', priority: 'LOW', status: 'RESOLVED' },
-  { id: 4, room: 'P.101', houseCode: 'CS-01', category: 'FURNITURE', issue: 'Cửa sổ ban công bị kẹt khóa', tenant: 'Nguyễn Văn An', date: '15/09/2026', priority: 'MEDIUM', status: 'RESOLVED' },
-  { id: 5, room: 'P.101', houseCode: 'CS-01', category: 'WATER', issue: 'Áp lực nước vòi sen yếu vào giờ cao điểm', tenant: 'Phạm Minh Cường', date: '22/09/2026', priority: 'LOW', status: 'IN_PROGRESS' },
-];
+const DEFAULT_TICKETS = [];
 
 const ZERO_SANDBOX_TENANTS = [
   {
@@ -153,124 +108,6 @@ const ZERO_SANDBOX_TENANTS = [
     deposit: 0,
     status: 'WAITING_ROOM',
     daysSinceLeave: 0
-  }
-];
-
-const DEFAULT_TENANTS = [
-  {
-    id: 1,
-    fullName: 'Nguyễn Văn An',
-    cccd: '001201012345',
-    phone: '0987.654.321',
-    email: 'an.nguyen@rental.vn',
-    hometown: 'Nam Định',
-    room: 'P.101',
-    rooms: ['P.101'],
-    houseCode: 'CS-01',
-    house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
-    contractStart: '01/01/2026',
-    contractEnd: '31/12/2026',
-    deposit: 3500000,
-    status: 'ACTIVE',
-    daysSinceLeave: 0
-  },
-  {
-    id: 2,
-    fullName: 'Trần Thị Bình',
-    cccd: '001202023456',
-    phone: '0978.123.456',
-    email: 'binh.tt@gmail.com',
-    hometown: 'Hà Nam',
-    room: 'P.102',
-    rooms: ['P.102'],
-    houseCode: 'CS-01',
-    house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
-    contractStart: '15/02/2026',
-    contractEnd: '15/02/2027',
-    deposit: 3800000,
-    status: 'ACTIVE',
-    daysSinceLeave: 0
-  },
-  {
-    id: 3,
-    fullName: 'Lê Văn Cường',
-    cccd: '034203039999',
-    phone: '0912.777.666',
-    email: 'cuong.le@gmail.com',
-    hometown: 'Hải Phòng',
-    room: 'P.103',
-    rooms: ['P.103'],
-    houseCode: 'CS-01',
-    house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
-    contractStart: '10/03/2026',
-    contractEnd: '10/03/2027',
-    deposit: 3200000,
-    status: 'ACTIVE',
-    daysSinceLeave: 0
-  },
-  {
-    id: 11,
-    fullName: 'Phạm Minh Cường',
-    cccd: '034203034567',
-    phone: '0912.888.999',
-    email: 'cuong.pham@rental.vn',
-    hometown: 'Hải Phòng',
-    room: 'P.101',
-    rooms: ['P.101'],
-    houseCode: 'CS-01',
-    house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
-    contractStart: '01/01/2026',
-    contractEnd: '31/12/2026',
-    deposit: 3500000,
-    status: 'ACTIVE',
-    daysSinceLeave: 0
-  },
-  {
-    id: 4,
-    fullName: 'Vũ Hoàng Dũng',
-    cccd: '025204045678',
-    phone: '0945.678.901',
-    email: 'dung.vh@gmail.com',
-    hometown: 'Thái Bình',
-    room: 'P.201',
-    rooms: ['P.201'],
-    houseCode: 'CS-01',
-    house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
-    contractStart: '01/04/2026',
-    contractEnd: '01/04/2027',
-    deposit: 3500000,
-    status: 'ACTIVE',
-    daysSinceLeave: 0
-  },
-  {
-    id: 5,
-    fullName: 'Lê Văn Khang',
-    cccd: '038206067890',
-    phone: '0967.890.123',
-    email: 'khang.lv@gmail.com',
-    hometown: 'Nghệ An',
-    room: null,
-    rooms: [],
-    contractStart: '01/01/2025',
-    contractEnd: '01/08/2026',
-    deposit: 0,
-    status: 'INACTIVE',
-    daysSinceLeave: 45
-  },
-  {
-    id: 6,
-    fullName: 'Đỗ Thị Mai',
-    cccd: '019205056789',
-    phone: '0934.567.890',
-    email: 'mai.dt@gmail.com',
-    hometown: 'Bắc Ninh',
-    room: null,
-    rooms: [],
-    contractStart: '10/05/2025',
-    contractEnd: '10/09/2026',
-    deposit: 0,
-    status: 'INACTIVE',
-    daysSinceLeave: 14
   },
   {
     id: 7,
@@ -278,31 +115,31 @@ const DEFAULT_TENANTS = [
     cccd: '036207078901',
     phone: '0966.123.456',
     email: 'nam.hv@gmail.com',
-    hometown: 'Thanh Hóa',
+    hometown: 'Hà Nội',
     room: null,
     rooms: [],
     houseCode: null,
-    house: null,
-    contractStart: '01/09/2026',
-    contractEnd: '01/09/2027',
+    houseName: null,
+    contractStart: null,
+    contractEnd: null,
     deposit: 0,
-    status: 'INACTIVE',
+    status: 'WAITING_ROOM',
     daysSinceLeave: 0
   }
 ];
 
-export const generateDefaultMeters = () => {
-  return ALL_ROOMS.map((r) => {
+const DEFAULT_TENANTS = ZERO_SANDBOX_TENANTS;
+
+export const generateDefaultMeters = (roomList = ALL_ROOMS) => {
+  return (roomList || []).map((r) => {
     const isOccupied = r.status === 'OCCUPIED';
     let tenantName = 'Phòng Trống (Chưa Thuê)';
     if (r.status === 'MAINTENANCE') {
       tenantName = 'Đang Bảo Trì (Chưa Thuê)';
     } else if (isOccupied) {
-      const foundTenant = DEFAULT_TENANTS.find((t) => t.room === r.number || (t.rooms && t.rooms.includes(r.number)));
+      const foundTenant = (DEFAULT_TENANTS || []).find((t) => t.room === r.number || (t.rooms && t.rooms.includes(r.number)));
       if (foundTenant) {
         tenantName = foundTenant.fullName;
-      } else if (r.houseCode === 'CS-01' && r.number === 'P.101') {
-        tenantName = 'Nguyễn Văn Khách Thuê';
       } else {
         tenantName = 'Khách Đang Thuê';
       }
@@ -313,15 +150,10 @@ export const generateDefaultMeters = () => {
     const baseWater = 40 + (r.id % 15) * 6;
     const waterUsed = isOccupied ? 5 + (r.id % 6) : 0;
 
-    // Phòng P.102, P.103 ở CS-01 mặc định là đã chốt số (khách cũ đã sinh hoạt các kỳ trước)
-    // Riêng P.101 là phòng bàn giao khách mới thuê (Khách 1 / Khách mới), Staff chưa ghi gì nên số mới = số cũ bàn giao, chưa chốt số!
-    const isRecorded = r.houseCode === 'CS-01' && ['P.102', 'P.103'].includes(r.number);
-    const actualElecUsed = isRecorded ? elecUsed : 0;
-    const actualWaterUsed = isRecorded ? waterUsed : 0;
-
-    // Phòng P.103 (CS-01) và P.101 (CS-02) mặc định đã thanh toán xong tiền trọ
-    const isPaid = (r.houseCode === 'CS-01' && r.number === 'P.103') ||
-                   (r.houseCode === 'CS-02' && r.number === 'P.101');
+    const isRecorded = false;
+    const actualElecUsed = 0;
+    const actualWaterUsed = 0;
+    const isPaid = false;
 
     return {
       id: r.id,
@@ -333,9 +165,9 @@ export const generateDefaultMeters = () => {
       status: r.status,
       tenant: tenantName,
       oldElec: baseElec,
-      newElec: isRecorded ? baseElec + actualElecUsed : baseElec,
+      newElec: baseElec,
       oldWater: baseWater,
-      newWater: isRecorded ? baseWater + actualWaterUsed : baseWater,
+      newWater: baseWater,
       elecPrice: 3500,
       waterPrice: 25000,
       recorded: isRecorded,
@@ -346,136 +178,9 @@ export const generateDefaultMeters = () => {
 
 const DEFAULT_METERS = generateDefaultMeters();
 
-const DEFAULT_ROOM_REQUESTS = [
-  {
-    id: 1,
-    type: 'ROOMMATE', // Xin ở ghép
-    targetRoom: 'P.103',
-    house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
-    houseCode: 'CS-01',
-    currentRoom: null,
-    tenant: 'Hoàng Văn Nam',
-    phone: '0966.123.456',
-    email: 'nam.hv@gmail.com',
-    note: 'Em là sinh viên năm 3 Bách Khoa, muốn tìm bạn ở ghép chia đôi tiền phòng, không hút thuốc, giữ vệ sinh tốt.',
-    date: '24/09/2026',
-    status: 'WAITING_ROOMMATES', // Chờ thành viên trong phòng P.103 đồng ý
-    roommateVotes: []
-  },
-  {
-    id: 2,
-    type: 'TRANSFER', // Xin chuyển phòng
-    targetRoom: 'P.203',
-    house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
-    houseCode: 'CS-01',
-    currentRoom: 'P.101',
-    tenant: 'Nguyễn Văn An',
-    phone: '0987.654.321',
-    email: 'an.nguyen@rental.vn',
-    note: 'Em muốn đổi từ P.101 lên P.203 từ tháng sau vì tầng 2 có ban công thoáng mát hơn.',
-    date: '24/09/2026',
-    status: 'PENDING', // Chờ Ban Quản Lý phê duyệt
-    roommateVotes: []
-  },
-  {
-    id: 3,
-    type: 'TRANSFER',
-    targetRoom: 'P.102',
-    house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
-    houseCode: 'CS-01',
-    currentRoom: 'P.201',
-    tenant: 'Vũ Hoàng Dũng',
-    phone: '0945.678.901',
-    email: 'dung.vh@gmail.com',
-    note: 'Em muốn xin chuyển từ phòng P.201 sang phòng P.102 ở tầng 1 để tiện đi lại.',
-    date: '23/09/2026',
-    status: 'PENDING',
-    roommateVotes: []
-  },
-  {
-    id: 5,
-    type: 'RENEW_CONTRACT', // Yêu cầu gia hạn hợp đồng
-    tenant: 'Nguyễn Văn An',
-    targetRoom: 'P.101',
-    currentRoom: 'P.101',
-    house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
-    houseCode: 'CS-01',
-    phone: '0987.654.321',
-    email: 'an.nguyen@rental.vn',
-    durationMonths: 6, // 3, 6, hoặc 12 tháng
-    startDate: '01/01/2027',
-    newContractEnd: '01/07/2027',
-    currentContractEnd: '31/12/2026',
-    note: 'Em muốn đăng ký gia hạn tiếp hợp đồng 6 tháng (từ 01/01/2027 đến 01/07/2027) để tiếp tục ở.',
-    date: '25/09/2026',
-    status: 'PENDING',
-    roommateVotes: []
-  },
-  {
-    id: 6,
-    type: 'RENT', // Khách mới đăng ký thuê phòng Cơ Sở 2 (Bách Khoa)
-    tenant: 'Hoàng Văn Nam',
-    targetRoom: 'P.102',
-    currentRoom: null,
-    house: 'Nhà Trọ Bách Khoa - Cơ Sở 2',
-    houseCode: 'CS-02',
-    phone: '0966.123.456',
-    email: 'nam.hv@gmail.com',
-    note: 'Em là sinh viên Bách Khoa, muốn đăng ký thuê phòng P.102 tại Cơ Sở 2 Bách Khoa.',
-    date: '25/09/2026',
-    status: 'PENDING',
-    roommateVotes: []
-  }
-];
+const DEFAULT_ROOM_REQUESTS = [];
 
-export 
-const DEFAULT_SAAS_INVOICES = [
-  {
-    id: 'SAAS-2026-001',
-    code: 'HD-SAAS-2026-01',
-    landlordId: 1,
-    landlordUsername: 'staff',
-    landlordName: 'Lê Thị Thu Ngân',
-    landlordPhone: '0912.888.666',
-    packageName: 'Gói Chuyên Nghiệp (PRO - Không Giới Hạn Cơ Sở)',
-    packageCode: 'PRO',
-    billingCycle: '12 Tháng (Năm 2026)',
-    period: '01/01/2026 - 31/12/2026',
-    amount: 4990000,
-    issuedDate: '01/01/2026',
-    dueDate: '10/01/2026',
-    paidAt: '02/01/2026 10:15:20',
-    paymentMethod: 'VietQR Chuyển Khoản Nền Tảng (Tự Động Gạch Nợ)',
-    status: 'PAID',
-    landlordTaxCode: '8392019283',
-    providerName: 'HỆ THỐNG NỀN TẢNG SAAS QUẢN LÝ CHUỖI TRỌ (CTCP SAAS TRỌ VIỆT)',
-    providerTaxCode: '0108998877',
-    providerBank: '9999888899 - MBBank (Ngân hàng Quân Đội)'
-  },
-  {
-    id: 'SAAS-2026-002',
-    code: 'HD-SAAS-2026-02',
-    landlordId: 2,
-    landlordUsername: 'staff2',
-    landlordName: 'Đàm Văn Táo',
-    landlordPhone: '0988.777.999',
-    packageName: 'Gói Cơ Bản (BASIC - Quản lý 10 phòng)',
-    packageCode: 'BASIC',
-    billingCycle: '12 Tháng (Năm 2026)',
-    period: '15/02/2026 - 15/02/2027',
-    amount: 1910400,
-    total: 1910400,
-    issuedDate: '15/02/2026',
-    dueDate: '25/02/2026',
-    paidAt: null,
-    paymentMethod: 'Cổng VietQR Nền Tảng',
-    status: 'UNPAID',
-    landlordTaxCode: '8392019284',
-    providerName: 'HỆ THỐNG NỀN TẢNG SAAS QUẢN LÝ CHUỖI TRỌ (CTCP SAAS TRỌ VIỆT)',
-    providerTaxCode: '0108998877',
-    providerBank: '9999888899 - MBBank (Ngân hàng Quân Đội)'
-  }
-];
+export const DEFAULT_SAAS_INVOICES = [];
 
 const DEFAULT_LANDLORDS = [
   {
@@ -488,8 +193,8 @@ const DEFAULT_LANDLORDS = [
     status: 'ACTIVE',
     subscriptionPackage: 'Gói Chuyên Nghiệp (Không giới hạn)',
     packageCode: 'PRO',
-    housesCount: 1,
-    roomsCount: 10,
+    housesCount: 0,
+    roomsCount: 0,
     maxHousesLimit: 999,
     createdAt: '01/01/2026'
   },
@@ -503,25 +208,10 @@ const DEFAULT_LANDLORDS = [
     status: 'ACTIVE',
     subscriptionPackage: 'Gói Cơ Bản (Tối đa 2 cơ sở)',
     packageCode: 'BASIC',
-    housesCount: 1,
-    roomsCount: 8,
+    housesCount: 0,
+    roomsCount: 0,
     maxHousesLimit: 2,
     createdAt: '15/02/2026'
-  },
-  {
-    id: 3,
-    username: 'landlord_dd',
-    fullName: 'Phạm Quốc Hùng (Chủ trọ CS3 Đống Đa)',
-    email: 'hung.pq@rental.vn',
-    phone: '0936.555.222',
-    role: 'STAFF',
-    status: 'ACTIVE',
-    subscriptionPackage: 'Gói Doanh Nghiệp (Không giới hạn + AI OCR)',
-    packageCode: 'ENTERPRISE',
-    housesCount: 1,
-    roomsCount: 12,
-    maxHousesLimit: 999,
-    createdAt: '10/03/2026'
   }
 ];
 
@@ -584,267 +274,19 @@ export const DEFAULT_MICROSERVICES = [
   { id: 'notification-service', name: 'Notification Service (RabbitMQ)', port: 8090, status: 'UP', heap: '215MB / 512MB', cpu: '1.0%', uptime: '14 ngày 5 giờ' }
 ];
 
-export const DEFAULT_AUDIT_LOGS = [
-  { id: 'LOG-001', timestamp: '2026-10-03 19:42:15', ip: '118.70.190.22', role: 'ROLE_ADMIN', username: 'admin', action: 'APM_SYSTEM_CHECK', target: 'Discovery & RabbitMQ', status: 'SUCCESS', details: 'Giám sát 12 microservices đều phản hồi HTTP 200 UP' },
-  { id: 'LOG-002', timestamp: '2026-10-03 18:30:10', ip: '14.232.12.89', role: 'ROLE_STAFF', username: 'staff', action: 'SAVE_METER_READINGS', target: 'P.101 CS-01', status: 'SUCCESS', details: 'Chốt chỉ số điện 860 kWh, nước 45 m3' },
-  { id: 'LOG-003', timestamp: '2026-10-03 17:15:40', ip: '171.244.45.60', role: 'ROLE_TENANT', username: 'tenant1', action: 'SIGN_CONTRACT', target: 'HD-2026-001', status: 'SUCCESS', details: 'Khách ký điện tử xác nhận điều khoản HĐ P.101' },
-  { id: 'LOG-004', timestamp: '2026-10-03 15:10:05', ip: '14.232.12.89', role: 'ROLE_STAFF', username: 'staff', action: 'CREATE_INVOICE_BATCH', target: 'CS-01 Cầu Giấy', status: 'SUCCESS', details: 'Tự động phát hành 12 hóa đơn kỳ 2026-09' },
-  { id: 'LOG-005', timestamp: '2026-10-03 14:02:18', ip: '113.190.23.41', role: 'ROLE_TENANT', username: 'tenant2', action: 'ONLINE_PAYMENT_VNPAY', target: 'HD-202609-03', status: 'SUCCESS', details: 'Thanh toán VNPay 3.840.000 đ thành công' },
-  { id: 'LOG-006', timestamp: '2026-10-03 11:25:33', ip: '118.70.190.22', role: 'ROLE_ADMIN', username: 'admin', action: 'UPDATE_INTEGRATION_KEY', target: 'AI OCR Vision', status: 'SUCCESS', details: 'Kiểm tra kết nối AI Vision model GPT-4o thành công' },
-  { id: 'LOG-007', timestamp: '2026-10-03 09:14:52', ip: '42.115.88.19', role: 'ROLE_STAFF', username: 'staff', action: 'CONFIRM_CASH_PAYMENT', target: 'HD-202609-05', status: 'SUCCESS', details: 'Thu tiền mặt 3.240.000 đ từ khách Hoàng Văn Nam' }
-];
+export const DEFAULT_AUDIT_LOGS = [];
 
-export const DEFAULT_ROOM_MEMBERS = [
-  {
-    id: 1,
-    roomId: 101,
-    roomNumber: 'P.101',
-    houseCode: 'CS-01',
-    tenantId: 1,
-    fullName: 'Nguyễn Văn An',
-    phone: '0987.654.321',
-    cccd: '001201012345',
-    maskedCccd: '00120101****',
-    hometown: 'Nam Định',
-    roleInRoom: 'REPRESENTATIVE',
-    joinDate: '01/01/2026',
-    temporaryResidenceStatus: 'REGISTERED',
-    status: 'ACTIVE'
-  },
-  {
-    id: 2,
-    roomId: 101,
-    roomNumber: 'P.101',
-    houseCode: 'CS-01',
-    tenantId: 2,
-    fullName: 'Phạm Minh Cường',
-    phone: '0912.888.999',
-    cccd: '034203034567',
-    maskedCccd: '03420303****',
-    hometown: 'Hải Phòng',
-    roleInRoom: 'MEMBER',
-    joinDate: '01/01/2026',
-    temporaryResidenceStatus: 'REGISTERED',
-    status: 'ACTIVE'
-  },
+export const DEFAULT_ROOM_MEMBERS = [];
 
-  {
-    id: 3,
-    roomId: 102,
-    roomNumber: 'P.102',
-    houseCode: 'CS-01',
-    tenantId: 3,
-    fullName: 'Trần Thị Bình',
-    phone: '0978.123.456',
-    cccd: '001202023456',
-    maskedCccd: '00120202****',
-    hometown: 'Bắc Ninh',
-    roleInRoom: 'REPRESENTATIVE',
-    joinDate: '15/02/2026',
-    temporaryResidenceStatus: 'REGISTERED',
-    status: 'ACTIVE'
-  },
-  {
-    id: 4,
-    roomId: 103,
-    roomNumber: 'P.103',
-    houseCode: 'CS-01',
-    tenantId: 4,
-    fullName: 'Lê Văn Cường',
-    phone: '0912.777.666',
-    cccd: '034203039999',
-    maskedCccd: '03420303****',
-    hometown: 'Hải Phòng',
-    roleInRoom: 'REPRESENTATIVE',
-    joinDate: '10/03/2026',
-    temporaryResidenceStatus: 'REGISTERED',
-    status: 'ACTIVE'
-  },
-  {
-    id: 5,
-    roomId: 201,
-    roomNumber: 'P.201',
-    houseCode: 'CS-01',
-    tenantId: 5,
-    fullName: 'Vũ Hoàng Dũng',
-    phone: '0945.678.901',
-    cccd: '025204045678',
-    maskedCccd: '02520404****',
-    roleInRoom: 'REPRESENTATIVE',
-    joinDate: '01/04/2026',
-    temporaryResidenceStatus: 'REGISTERED',
-    status: 'ACTIVE'
-  }
-];
+export const DEFAULT_CONTRACTS = [];
 
-export const DEFAULT_CONTRACTS = [
-  {
-    id: 1,
-    contractCode: 'HD-2026-001',
-    roomNumber: 'P.101',
-    houseCode: 'CS-01',
-    houseName: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
-    tenantName: 'Nguyễn Văn An',
-    tenantPhone: '0987.654.321',
-    startDate: '01/01/2026',
-    endDate: '31/12/2026',
-    rentalPrice: 3500000,
-    depositAmount: 3500000,
-    paymentCycle: 1,
-    paymentDay: 5,
-    terms: 'Bên thuê có trách nhiệm thanh toán tiền nhà đúng hạn từ ngày 01 đến ngày 05 hàng tháng. Giữ gìn an ninh trật tự, không nuôi thú cưng gây ồn, tiết kiệm điện nước và tuân thủ tuyệt đối quy định PCCC.',
-    status: 'ACTIVE',
-    depositPaid: true,
-    depositPaidAt: '01/01/2026 09:30',
-    depositPaymentMethod: 'VIETQR',
-    signedElectronically: true,
-    signedAt: '01/01/2026 09:30'
-  },
-  {
-    id: 2,
-    contractCode: 'HD-2026-003',
-    roomNumber: 'P.103',
-    houseCode: 'CS-01',
-    houseName: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
-    tenantName: 'Lê Văn Cường',
-    tenantPhone: '0912.777.666',
-    startDate: '10/03/2026',
-    endDate: '10/03/2027',
-    rentalPrice: 3200000,
-    depositAmount: 3200000,
-    paymentCycle: 1,
-    paymentDay: 5,
-    terms: 'Hợp đồng thuê phòng 12 tháng. Tiền cọc tương đương 1 tháng tiền phòng. Hoàn cọc khi bàn giao phòng nguyên vẹn không hỏng hóc.',
-    status: 'ACTIVE',
-    depositPaid: true,
-    depositPaidAt: '10/03/2026 14:00',
-    depositPaymentMethod: 'VIETQR',
-    signedElectronically: true,
-    signedAt: '10/03/2026 14:00'
-  },
-  {
-    id: 3,
-    contractCode: 'HD-2026-007',
-    roomNumber: 'P.102',
-    houseCode: 'CS-02',
-    houseName: 'Nhà Trọ Bách Khoa - Cơ Sở 2',
-    tenantName: 'Hoàng Văn Nam',
-    tenantPhone: '0966.123.456',
-    startDate: '01/10/2026',
-    endDate: '01/10/2027',
-    rentalPrice: 2800000,
-    depositAmount: 2800000,
-    paymentCycle: 1,
-    paymentDay: 5,
-    terms: 'Hợp đồng thuê phòng sinh viên. Tiền cọc giữ chỗ đúng 1 tháng tiền phòng = 2.800.000 đ (không bao gồm dịch vụ). Phải nộp tiền cọc và ký điện tử mới được nhận phòng.',
-    status: 'WAITING_APPROVAL',
-    depositPaid: false,
-    signedElectronically: false,
-    signedAt: null,
-    holdingUntil: null
-  }
-];
+export const DEFAULT_METER_DISPUTES = [];
 
-export const DEFAULT_METER_DISPUTES = [
-  {
-    id: 1,
-    room: 'P.102',
-    houseCode: 'CS-01',
-    tenantName: 'Trần Thị Bình',
-    month: '2026-09',
-    meterType: 'WATER',
-    systemReading: 48,
-    reportedReading: 43,
-    note: 'Em kiểm tra đồng hồ nước thực tế ở cửa phòng chỉ mới nhảy 43 m3, trên app báo 48 m3. Nhờ chủ trọ kiểm tra lại giúp em ạ.',
-    imageUrl: 'https://images.unsplash.com/photo-1585338107529-13afc5f02586?w=600&auto=format&fit=crop',
-    status: 'PENDING',
-    date: '26/09/2026'
-  }
-];
+export const DEFAULT_HOUSE_SERVICE_CONFIGS = [];
 
-export const DEFAULT_HOUSE_SERVICE_CONFIGS = [
-  { id: 1, boardingHouseId: 1, houseCode: 'CS-01', serviceName: 'Tiền điện', calculationType: 'METER', unitPrice: 3500 },
-  { id: 2, boardingHouseId: 1, houseCode: 'CS-01', serviceName: 'Tiền nước', calculationType: 'METER', unitPrice: 25000 },
-  { id: 3, boardingHouseId: 1, houseCode: 'CS-01', serviceName: 'Phí vệ sinh & rác', calculationType: 'PER_ROOM', unitPrice: 50000 },
-  { id: 4, boardingHouseId: 1, houseCode: 'CS-01', serviceName: 'Internet Cáp quang', calculationType: 'PER_ROOM', unitPrice: 100000 },
-  { id: 5, boardingHouseId: 1, houseCode: 'CS-01', serviceName: 'Phí gửi xe máy', calculationType: 'PER_CAPITA', unitPrice: 80000 },
-  { id: 6, boardingHouseId: 2, houseCode: 'CS-02', serviceName: 'Tiền điện', calculationType: 'METER', unitPrice: 3800 },
-  { id: 7, boardingHouseId: 2, houseCode: 'CS-02', serviceName: 'Tiền nước', calculationType: 'PER_CAPITA', unitPrice: 100000 },
-  { id: 8, boardingHouseId: 2, houseCode: 'CS-02', serviceName: 'Phí vệ sinh & rác', calculationType: 'PER_ROOM', unitPrice: 40000 },
-  { id: 9, boardingHouseId: 2, houseCode: 'CS-02', serviceName: 'Internet Cáp quang', calculationType: 'PER_ROOM', unitPrice: 80000 },
-  { id: 10, boardingHouseId: 3, houseCode: 'CS-03', serviceName: 'Tiền điện', calculationType: 'METER', unitPrice: 4000 },
-  { id: 11, boardingHouseId: 3, houseCode: 'CS-03', serviceName: 'Tiền nước', calculationType: 'METER', unitPrice: 30000 },
-  { id: 12, boardingHouseId: 3, houseCode: 'CS-03', serviceName: 'Phí dịch vụ thang máy & rác', calculationType: 'PER_ROOM', unitPrice: 150000 }
-];
+export const DEFAULT_ROOMMATE_REQUESTS_V2 = [];
 
-export const DEFAULT_ROOMMATE_REQUESTS_V2 = [
-  {
-    id: 1,
-    roomId: 101,
-    roomNumber: 'P.101',
-    houseCode: 'CS-01',
-    requestedByTenantId: 1,
-    requestedByTenantName: 'Nguyễn Văn An',
-    fullName: 'Đặng Tuấn Anh',
-    identityCard: '001202008899',
-    maskedIdentityCard: '00120200****',
-    phone: '0977.888.999',
-    birthDate: '2002-05-15',
-    gender: 'MALE',
-    hometown: 'Thái Bình',
-    cccdFrontUrl: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=600&auto=format&fit=crop',
-    cccdBackUrl: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?w=600&auto=format&fit=crop',
-    status: 'PENDING',
-    rejectionReason: null,
-    createdAt: '2026-10-02T10:30:00Z',
-    reviewedAt: null
-  }
-];
-
-export const DEFAULT_MOVE_OUT_SETTLEMENTS = [
-  {
-    id: 1,
-    contractId: 'HD-2026-003',
-    roomNumber: 'P.103',
-    houseCode: 'CS-01',
-    tenantName: 'Phạm Minh Cường',
-    tenantPhone: '0912.888.999',
-    bankAccount: '1903456789012',
-    bankName: 'Techcombank',
-    accountHolder: 'PHAM MINH CUONG',
-    moveOutDate: '2026-10-05',
-    reason: 'Hết hạn hợp đồng, chuyển công tác vào TP. Hồ Chí Minh',
-    originalDeposit: 3200000,
-    unpaidUtilitiesFee: 245000,
-    damageFee: 0,
-    damageDescription: 'Không hư hại thiết bị, bàn giao đầy đủ 2 chìa khóa và thẻ thang máy',
-    refundAmount: 2955000,
-    refundStatus: 'PENDING', // PENDING | COMPLETED
-    settledAt: '2026-10-03 16:30',
-    createdAt: '2026-10-01'
-  },
-  {
-    id: 2,
-    contractId: 'HD-2026-004',
-    roomNumber: 'P.102',
-    houseCode: 'CS-02',
-    tenantName: 'Hoàng Văn Nam',
-    tenantPhone: '0966.123.456',
-    bankAccount: '0966123456',
-    bankName: 'MB Bank',
-    accountHolder: 'HOANG VAN NAM',
-    moveOutDate: '2026-10-05',
-    reason: 'Hết hạn hợp đồng thuê phòng',
-    originalDeposit: 3000000,
-    unpaidUtilitiesFee: 150000,
-    damageFee: 0,
-    damageDescription: 'Bàn giao nguyên trạng, thiết bị hoạt động tốt',
-    refundAmount: 2850000,
-    refundStatus: 'PENDING',
-    settledAt: null,
-    createdAt: '2026-10-05'
-  }
-];
+export const DEFAULT_MOVE_OUT_SETTLEMENTS = [];
 
 export const DEFAULT_LANDLORD_PROFILES = [
   {
@@ -900,6 +342,35 @@ export const DEFAULT_LANDLORD_PROFILES = [
     verifiedBy: 1
   }
 ];
+
+// Tự động dọn dẹp sạch toàn bộ mock template cũ trong localStorage trên trình duyệt người dùng (phiên bản v3)
+if (typeof window !== 'undefined' && localStorage.getItem('rental_mock_clean_wiped_v3') !== 'true') {
+  try {
+    const keys = Object.keys(localStorage).filter((k) => k.startsWith('rental_'));
+    keys.forEach((k) => localStorage.removeItem(k));
+    localStorage.setItem('rental_mock_clean_wiped_v3', 'true');
+    localStorage.setItem('rental_is_zero_sandbox', 'true');
+    localStorage.setItem('rental_boarding_houses', JSON.stringify([]));
+    localStorage.setItem('rental_rooms', JSON.stringify([]));
+    localStorage.setItem('rental_contracts', JSON.stringify([]));
+    localStorage.setItem('rental_room_requests', JSON.stringify([]));
+    localStorage.setItem('rental_invoices', JSON.stringify([]));
+    localStorage.setItem('rental_room_members', JSON.stringify([]));
+    localStorage.setItem('rental_tickets', JSON.stringify([]));
+    localStorage.setItem('rental_audit_logs', JSON.stringify([]));
+    localStorage.setItem('rental_system_notices', JSON.stringify([]));
+    localStorage.setItem('rental_room_payment_notices', JSON.stringify([]));
+    localStorage.setItem('rental_roommate_leave_notices', JSON.stringify([]));
+    localStorage.setItem('rental_tenant_rooms', JSON.stringify({
+      tenant1: [],
+      'Nguyễn Văn An': [],
+      tenant2: [],
+      'Phạm Minh Cường': [],
+      tenant_new: [],
+      'Hoàng Văn Nam': []
+    }));
+  } catch {}
+}
 
 const isZeroSandbox = typeof window === 'undefined' || localStorage.getItem('rental_is_zero_sandbox') !== 'false';
 
@@ -1971,17 +1442,19 @@ export const DataProvider = ({ children }) => {
       }
     }
 
-    // Phân giải chuẩn xác cơ sở trọ
-    if (targetHouse && (targetHouse.includes('Bách Khoa') || targetHouse.includes('CS-02') || targetHouse.includes('Cơ Sở 2'))) {
-      targetHouseCode = 'CS-02';
-      targetHouse = 'Nhà Trọ Bách Khoa - Cơ Sở 2';
-    } else if (targetHouse && (targetHouse.includes('Cầu Giấy') || targetHouse.includes('CS-01') || targetHouse.includes('Cơ Sở 1'))) {
-      targetHouseCode = 'CS-01';
-      targetHouse = 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
+    // Phân giải chuẩn xác cơ sở trọ (ưu tiên giữ nguyên requestData.houseCode nếu đã có)
+    if (!targetHouseCode) {
+      if (targetHouse && (targetHouse.includes('Bách Khoa') || targetHouse.includes('CS-02') || targetHouse.includes('Cơ Sở 2'))) {
+        targetHouseCode = 'CS-02';
+        targetHouse = 'Nhà Trọ Bách Khoa - Cơ Sở 2';
+      } else if (targetHouse && (targetHouse.includes('Cầu Giấy') || targetHouse.includes('CS-01') || targetHouse.includes('Cơ Sở 1'))) {
+        targetHouseCode = 'CS-01';
+        targetHouse = 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
+      }
     }
 
     if (!targetHouseCode && requestData.targetRoom) {
-      const matchRoom = (rooms || ALL_ROOMS || []).find((r) => r.number === requestData.targetRoom);
+      const matchRoom = (rooms || ALL_ROOMS || []).find((r) => isSameRoom(r.number, requestData.targetRoom));
       if (matchRoom) {
         targetHouseCode = matchRoom.houseCode;
         targetHouse = matchRoom.house;
@@ -2048,6 +1521,7 @@ export const DataProvider = ({ children }) => {
         const updated = [newEntry, ...filtered];
         try {
           localStorage.setItem('rental_room_requests', JSON.stringify(updated));
+          window.dispatchEvent(new Event('storage'));
         } catch {}
         return updated;
       });
@@ -2081,12 +1555,40 @@ export const DataProvider = ({ children }) => {
       house: targetHouse || (targetHouseCode === 'CS-02' ? 'Nhà Trọ Bách Khoa - Cơ Sở 2' : 'Nhà Trọ Cầu Giấy - Cơ Sở 1')
     };
     setRoomRequests((prev) => {
-      const updated = [newEntry, ...prev];
+      let filtered = prev;
+      if (isRoommate) {
+        const cleanTarget = String(requestData.targetRoom || '').replace(/^P\.?/i, '').trim().toLowerCase();
+        const tNorm = (requestData.tenant || '').toLowerCase().trim();
+        const pNorm = (requestData.phone || '').trim();
+        filtered = prev.filter((r) => {
+          if (r.type !== 'ROOMMATE' && r.type !== 'JOIN_ROOM') return true;
+          const rRoom = String(r.targetRoom || r.roomNumber || '').replace(/^P\.?/i, '').trim().toLowerCase();
+          if (rRoom !== cleanTarget) return true;
+          if (r.houseCode && targetHouseCode && !isSameHouse(r.houseCode, targetHouseCode)) return true;
+          const rTenant = (r.tenant || r.tenantName || '').toLowerCase().trim();
+          const rPhone = (r.phone || '').trim();
+          const isSameUser = (tNorm && (rTenant.includes(tNorm) || tNorm.includes(rTenant))) || (pNorm && rPhone === pNorm);
+          // Loại bỏ đơn cũ của khách này đối với phòng này (dù là REJECTED hay CANCELLED hay WAITING cũ) để đơn mới thay thế hoàn toàn
+          return !isSameUser;
+        });
+      }
+      const updated = [newEntry, ...filtered];
       try {
         localStorage.setItem('rental_room_requests', JSON.stringify(updated));
       } catch {}
       return updated;
     });
+
+    if (isRoommate) {
+      addAuditLog({
+        role: 'ROLE_TENANT',
+        username: requestData.tenant || 'Khách thuê',
+        action: requestData.isReapply ? 'REAPPLY_ROOMMATE_REQUEST' : 'SUBMIT_ROOMMATE_REQUEST',
+        target: requestData.targetRoom,
+        details: `${requestData.tenant} ${requestData.isReapply ? 'gửi lại' : 'gửi'} đơn xin vào ở ghép phòng ${requestData.targetRoom} tại ${newEntry.house}. Đang chờ thành viên trong phòng biểu quyết.`
+      });
+    }
+
     return newEntry;
   };
 
@@ -2720,6 +2222,11 @@ export const DataProvider = ({ children }) => {
 
         try {
           localStorage.setItem('rental_contracts', JSON.stringify(nextContracts));
+          localStorage.removeItem('rental_deposit_paid_current');
+          localStorage.removeItem(`rental_deposit_paid_${targetReq.targetRoom}`);
+          const cleanTarget = String(targetReq.targetRoom || '').replace(/^P\.?/i, '').trim();
+          localStorage.removeItem(`rental_deposit_paid_${cleanTarget}`);
+          localStorage.removeItem(`rental_deposit_paid_P.${cleanTarget}`);
         } catch {}
         return nextContracts;
       });
@@ -2948,17 +2455,22 @@ export const DataProvider = ({ children }) => {
     );
 
     setRoomRequests((prev) => {
-      const next = prev.map((req) => {
-        if (req.id === requestId) {
-          return {
-            ...req,
-            status: cancelStatus,
-            cancelledAt: new Date().toLocaleDateString('vi-VN'),
-            cancelReason: reason
-          };
-        }
-        return req;
-      });
+      let next;
+      if (options.purge || targetReq.status === 'REJECTED' || targetReq.status === 'REJECTED_BY_ROOMMATES') {
+        next = prev.filter((req) => req.id !== requestId);
+      } else {
+        next = prev.map((req) => {
+          if (req.id === requestId) {
+            return {
+              ...req,
+              status: cancelStatus,
+              cancelledAt: new Date().toLocaleDateString('vi-VN'),
+              cancelReason: reason
+            };
+          }
+          return req;
+        });
+      }
       try {
         localStorage.setItem('rental_room_requests', JSON.stringify(next));
       } catch {}
@@ -5458,24 +4970,27 @@ export const DataProvider = ({ children }) => {
   }, [roomRequests, contracts, roomMembers]);
 
   // 5B. Nộp tiền cọc và ký hợp đồng điện tử để nhận phòng (Onboarding Gate)
-    // Xác nhận nộp tiền cọc (bước 1 Onboarding, chưa ký hợp đồng)
-  const confirmDepositPaid = ({ contractId, contractCode, room, paymentMethod = 'VNPay' } = {}) => {
+  // Xác nhận nộp tiền cọc (bước 1 Onboarding, chưa ký hợp đồng)
+  const confirmDepositPaid = (target) => {
+    const targetObj = typeof target === 'object' && target !== null ? target : { contractId: target };
+    const { contractId, contractCode, room, paymentMethod = 'SePay' } = targetObj;
     const nowStr = new Date().toLocaleString('vi-VN');
-    let matched = false;
+    let matchedContract = null;
+
     setContracts((prev) => {
       const next = prev.map((c) => {
         const match =
-          (contractId && c.id === contractId) ||
+          (contractId && (c.id === contractId || String(c.id) === String(contractId))) ||
           (contractCode && c.contractCode === contractCode) ||
-          (room && c.roomNumber === room);
+          (room && isSameRoom(c.roomNumber, room));
         if (!match) return c;
-        matched = true;
+        matchedContract = { ...c };
         return {
           ...c,
           depositPaid: true,
           depositPaidAt: nowStr,
           depositPaymentMethod: paymentMethod,
-          status: c.status === 'PENDING_DEPOSIT' ? 'PENDING_SIGN' : c.status
+          status: (c.status === 'PENDING_DEPOSIT' || c.status === 'HOLDING') ? 'PENDING_SIGN' : c.status
         };
       });
       try {
@@ -5484,9 +4999,33 @@ export const DataProvider = ({ children }) => {
       return next;
     });
 
-    if (contractId) localStorage.setItem(`rental_deposit_paid_${contractId}`, 'true');
-    if (room) localStorage.setItem(`rental_deposit_paid_${room}`, 'true');
-    localStorage.setItem('rental_deposit_paid_current', 'true');
+    const cId = matchedContract?.id || contractId;
+    const cRoom = matchedContract?.roomNumber;
+    if (cId) localStorage.setItem(`rental_deposit_paid_${cId}`, 'true');
+    if (cRoom) {
+      localStorage.setItem(`rental_deposit_paid_${cRoom}`, 'true');
+      const cleanNorm = String(cRoom).replace(/^p\.?/i, '').trim();
+      localStorage.setItem(`rental_deposit_paid_${cleanNorm}`, 'true');
+
+      // Tự động chuyển phòng sang HOLDING
+      setRooms((prevRooms) => {
+        const updatedRooms = prevRooms.map((r) => {
+          if (isSameRoom(r.number, cRoom) && (!matchedContract?.houseCode || isSameHouse(r.houseCode, matchedContract.houseCode))) {
+            return { ...r, status: 'HOLDING' };
+          }
+          return r;
+        });
+        try {
+          localStorage.setItem('rental_rooms', JSON.stringify(updatedRooms));
+        } catch {}
+        return updatedRooms;
+      });
+    }
+
+    try {
+      window.dispatchEvent(new Event('storage'));
+    } catch {}
+
     return { success: true };
   };
 
@@ -6376,10 +5915,28 @@ export const DataProvider = ({ children }) => {
     try {
       const keys = Object.keys(localStorage).filter((k) => k.startsWith('rental_'));
       keys.forEach((k) => localStorage.removeItem(k));
+      localStorage.setItem('rental_mock_clean_wiped_v3', 'true');
       localStorage.setItem('rental_is_zero_sandbox', 'true');
       localStorage.setItem('rental_boarding_houses', JSON.stringify([]));
-      localStorage.setItem('rental_landlord_profiles', JSON.stringify(DEFAULT_LANDLORD_PROFILES));
+      localStorage.setItem('rental_rooms', JSON.stringify([]));
+      localStorage.setItem('rental_contracts', JSON.stringify([]));
+      localStorage.setItem('rental_room_requests', JSON.stringify([]));
+      localStorage.setItem('rental_invoices', JSON.stringify([]));
+      localStorage.setItem('rental_room_members', JSON.stringify([]));
+      localStorage.setItem('rental_tickets', JSON.stringify([]));
       localStorage.setItem('rental_audit_logs', JSON.stringify([]));
+      localStorage.setItem('rental_system_notices', JSON.stringify([]));
+      localStorage.setItem('rental_room_payment_notices', JSON.stringify([]));
+      localStorage.setItem('rental_roommate_leave_notices', JSON.stringify([]));
+      localStorage.setItem('rental_landlord_profiles', JSON.stringify(DEFAULT_LANDLORD_PROFILES));
+      localStorage.setItem('rental_tenant_rooms', JSON.stringify({
+        tenant1: [],
+        'Nguyễn Văn An': [],
+        tenant2: [],
+        'Phạm Minh Cường': [],
+        tenant_new: [],
+        'Hoàng Văn Nam': []
+      }));
       sessionStorage.clear();
     } catch {}
 
@@ -6408,6 +5965,15 @@ export const DataProvider = ({ children }) => {
       const keys = Object.keys(localStorage).filter((k) => k.startsWith('rental_'));
       keys.forEach((k) => localStorage.removeItem(k));
       localStorage.setItem('rental_is_zero_sandbox', 'false');
+      localStorage.setItem('rental_mock_clean_wiped_v3', 'true');
+      localStorage.setItem('rental_boarding_houses', JSON.stringify(BACKUP_BOARDING_HOUSES));
+      localStorage.setItem('rental_rooms', JSON.stringify(BACKUP_ALL_ROOMS));
+      localStorage.setItem('rental_contracts', JSON.stringify(BACKUP_CONTRACTS));
+      localStorage.setItem('rental_invoices', JSON.stringify(BACKUP_INVOICES));
+      localStorage.setItem('rental_room_requests', JSON.stringify(BACKUP_ROOM_REQUESTS));
+      localStorage.setItem('rental_room_members', JSON.stringify(BACKUP_ROOM_MEMBERS));
+      localStorage.setItem('rental_tickets', JSON.stringify(BACKUP_TICKETS));
+      localStorage.setItem('rental_landlords', JSON.stringify(BACKUP_LANDLORDS));
       localStorage.setItem('rental_tenant_rooms', JSON.stringify({
         tenant1: ['P.101'],
         'Nguyễn Văn An': ['P.101'],
@@ -6416,22 +5982,20 @@ export const DataProvider = ({ children }) => {
         tenant_new: [],
         'Hoàng Văn Nam': []
       }));
-      localStorage.setItem('rental_room_members', JSON.stringify(DEFAULT_ROOM_MEMBERS));
-      localStorage.setItem('rental_room_requests', JSON.stringify(DEFAULT_ROOM_REQUESTS));
       sessionStorage.clear();
     } catch {}
 
-    setRooms(ALL_ROOMS);
-    setTenants(DEFAULT_TENANTS);
-    setContracts(DEFAULT_CONTRACTS);
-    setSaasInvoices(DEFAULT_SAAS_INVOICES);
-    setInvoicesHistory({ '2026-09': DEFAULT_INVOICES });
-    setMetersHistory({ '2026-09': DEFAULT_METERS });
-    setRoomRequests(DEFAULT_ROOM_REQUESTS);
-    setRoomMembers(DEFAULT_ROOM_MEMBERS);
-    setTickets(DEFAULT_TICKETS);
-    setLandlords(DEFAULT_LANDLORDS);
-    setAuditLogs(DEFAULT_AUDIT_LOGS);
+    setRooms(BACKUP_ALL_ROOMS);
+    setTenants(BACKUP_TENANTS);
+    setContracts(BACKUP_CONTRACTS);
+    setSaasInvoices(BACKUP_SAAS_INVOICES);
+    setInvoicesHistory({ '2026-09': BACKUP_INVOICES });
+    setMetersHistory({ '2026-09': generateDefaultMeters(BACKUP_ALL_ROOMS) });
+    setRoomRequests(BACKUP_ROOM_REQUESTS);
+    setRoomMembers(BACKUP_ROOM_MEMBERS);
+    setTickets(BACKUP_TICKETS);
+    setLandlords(BACKUP_LANDLORDS);
+    setAuditLogs([]);
 
     if (typeof window !== 'undefined') {
       window.location.href = window.location.href.split('#')[0];

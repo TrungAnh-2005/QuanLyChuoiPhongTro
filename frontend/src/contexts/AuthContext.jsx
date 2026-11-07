@@ -64,8 +64,8 @@ const DEMO_USERS = {
     hometown: 'Nam Định',
     room: isZeroSandbox ? null : 'P.101',
     rooms: isZeroSandbox ? [] : ['P.101'],
-    houseCode: 'CS-01',
-    houseName: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
+    houseCode: isZeroSandbox ? null : 'CS-01',
+    houseName: isZeroSandbox ? null : 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
     role: 'TENANT',
     token: 'demo-tenant-token'
   },
@@ -78,8 +78,8 @@ const DEMO_USERS = {
     hometown: 'Hải Phòng',
     room: isZeroSandbox ? null : 'P.101',
     rooms: isZeroSandbox ? [] : ['P.101'],
-    houseCode: 'CS-01',
-    houseName: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
+    houseCode: isZeroSandbox ? null : 'CS-01',
+    houseName: isZeroSandbox ? null : 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
     role: 'TENANT',
     token: 'demo-tenant2-token'
   },

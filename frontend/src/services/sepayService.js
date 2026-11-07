@@ -152,8 +152,8 @@ export async function checkSePayTransaction({
           if (cleanCode && cleanContent.includes(cleanCode)) {
             matchCode = true;
           } else if (cleanCode) {
-            const parts = (invoiceCode || '').toUpperCase().split(/\s+/).filter(Boolean);
-            if (parts.length >= 2 && parts.every(p => cleanContent.includes(p.replace(/[^A-Za-z0-9]/g, '')))) {
+            const parts = (invoiceCode || '').toUpperCase().split(/\s+/).map(p => p.replace(/[^A-Za-z0-9]/g, '')).filter(p => p.length >= 2);
+            if (parts.length >= 2 && parts.every(p => cleanContent.includes(p))) {
               matchCode = true;
             }
           }
@@ -213,8 +213,8 @@ export async function checkSePayTransaction({
           if (cleanCode && cleanContent.includes(cleanCode)) {
             matchCode = true;
           } else if (cleanCode) {
-            const parts = (invoiceCode || '').toUpperCase().split(/\s+/).filter(Boolean);
-            if (parts.length >= 2 && parts.every(p => cleanContent.includes(p.replace(/[^A-Za-z0-9]/g, '')))) {
+            const parts = (invoiceCode || '').toUpperCase().split(/\s+/).map(p => p.replace(/[^A-Za-z0-9]/g, '')).filter(p => p.length >= 2);
+            if (parts.length >= 2 && parts.every(p => cleanContent.includes(p))) {
               matchCode = true;
             }
           }

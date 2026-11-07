@@ -34,59 +34,31 @@ export default function AdminHousesPage() {
   // Expanded landlords state (key: landlord identifier -> boolean)
   const [expandedLandlords, setExpandedLandlords] = useState({});
 
+  const sanitizeHouses = (list) => {
+    if (!Array.isArray(list)) return [];
+    return list;
+  };
+
   const [housesList, setHousesList] = useState(() => {
     try {
       const saved = localStorage.getItem('rental_boarding_houses');
-      if (saved) return JSON.parse(saved);
+      if (saved) return sanitizeHouses(JSON.parse(saved));
     } catch {}
-    return [
-      {
-        id: 1,
-        code: 'CS-01',
-        name: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
-        address: 'Số 45, Ngõ 165 Cầu Giấy, Phường Dịch Vọng, Cầu Giấy, Hà Nội',
-        manager: 'Lê Thị Thu Ngân (Staff CS1)',
-        managerUsername: 'staff',
-        createdBy: 'staff',
-        managerPhone: '0912.888.666',
-        floors: 4,
-        totalRooms: 12,
-        status: 'ACTIVE'
-      },
-      {
-        id: 2,
-        code: 'CS-02',
-        name: 'Nhà Trọ Bách Khoa - Cơ Sở 2',
-        address: 'Số 18, Ngõ Tự Do, Phường Đồng Tâm, Hai Bà Trưng, Hà Nội',
-        manager: 'Đàm Văn Táo (Staff CS2)',
-        managerUsername: 'staff2',
-        createdBy: 'staff2',
-        managerPhone: '0988.777.999',
-        floors: 4,
-        totalRooms: 8,
-        status: 'ACTIVE'
-      },
-      {
-        id: 3,
-        code: 'CS-03',
-        name: 'Nhà Trọ Đống Đa - Cơ Sở 3',
-        address: 'Số 92, Phố Chùa Láng, Phường Láng Thượng, Đống Đa, Hà Nội',
-        manager: 'Phạm Quốc Hùng',
-        managerUsername: 'landlord_dd',
-        createdBy: 'landlord_dd',
-        managerPhone: '0936.555.222',
-        floors: 6,
-        totalRooms: 16,
-        status: 'ACTIVE'
-      }
-    ];
+    return [];
   });
 
   const reloadHouses = () => {
     try {
       const saved = localStorage.getItem('rental_boarding_houses');
       if (saved) {
-        setHousesList(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const filtered = sanitizeHouses(parsed);
+          setHousesList(filtered);
+          if (filtered.length !== parsed.length) {
+            localStorage.setItem('rental_boarding_houses', JSON.stringify(filtered));
+          }
+        }
       }
     } catch {}
   };
@@ -149,16 +121,6 @@ export default function AdminHousesPage() {
         phone: '0988.777.999',
         packageCode: 'BASIC',
         subscriptionPackage: 'Gói Cơ Bản',
-        status: 'ACTIVE'
-      },
-      {
-        id: 3,
-        username: 'landlord_dd',
-        fullName: 'Phạm Quốc Hùng',
-        email: 'hung.pq@rental.vn',
-        phone: '0936.555.222',
-        packageCode: 'ENTERPRISE',
-        subscriptionPackage: 'Gói Doanh Nghiệp',
         status: 'ACTIVE'
       }
     ];
