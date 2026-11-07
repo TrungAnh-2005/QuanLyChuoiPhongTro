@@ -80,11 +80,22 @@ export default function BoardingHousesPage() {
   const canManageHouse = (house) => {
     if (!house) return false;
     if (role !== 'STAFF') return false;
-    const myUsername = user?.username;
+    const myUsername = (user?.username || '').toLowerCase();
     if (!myUsername) return false;
+    const created = (house.createdBy || '').toLowerCase();
+    const manager = (house.managerUsername || '').toLowerCase();
+    const code = (house.code || '').toUpperCase();
+
+    if (myUsername === 'staff2') {
+      if (created === 'staff' || created === 'staff1' || manager === 'staff' || manager === 'staff1' || code.startsWith('S1-') || code === 'CS-01') return false;
+    }
+    if (myUsername === 'staff' || myUsername === 'staff1') {
+      if (created === 'staff2' || manager === 'staff2' || code.startsWith('S2-') || code === 'CS-02') return false;
+    }
+
     return (
-      house.createdBy === myUsername ||
-      house.managerUsername === myUsername ||
+      house.createdBy === user?.username ||
+      house.managerUsername === user?.username ||
       (user?.fullName && house.manager && house.manager.toLowerCase().includes(user.fullName.toLowerCase())) ||
       (user?.phone && house.managerPhone && house.managerPhone.replace(/\D/g, '') === user.phone.replace(/\D/g, '')) ||
       (!isZeroSandbox && myUsername === 'staff' && (house.code === 'CS-01' || !house.createdBy)) ||

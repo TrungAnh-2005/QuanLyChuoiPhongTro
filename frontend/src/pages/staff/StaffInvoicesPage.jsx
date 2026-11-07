@@ -87,6 +87,13 @@ export default function StaffInvoicesPage({ forcedTab }) {
       return dynamicHouses.filter((h) => {
         const created = (h.createdBy || '').toLowerCase();
         const manager = (h.managerUsername || '').toLowerCase();
+        const code = (h.code || '').toUpperCase();
+        if (u === 'staff2') {
+          if (created === 'staff' || created === 'staff1' || manager === 'staff' || manager === 'staff1' || code.startsWith('S1-') || code === 'CS-01') return false;
+        }
+        if (u === 'staff' || u === 'staff1') {
+          if (created === 'staff2' || manager === 'staff2' || code.startsWith('S2-') || code === 'CS-02') return false;
+        }
         if (created && created === u) return true;
         if (manager && manager === u) return true;
         if (user?.houseCode && h.code === user.houseCode) return true;

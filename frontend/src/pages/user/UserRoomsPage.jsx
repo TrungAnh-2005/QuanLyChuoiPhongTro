@@ -35,11 +35,10 @@ import TenantMoveOutNoticeModal from '../../components/settlement/TenantMoveOutN
 
 export function normalizeHouseCode(code) {
   if (!code) return '';
-  let c = String(code).trim().toUpperCase();
-  c = c.replace(/^S\d+[-_]/i, '');
-  if (c === 'CS-01' || c === 'CS1' || c.includes('CẦU GIẤY')) return 'CS-01';
-  if (c === 'CS-02' || c === 'CS2' || c.includes('BÁCH KHOA')) return 'CS-02';
-  if (c === 'CS-03' || c === 'CS3' || c.includes('ĐỐNG ĐA') || c.includes('HOÀNG MAI')) return 'CS-03';
+  const c = String(code).trim().toUpperCase();
+  if (c === 'CS-01' || c === 'CS1') return 'CS-01';
+  if (c === 'CS-02' || c === 'CS2') return 'CS-02';
+  if (c === 'CS-03' || c === 'CS3') return 'CS-03';
   return c;
 }
 
@@ -50,11 +49,12 @@ export function isSameRoom(a, b) {
 }
 
 export function isSameHouse(codeA, codeB) {
-  if (!codeA || !codeB) return true;
-  const nA = normalizeHouseCode(codeA);
-  const nB = normalizeHouseCode(codeB);
-  if (nA === nB) return true;
-  if (nA.includes(nB) || nB.includes(nA)) return true;
+  if (!codeA || !codeB) return false;
+  const a = normalizeHouseCode(codeA);
+  const b = normalizeHouseCode(codeB);
+  if (a === b) return true;
+  if ((a === 'CS-01' && b === 'S1-CS-01') || (a === 'S1-CS-01' && b === 'CS-01')) return true;
+  if ((a === 'CS-02' && b === 'S2-CS-02') || (a === 'S2-CS-02' && b === 'CS-02')) return true;
   return false;
 }
 
@@ -792,10 +792,13 @@ export default function UserRoomsPage() {
 
   const resolveLandlordKey = useCallback((houseCode, houseName) => {
     const code = (houseCode || '').toUpperCase().trim();
+    if (code.startsWith('S2-') || code === 'CS-02') return 'staff2';
+    if (code.startsWith('S1-') || code === 'CS-01') return 'staff';
+    if (code.startsWith('S3-') || code === 'CS-03') return 'admin';
     const name = (houseName || '').toLowerCase().trim();
-    if (code === 'CS-01' || code.startsWith('S1-') || name.includes('cầu giấy') || name.includes('ngân')) return 'staff';
-    if (code === 'CS-02' || code.startsWith('S2-') || name.includes('bách khoa') || name.includes('táo')) return 'staff2';
-    if (code === 'CS-03' || code.startsWith('S3-') || name.includes('hùng') || (code === 'CS-03' && name.includes('đống đa'))) return 'admin';
+    if (name.includes('táo')) return 'staff2';
+    if (name.includes('ngân')) return 'staff';
+    if (name.includes('hùng')) return 'admin';
     return null;
   }, []);
 

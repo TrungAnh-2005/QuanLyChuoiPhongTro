@@ -19,20 +19,22 @@ import {
 
 export function normalizeHouseCode(code) {
   if (!code) return '';
-  let c = String(code).trim().toUpperCase();
-  c = c.replace(/^S\d+[-_]/i, '');
-  if (c === 'CS-01' || c === 'CS1' || c.includes('CẦU GIẤY')) return 'CS-01';
-  if (c === 'CS-02' || c === 'CS2' || c.includes('BÁCH KHOA')) return 'CS-02';
-  if (c === 'CS-03' || c === 'CS3' || c.includes('ĐỐNG ĐA') || c.includes('HOÀNG MAI')) return 'CS-03';
+  const c = String(code).trim().toUpperCase();
+  if (c === 'CS-01' || c === 'CS1') return 'CS-01';
+  if (c === 'CS-02' || c === 'CS2') return 'CS-02';
+  if (c === 'CS-03' || c === 'CS3') return 'CS-03';
   return c;
 }
 
 export function isSameHouse(codeA, codeB) {
-  if (!codeA || !codeB) return true;
-  const nA = normalizeHouseCode(codeA);
-  const nB = normalizeHouseCode(codeB);
-  if (nA === nB) return true;
-  if (nA.includes(nB) || nB.includes(nA)) return true;
+  if (!codeA || !codeB) return false;
+  const a = normalizeHouseCode(codeA);
+  const b = normalizeHouseCode(codeB);
+  if (a === b) return true;
+  // Cho phép CS-01 và S1-CS-01 đồng nhất (Cơ sở ban đầu của Staff 1)
+  if ((a === 'CS-01' && b === 'S1-CS-01') || (a === 'S1-CS-01' && b === 'CS-01')) return true;
+  // Cho phép CS-02 và S2-CS-02 đồng nhất (Cơ sở ban đầu của Staff 2)
+  if ((a === 'CS-02' && b === 'S2-CS-02') || (a === 'S2-CS-02' && b === 'CS-02')) return true;
   return false;
 }
 
@@ -1101,16 +1103,18 @@ export const DataProvider = ({ children }) => {
           return parsed.map((req) => {
             let hCode = req.houseCode;
             let hName = req.house;
-            if (hName && (hName.includes('Bách Khoa') || hName.includes('CS-02') || hName.includes('Cơ Sở 2'))) {
-              hCode = 'CS-02';
-              hName = 'Nhà Trọ Bách Khoa - Cơ Sở 2';
-            } else if (hName && (hName.includes('Cầu Giấy') || hName.includes('CS-01') || hName.includes('Cơ Sở 1'))) {
-              hCode = 'CS-01';
-              hName = 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
-            } else if (!hCode) {
-              const matchRoom = (ALL_ROOMS || []).find((r) => r.number === (req.targetRoom || req.currentRoom));
-              hCode = matchRoom?.houseCode || 'CS-01';
-              hName = matchRoom?.house || 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
+            if (!hCode) {
+              if (hName && (hName.includes('Bách Khoa') || hName.includes('CS-02') || hName.includes('Cơ Sở 2'))) {
+                hCode = 'CS-02';
+                hName = 'Nhà Trọ Bách Khoa - Cơ Sở 2';
+              } else if (hName && (hName.includes('Cầu Giấy') || hName.includes('CS-01') || hName.includes('Cơ Sở 1'))) {
+                hCode = 'CS-01';
+                hName = 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
+              } else {
+                const matchRoom = (ALL_ROOMS || []).find((r) => r.number === (req.targetRoom || req.currentRoom));
+                hCode = matchRoom?.houseCode || 'CS-01';
+                hName = matchRoom?.house || 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
+              }
             }
 
             // AUTO-SANITIZE: Nếu đơn là RENT mang status APPROVED nhưng không còn hợp đồng PENDING_DEPOSIT / PENDING_SIGN nào

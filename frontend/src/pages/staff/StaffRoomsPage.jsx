@@ -65,7 +65,12 @@ export function normalizeHouseCode(code) {
 
 export function isSameHouse(codeA, codeB) {
   if (!codeA || !codeB) return false;
-  return normalizeHouseCode(codeA) === normalizeHouseCode(codeB);
+  const a = normalizeHouseCode(codeA);
+  const b = normalizeHouseCode(codeB);
+  if (a === b) return true;
+  if ((a === 'CS-01' && b === 'S1-CS-01') || (a === 'S1-CS-01' && b === 'CS-01')) return true;
+  if ((a === 'CS-02' && b === 'S2-CS-02') || (a === 'S2-CS-02' && b === 'CS-02')) return true;
+  return false;
 }
 
 export function normalizeRoomNumber(number) {
@@ -233,23 +238,28 @@ export default function StaffRoomsPage() {
     if (user?.role === 'ADMIN') return storedBoardingHouses;
     const u = (user?.username || '').toLowerCase();
 
-    let houses = storedBoardingHouses.filter((h) => {
+    return storedBoardingHouses.filter((h) => {
       const created = (h.createdBy || '').toLowerCase();
       const manager = (h.managerUsername || '').toLowerCase();
       const code = (h.code || '').toUpperCase();
-      const name = (h.name || '').toLowerCase();
 
-      // NẾU LÀ STAFF 2 (Đàm Văn Táo): Tuyệt đối CHỈ thấy CS-02, các mã S2-*, hoặc cơ sở Bách Khoa!
+      // NẾU LÀ STAFF 2 (Đàm Văn Táo): Tuyệt đối KHÔNG thấy CS-01 hay bất kỳ cơ sở nào của Staff 1
       if (u === 'staff2') {
-        if (created === 'staff2' || manager === 'staff2') return true;
-        if (code === 'CS-02' || code.startsWith('S2-') || name.includes('bách khoa')) return true;
+        if (created === 'staff' || created === 'staff1' || manager === 'staff' || manager === 'staff1' || code.startsWith('S1-') || code === 'CS-01') {
+          return false;
+        }
+        if (created === 'staff2' || manager === 'staff2' || code.startsWith('S2-')) return true;
+        if (!isZeroSandbox && code === 'CS-02') return true;
         return false;
       }
 
-      // NẾU LÀ STAFF 1 (Lê Thị Thu Ngân): Tuyệt đối CHỈ thấy CS-01, các mã S1-*, hoặc cơ sở Cầu Giấy!
+      // NẾU LÀ STAFF 1 (Lê Thị Thu Ngân): Tuyệt đối KHÔNG thấy CS-02 hay bất kỳ cơ sở nào của Staff 2
       if (u === 'staff' || u === 'staff1') {
-        if (created === 'staff' || created === 'staff1' || manager === 'staff' || manager === 'staff1') return true;
-        if (code === 'CS-01' || code.startsWith('S1-') || name.includes('cầu giấy') || !h.createdBy) return true;
+        if (created === 'staff2' || manager === 'staff2' || code.startsWith('S2-') || code === 'CS-02') {
+          return false;
+        }
+        if (created === 'staff' || created === 'staff1' || manager === 'staff' || manager === 'staff1' || code.startsWith('S1-')) return true;
+        if (!isZeroSandbox && (code === 'CS-01' || !h.createdBy)) return true;
         return false;
       }
 
@@ -258,54 +268,6 @@ export default function StaffRoomsPage() {
       if (user?.houseCode && isSameHouse(h.code, user.houseCode)) return true;
       return false;
     });
-
-    // Nếu Staff 2 chưa có cơ sở nào trong danh sách: Tự động khởi tạo CS-02 Bách Khoa cho Staff 2
-    if (u === 'staff2' && houses.length === 0) {
-      const defaultCS2 = {
-        id: 2,
-        code: 'CS-02',
-        name: 'Nhà Trọ Bách Khoa - Cơ Sở 2',
-        address: 'Số 45 Tạ Quang Bửu, Phường Bách Khoa, Hai Bà Trưng, Hà Nội',
-        manager: 'Đàm Văn Táo',
-        managerPhone: '0988.777.999',
-        managerUsername: 'staff2',
-        createdBy: 'staff2',
-        floors: 4,
-        totalFloors: 4,
-        totalRooms: 10,
-        status: 'ACTIVE'
-      };
-      houses = [defaultCS2];
-      try {
-        const next = [...storedBoardingHouses.filter(h => h.code !== 'CS-02'), defaultCS2];
-        localStorage.setItem('rental_boarding_houses', JSON.stringify(next));
-      } catch {}
-    }
-
-    // Nếu Staff 1 chưa có cơ sở nào trong danh sách: Tự động khởi tạo CS-01 Cầu Giấy cho Staff 1
-    if ((u === 'staff' || u === 'staff1') && houses.length === 0) {
-      const defaultCS1 = {
-        id: 1,
-        code: 'CS-01',
-        name: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
-        address: 'Số 12 Ngõ 86 Cầu Giấy, Phường Quan Hoa, Cầu Giấy, Hà Nội',
-        manager: 'Lê Thị Thu Ngân',
-        managerPhone: '0912.888.666',
-        managerUsername: 'staff',
-        createdBy: 'staff',
-        floors: 4,
-        totalFloors: 4,
-        totalRooms: 12,
-        status: 'ACTIVE'
-      };
-      houses = [defaultCS1];
-      try {
-        const next = [...storedBoardingHouses.filter(h => h.code !== 'CS-01'), defaultCS1];
-        localStorage.setItem('rental_boarding_houses', JSON.stringify(next));
-      } catch {}
-    }
-
-    return houses;
   }, [storedBoardingHouses, user]);
 
   const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
