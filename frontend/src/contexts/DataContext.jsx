@@ -19,16 +19,21 @@ import {
 
 export function normalizeHouseCode(code) {
   if (!code) return '';
-  const c = String(code).trim().toUpperCase();
-  if (c === 'CS-01' || c === 'CS1') return 'CS-01';
-  if (c === 'CS-02' || c === 'CS2') return 'CS-02';
-  if (c === 'CS-03' || c === 'CS3') return 'CS-03';
+  let c = String(code).trim().toUpperCase();
+  c = c.replace(/^S\d+[-_]/i, '');
+  if (c === 'CS-01' || c === 'CS1' || c.includes('CẦU GIẤY')) return 'CS-01';
+  if (c === 'CS-02' || c === 'CS2' || c.includes('BÁCH KHOA')) return 'CS-02';
+  if (c === 'CS-03' || c === 'CS3' || c.includes('ĐỐNG ĐA') || c.includes('HOÀNG MAI')) return 'CS-03';
   return c;
 }
 
 export function isSameHouse(codeA, codeB) {
-  if (!codeA || !codeB) return false;
-  return normalizeHouseCode(codeA) === normalizeHouseCode(codeB);
+  if (!codeA || !codeB) return true;
+  const nA = normalizeHouseCode(codeA);
+  const nB = normalizeHouseCode(codeB);
+  if (nA === nB) return true;
+  if (nA.includes(nB) || nB.includes(nA)) return true;
+  return false;
 }
 
 export function normalizeRoomNumber(number) {

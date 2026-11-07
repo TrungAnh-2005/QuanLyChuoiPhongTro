@@ -35,10 +35,11 @@ import TenantMoveOutNoticeModal from '../../components/settlement/TenantMoveOutN
 
 export function normalizeHouseCode(code) {
   if (!code) return '';
-  const c = String(code).trim().toUpperCase();
-  if (c === 'CS-01' || c === 'CS1') return 'CS-01';
-  if (c === 'CS-02' || c === 'CS2') return 'CS-02';
-  if (c === 'CS-03' || c === 'CS3') return 'CS-03';
+  let c = String(code).trim().toUpperCase();
+  c = c.replace(/^S\d+[-_]/i, '');
+  if (c === 'CS-01' || c === 'CS1' || c.includes('CẦU GIẤY')) return 'CS-01';
+  if (c === 'CS-02' || c === 'CS2' || c.includes('BÁCH KHOA')) return 'CS-02';
+  if (c === 'CS-03' || c === 'CS3' || c.includes('ĐỐNG ĐA') || c.includes('HOÀNG MAI')) return 'CS-03';
   return c;
 }
 
@@ -49,8 +50,12 @@ export function isSameRoom(a, b) {
 }
 
 export function isSameHouse(codeA, codeB) {
-  if (!codeA || !codeB) return false;
-  return normalizeHouseCode(codeA) === normalizeHouseCode(codeB);
+  if (!codeA || !codeB) return true;
+  const nA = normalizeHouseCode(codeA);
+  const nB = normalizeHouseCode(codeB);
+  if (nA === nB) return true;
+  if (nA.includes(nB) || nB.includes(nA)) return true;
+  return false;
 }
 
 export function normalizeRoomNumber(number) {
@@ -273,18 +278,14 @@ export default function UserRoomsPage() {
       }
     } catch { }
 
-    // 3. Kiểm tra danh mục phòng: nếu phòng mang trạng thái AVAILABLE hoặc occupants === 0
-    const matchedRoom = (rooms || []).find(r => normalizeRoomNumber(r.number) === clean);
-    if (matchedRoom && (matchedRoom.status === 'AVAILABLE' || matchedRoom.occupants === 0)) {
-      return true;
-    }
-
-    if (!hasActive && roomContracts.length > 0) {
-      return true;
+    // Chỉ coi là checkout nếu tất cả hợp đồng của phòng này đều là TERMINATED / COMPLETED / CANCELLED và không còn hợp đồng active/holding nào
+    if (roomContracts.length > 0) {
+      const isAllTerminated = roomContracts.every(c => c.status === 'TERMINATED' || c.status === 'COMPLETED' || c.status === 'CANCELLED');
+      if (isAllTerminated) return true;
     }
 
     return false;
-  }, [roomRequests, rooms, contracts]);
+  }, [roomRequests, contracts]);
 
   // Hàm tính toán số cư dân thực tế trong phòng chuẩn xác theo roomMembers & hợp đồng ACTIVE
   const getActualOccupants = useCallback((room) => {
@@ -342,16 +343,15 @@ export default function UserRoomsPage() {
   // Trả về { isHeld, isDepositPaid, isPending, isMine, contract, request, text }
   const getRoomHoldingOrDepositStatus = useCallback((room) => {
     if (!room) return { isHeld: false, isDepositPaid: false, isPending: false, isMine: false, text: '' };
-    if (isRoomCheckedOut(room.number)) return { isHeld: false, isDepositPaid: false, isPending: false, isMine: false, text: '' };
 
     const cleanRoom = normalizeRoomNumber(room.number);
     const rHouse = room.houseCode || 'CS-01';
-    const uUsername = (user?.username || '').toLowerCase().trim();
 
     // 1. Kiểm tra trong danh sách Hợp Đồng (contracts)
     const matchedContract = (contracts || []).find((c) => {
       if (!isSameRoom(c.roomNumber, cleanRoom)) return false;
-      if (c.houseCode && !isSameHouse(c.houseCode, rHouse)) return false;
+      if (c.status === 'TERMINATED' || c.status === 'CANCELLED' || c.status === 'COMPLETED') return false;
+      if (c.houseCode && rHouse && !isSameHouse(c.houseCode, rHouse)) return false;
 
       const isDepositPaid = Boolean(
         c.depositPaid ||
@@ -363,7 +363,7 @@ export default function UserRoomsPage() {
       );
       const isPendingDeposit = c.status === 'PENDING_DEPOSIT';
       const isPendingSign = c.status === 'PENDING_SIGN';
-      const isHolding = c.status === 'HOLDING';
+      const isHolding = c.status === 'HOLDING' || c.status === 'WAITING_CONFIRMATION' || c.status === 'WAITING_PAYMENT';
       const isAwaiting = isPendingDeposit || isPendingSign || isHolding || (isDepositPaid && (!c.signedElectronically || c.status !== 'ACTIVE'));
       return isAwaiting;
     });
@@ -371,11 +371,15 @@ export default function UserRoomsPage() {
     if (matchedContract) {
       const cTenant = (matchedContract.tenantName || '').toLowerCase().trim();
       const cPhone = (matchedContract.tenantPhone || '').trim();
-      const cUsername = (matchedContract.tenantUsername || '').toLowerCase().trim();
+      const cUsername = (matchedContract.tenantUsername || matchedContract.username || '').toLowerCase().trim();
+      const cCccd = (matchedContract.tenantCccd || '').trim();
 
-      const isMine = (uUsername && cUsername === uUsername) ||
-                     (uName && (cTenant.includes(uName) || uName.includes(cTenant))) ||
-                     (uPhone && cPhone === uPhone);
+      const isMine = Boolean(
+        (uUsername && cUsername === uUsername) ||
+        (uCccd && cCccd && cCccd === uCccd) ||
+        (uPhone && cPhone === uPhone) ||
+        (uName && (cTenant.includes(uName) || uName.includes(cTenant)))
+      );
 
       const isDepositPaid = Boolean(
         matchedContract.depositPaid ||
@@ -401,7 +405,7 @@ export default function UserRoomsPage() {
       const isRent = req.type === 'RENT' || req.type === 'NEW_RENT' || req.type === 'RENTAL' || req.type === 'HOLD';
       if (!isRent || req.status !== 'APPROVED') return false;
       if (!isSameRoom(req.targetRoom || req.roomNumber, cleanRoom)) return false;
-      if (req.houseCode && !isSameHouse(req.houseCode, rHouse)) return false;
+      if (req.houseCode && rHouse && !isSameHouse(req.houseCode, rHouse)) return false;
       return true;
     });
 
@@ -409,10 +413,14 @@ export default function UserRoomsPage() {
       const rTenant = (approvedReq.tenant || approvedReq.tenantName || '').toLowerCase().trim();
       const rPhone = (approvedReq.phone || approvedReq.tenantPhone || '').trim();
       const rUsername = (approvedReq.username || '').toLowerCase().trim();
+      const rCccd = (approvedReq.cccd || '').trim();
 
-      const isMine = (uUsername && rUsername === uUsername) ||
-                     (uName && (rTenant.includes(uName) || uName.includes(rTenant))) ||
-                     (uPhone && rPhone === uPhone);
+      const isMine = Boolean(
+        (uUsername && rUsername === uUsername) ||
+        (uCccd && rCccd && rCccd === uCccd) ||
+        (uPhone && rPhone === uPhone) ||
+        (uName && (rTenant.includes(uName) || uName.includes(rTenant)))
+      );
 
       return {
         isHeld: true,
@@ -429,7 +437,7 @@ export default function UserRoomsPage() {
       const isRent = req.type === 'RENT' || req.type === 'NEW_RENT' || req.type === 'RENTAL' || req.type === 'HOLD';
       if (!isRent || req.status !== 'PENDING') return false;
       if (!isSameRoom(req.targetRoom || req.roomNumber, cleanRoom)) return false;
-      if (req.houseCode && !isSameHouse(req.houseCode, rHouse)) return false;
+      if (req.houseCode && rHouse && !isSameHouse(req.houseCode, rHouse)) return false;
       return true;
     });
 
@@ -437,10 +445,14 @@ export default function UserRoomsPage() {
       const rTenant = (pendingReq.tenant || pendingReq.tenantName || '').toLowerCase().trim();
       const rPhone = (pendingReq.phone || pendingReq.tenantPhone || '').trim();
       const rUsername = (pendingReq.username || '').toLowerCase().trim();
+      const rCccd = (pendingReq.cccd || '').trim();
 
-      const isMine = (uUsername && rUsername === uUsername) ||
-                     (uName && (rTenant.includes(uName) || uName.includes(rTenant))) ||
-                     (uPhone && rPhone === uPhone);
+      const isMine = Boolean(
+        (uUsername && rUsername === uUsername) ||
+        (uCccd && rCccd && rCccd === uCccd) ||
+        (uPhone && rPhone === uPhone) ||
+        (uName && (rTenant.includes(uName) || uName.includes(rTenant)))
+      );
 
       return {
         isHeld: true,
@@ -452,8 +464,12 @@ export default function UserRoomsPage() {
       };
     }
 
-    // 4. Kiểm tra xem phòng có cờ status === 'HOLDING' hay không
-    if (room.status === 'HOLDING') {
+    // 4. Kiểm tra xem phòng có cờ status === 'HOLDING' hoặc holdingBy hay không
+    if (room.status === 'HOLDING' || room.holdingBy || (room.holdingUntil && Date.now() < room.holdingUntil)) {
+      const isMine = Boolean(
+        (uName && (room.holdingBy?.toLowerCase().includes(uName) || uName.includes(room.holdingBy?.toLowerCase()))) ||
+        (uPhone && room.holdingPhone === uPhone)
+      );
       const isDepositPaid = Boolean(
         typeof localStorage !== 'undefined' && (
           localStorage.getItem(`rental_deposit_paid_${room.number}`) === 'true' ||
@@ -464,13 +480,13 @@ export default function UserRoomsPage() {
         isHeld: true,
         isDepositPaid,
         isPending: false,
-        isMine: false,
+        isMine,
         text: isDepositPaid ? 'Đã Nộp Cọc' : 'Đang Giữ Chỗ'
       };
     }
 
     return { isHeld: false, isDepositPaid: false, isPending: false, isMine: false, text: '' };
-  }, [contracts, roomRequests, user, uName, uPhone, isRoomCheckedOut]);
+  }, [contracts, roomRequests, user, uName, uPhone, uUsername, uCccd]);
 
   // Kiểm tra xem phòng có khách đang nộp cọc / giữ chỗ mà CHƯA KÝ HỢP ĐỒNG điện tử hay không
   const isRoomAwaitingContractSignature = useCallback((room) => {
