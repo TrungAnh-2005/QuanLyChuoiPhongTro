@@ -239,6 +239,7 @@ export default function StaffRoomsPage() {
     const u = (user?.username || '').toLowerCase();
 
     return storedBoardingHouses.filter((h) => {
+      if (!h) return false;
       const created = (h.createdBy || '').toLowerCase();
       const manager = (h.managerUsername || '').toLowerCase();
       const code = (h.code || '').toUpperCase();

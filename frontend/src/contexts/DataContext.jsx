@@ -1149,9 +1149,13 @@ export const DataProvider = ({ children }) => {
               let storedMembers = [];
               try {
                 const sM = localStorage.getItem('rental_room_members');
-                if (sM) storedMembers = JSON.parse(sM);
+                if (sM) {
+                  const p = JSON.parse(sM);
+                  if (Array.isArray(p)) storedMembers = p;
+                }
               } catch {}
               const memsInRoom = storedMembers.filter((m) => {
+                if (!m) return false;
                 const mClean = String(m.roomNumber || '').replace(/^P\.?/i, '').trim();
                 return mClean.toLowerCase() === reqRoomClean.toLowerCase() && m.status !== 'MOVED_OUT';
               });
