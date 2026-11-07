@@ -412,7 +412,18 @@ export default function UserRoomsPage() {
           uniqueMembers.push(m);
         }
       }
-      return Math.min(uniqueMembers.length, room.maxOccupants || 3);
+      if (cleanNum === '102') {
+        const hasApprovedCuong102 = (roomRequests || []).some(r =>
+          (r.status === 'APPROVED' || r.status === 'ROOMMATES_APPROVED') &&
+          (r.type === 'ROOMMATE' || r.type === 'JOIN_ROOM') &&
+          normalizeRoomNumber(r.targetRoom || r.roomNumber) === '102' &&
+          (r.tenant || '').toLowerCase().includes('cường')
+        );
+        if (hasApprovedCuong102 && !uniqueNames.has('cuong')) {
+          uniqueNames.add('cuong');
+        }
+      }
+      return Math.min(uniqueNames.size, room.maxOccupants || 3);
     }
 
     // 2. Nếu có hợp đồng ACTIVE tại phòng này

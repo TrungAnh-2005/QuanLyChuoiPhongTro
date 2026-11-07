@@ -906,10 +906,11 @@ export const DataProvider = ({ children }) => {
         const normNum = normalizeRoomNumber(r.number);
         const rHouse = normalizeHouseCode(r.houseCode || 'CS-01');
 
-        // 1. Kiểm tra đơn CHECKOUT / LEAVE_ROOM / RETURN đã được duyệt (APPROVED / SETTLED) hoặc có biên bản quyết toán
+        // 1. Kiểm tra đơn CHECKOUT / RETURN đã được duyệt (APPROVED / SETTLED) hoặc có biên bản quyết toán
+        // LƯU Ý: LEAVE_ROOM chỉ là 1 cá nhân rời phòng ở ghép, không làm cả phòng trở về AVAILABLE!
         let hasCheckout = (
           (Array.isArray(pReq) && pReq.some((req) =>
-            (req.type === 'CHECKOUT' || req.type === 'LEAVE_ROOM' || req.type === 'RETURN') &&
+            (req.type === 'CHECKOUT' || req.type === 'RETURN') &&
             normalizeRoomNumber(req.targetRoom || req.currentRoom || req.roomNumber) === normNum &&
             isSameHouse(req.houseCode || 'CS-01', rHouse) &&
             (req.status === 'APPROVED' || req.status === 'CHECKOUT_SETTLED' || req.status === 'SETTLED' || req.settledAt)
@@ -4548,14 +4549,17 @@ export const DataProvider = ({ children }) => {
         }
       } catch {}
 
+      const sRooms = localStorage.getItem('rental_tenant_rooms');
+      const pRooms = sRooms ? JSON.parse(sRooms) : null;
+      // Nếu rental_tenant_rooms chưa khởi tạo (null), mặc định cả An và Cường đều đang ở P.101
+      const anRooms = pRooms ? (pRooms.tenant1 !== undefined ? pRooms.tenant1 : (pRooms['Nguyễn Văn An'] || [])) : ['P.101'];
+      const anRoomList = Array.isArray(anRooms) ? anRooms : [anRooms];
+      const cuongRooms = pRooms ? (pRooms.tenant2 !== undefined ? pRooms.tenant2 : (pRooms['Phạm Minh Cường'] || [])) : ['P.101'];
+      const cuongRoomList = Array.isArray(cuongRooms) ? cuongRooms : [cuongRooms];
+
       if (isP101CheckedOut) {
         list = list.map((m) => String(m.roomNumber).replace(/^P\.?/i, '').trim() === '101' ? { ...m, status: 'MOVED_OUT' } : m);
       } else {
-        const sRooms = localStorage.getItem('rental_tenant_rooms');
-        const pRooms = sRooms ? JSON.parse(sRooms) : null;
-        // Nếu rental_tenant_rooms chưa khởi tạo (null), mặc định cả An và Cường đều đang ở P.101
-        const anRooms = pRooms ? (pRooms.tenant1 !== undefined ? pRooms.tenant1 : (pRooms['Nguyễn Văn An'] || [])) : ['P.101'];
-        const anRoomList = Array.isArray(anRooms) ? anRooms : [anRooms];
         if (!anRoomList.includes('P.101')) {
           list = list.map((m) => {
             if (m.roomNumber === 'P.101' && (m.fullName || '').toLowerCase().includes('an')) {
@@ -4573,8 +4577,6 @@ export const DataProvider = ({ children }) => {
         }
 
         // Nếu Phạm Minh Cường đang thuê P.101, kiểm tra vai trò chuẩn (MEMBER nếu An còn ở, hoặc REPRESENTATIVE nếu đã bàn giao)
-        const cuongRooms = pRooms ? (pRooms.tenant2 !== undefined ? pRooms.tenant2 : (pRooms['Phạm Minh Cường'] || [])) : ['P.101'];
-        const cuongRoomList = Array.isArray(cuongRooms) ? cuongRooms : [cuongRooms];
         if (cuongRoomList.includes('P.101')) {
           const hasCuong = list.some((m) => m.roomNumber === 'P.101' && (m.fullName || '').toLowerCase().includes('cường') && m.status !== 'MOVED_OUT');
           const cuongRole = anRoomList.includes('P.101') ? 'MEMBER' : 'REPRESENTATIVE';
@@ -4614,10 +4616,13 @@ export const DataProvider = ({ children }) => {
       }
 
       const anRoom = anRoomList[0];
-      if (anRoom === 'P.102') {
+      if (anRoom === 'P.102' || anRoomList.includes('P.102')) {
         list = list.map((m) => {
           if (m.roomNumber === 'P.102' && m.fullName.includes('Bình')) {
             return { ...m, status: 'MOVED_OUT' };
+          }
+          if (m.roomNumber === 'P.102' && (m.fullName || '').toLowerCase().includes('an')) {
+            return { ...m, status: 'ACTIVE', roleInRoom: 'REPRESENTATIVE' };
           }
           return m;
         });
@@ -4641,9 +4646,26 @@ export const DataProvider = ({ children }) => {
         }
       }
 
-      if (cuongRoomList.includes('P.102')) {
-        const hasCuong102 = list.some((m) => isSameRoom(m.roomNumber, 'P.102') && (m.fullName || '').toLowerCase().includes('cường') && m.status !== 'MOVED_OUT');
-        if (!hasCuong102) {
+      // Kiểm tra xem Cường có được duyệt ở P.102 không (từ rental_tenant_rooms hoặc đơn ROOMMATE đã APPROVED)
+      let sReqCheck = null;
+      try { sReqCheck = JSON.parse(localStorage.getItem('rental_room_requests') || '[]'); } catch {}
+      const hasApprovedCuong102Req = Array.isArray(sReqCheck) && sReqCheck.some(r =>
+        (r.status === 'APPROVED' || r.status === 'ROOMMATES_APPROVED') &&
+        (r.type === 'ROOMMATE' || r.type === 'JOIN_ROOM') &&
+        isSameRoom(r.targetRoom || r.roomNumber, 'P.102') &&
+        (r.tenant || '').toLowerCase().includes('cường')
+      );
+
+      if (cuongRoomList.includes('P.102') || hasApprovedCuong102Req) {
+        let foundCuong = false;
+        list = list.map((m) => {
+          if (isSameRoom(m.roomNumber, 'P.102') && (m.fullName || '').toLowerCase().includes('cường')) {
+            foundCuong = true;
+            return { ...m, status: 'ACTIVE', roleInRoom: 'MEMBER' };
+          }
+          return m;
+        });
+        if (!foundCuong) {
           list.push({
             id: 'RM-cuong-102',
             roomId: 102,
@@ -4682,31 +4704,55 @@ export const DataProvider = ({ children }) => {
 
       const sReqs = localStorage.getItem('rental_room_requests');
       const pReqs = sReqs ? JSON.parse(sReqs) : null;
+      let sRoomsObj = null;
+      try { sRoomsObj = JSON.parse(localStorage.getItem('rental_tenant_rooms') || '{}'); } catch {}
+
       if (Array.isArray(pReqs)) {
         pReqs.forEach((req) => {
           // NẾU LÀ ĐƠN TRẢ PHÒNG / RỜI PHÒNG ĐÃ DUYỆT -> ĐÁNH DẤU MOVED_OUT, TUYỆT ĐỐI KHÔNG THÊM VÀO PHÒNG!
+          // TRỪ KHI: Khách này sau đó có đơn ROOMMATE / RENT đã duyệt quay lại phòng, hoặc đang được gán phòng trong rental_tenant_rooms!
           if (req.type === 'CHECKOUT' || req.type === 'LEAVE_ROOM' || req.type === 'RETURN') {
             if (req.status === 'APPROVED' || req.status === 'CHECKOUT_SETTLED' || req.settledAt) {
               const reqRoom = req.targetRoom || req.currentRoom || req.roomNumber;
-              list = list.map((m) => {
-                if (isSameRoom(m.roomNumber, reqRoom) && matchTenantName(m.fullName, req.tenant)) {
-                  return { ...m, status: 'MOVED_OUT' };
+              const hasRejoinLater = pReqs.some((other) =>
+                (other.status === 'APPROVED' || other.status === 'ROOMMATES_APPROVED') &&
+                (other.type === 'ROOMMATE' || other.type === 'JOIN_ROOM' || other.type === 'RENT' || other.type === 'NEW_RENT') &&
+                isSameRoom(other.targetRoom || other.roomNumber, reqRoom) &&
+                matchTenantName(other.tenant, req.tenant)
+              );
+              let inTRNow = false;
+              if (sRoomsObj) {
+                const tLow = (req.tenant || '').toLowerCase();
+                if (tLow.includes('cường')) {
+                  const cRooms = sRoomsObj.tenant2 !== undefined ? sRoomsObj.tenant2 : sRoomsObj['Phạm Minh Cường'];
+                  inTRNow = Array.isArray(cRooms) && cRooms.some(r => isSameRoom(r, reqRoom));
+                } else if (tLow.includes('an')) {
+                  const aRooms = sRoomsObj.tenant1 !== undefined ? sRoomsObj.tenant1 : sRoomsObj['Nguyễn Văn An'];
+                  inTRNow = Array.isArray(aRooms) && aRooms.some(r => isSameRoom(r, reqRoom));
                 }
-                return m;
-              });
+              }
+              if (!hasRejoinLater && !inTRNow) {
+                list = list.map((m) => {
+                  if (isSameRoom(m.roomNumber, reqRoom) && matchTenantName(m.fullName, req.tenant)) {
+                    return { ...m, status: 'MOVED_OUT' };
+                  }
+                  return m;
+                });
+              }
             }
             return;
           }
 
           // CHỈ ĐƠN Ở GHÉP HOẶC THUÊ MỚI ĐÃ DUYỆT MỚI ĐƯỢC THÊM VÀO PHÒNG!
           if (req.status === 'APPROVED' && req.targetRoom && req.tenant && (req.type === 'ROOMMATE' || req.type === 'JOIN_ROOM' || req.type === 'RENT' || req.type === 'NEW_RENT')) {
-            const hasLeft = pReqs.some((other) =>
+            const hasLeftAfter = pReqs.some((other) =>
               (other.type === 'LEAVE_ROOM' || other.type === 'CHECKOUT' || other.type === 'RETURN') &&
               (other.status === 'APPROVED' || other.status === 'CHECKOUT_SETTLED' || other.settledAt) &&
               isSameRoom(other.targetRoom || other.currentRoom || other.roomNumber, req.targetRoom) &&
-              matchTenantName(other.tenant, req.tenant)
+              matchTenantName(other.tenant, req.tenant) &&
+              Number(other.id || 0) > Number(req.id || 0)
             );
-            if (hasLeft) return;
+            if (hasLeftAfter) return;
             const hasMember = list.some(
               (m) =>
                 isSameRoom(m.roomNumber, req.targetRoom) &&
@@ -4722,10 +4768,11 @@ export const DataProvider = ({ children }) => {
                 roomNumber: req.targetRoom,
                 houseCode: req.houseCode || 'CS-01',
                 fullName: req.tenant,
-                phone: req.phone || '0966.123.456',
-                cccd: '036207078901',
-                maskedCccd: '03620707****',
+                phone: req.phone || (req.tenant?.toLowerCase().includes('cường') ? '0912.888.999' : '0966.123.456'),
+                cccd: req.cccd || (req.tenant?.toLowerCase().includes('cường') ? '034203034567' : '036207078901'),
+                maskedCccd: req.cccd ? req.cccd.slice(0, 8) + '****' : (req.tenant?.toLowerCase().includes('cường') ? '03420303****' : '03620707****'),
                 roleInRoom: role,
+                hometown: req.tenant?.toLowerCase().includes('cường') ? 'Hải Phòng' : 'Nam Định',
                 joinDate: req.date || new Date().toLocaleDateString('vi-VN'),
                 temporaryResidenceStatus: 'REGISTERED',
                 status: 'ACTIVE'
@@ -4776,9 +4823,14 @@ export const DataProvider = ({ children }) => {
     } catch (err) {}
 
     // DEDUPLICATE: Tuyệt đối không cho phép thành viên trùng lặp trong cùng một phòng (chống lỗi 18/3)
+    // Ưu tiên giữ lại bản ghi status === 'ACTIVE'
+    const sortedForDedup = [...list].sort((a, b) => {
+      if (a.status === 'ACTIVE' && b.status !== 'ACTIVE') return -1;
+      if (b.status === 'ACTIVE' && a.status !== 'ACTIVE') return 1;
+      return 0;
+    });
     const seenMem = new Set();
-    list = list.filter((m) => {
-      if (m.status === 'MOVED_OUT' || m.status === 'INACTIVE') return true;
+    list = sortedForDedup.filter((m) => {
       const cleanR = normalizeRoomNumber(m.roomNumber);
       const raw = (m.fullName || '').toLowerCase().trim();
       let k = raw;

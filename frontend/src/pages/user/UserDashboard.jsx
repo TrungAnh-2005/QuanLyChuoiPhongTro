@@ -621,6 +621,34 @@ export default function UserDashboard() {
     const hasLeftRoom = (personName, personPhone) => {
       const pName = (personName || '').toLowerCase().trim();
       const pPhone = (personPhone || '').trim();
+
+      // 0. Nếu người này có đơn xin ở ghép (ROOMMATE/JOIN_ROOM) hoặc thuê phòng (RENT) đã được DUYỆT (APPROVED) đối với phòng này -> KHÔNG PHẢI ĐÃ RỜI PHÒNG!
+      const hasRejoined = (roomRequests || []).some((rejoin) => {
+        if (rejoin.status !== 'APPROVED' && rejoin.status !== 'ROOMMATES_APPROVED') return false;
+        if (rejoin.type !== 'ROOMMATE' && rejoin.type !== 'JOIN_ROOM' && rejoin.type !== 'RENT' && rejoin.type !== 'NEW_RENT') return false;
+        if (!isSameRoom(rejoin.targetRoom || rejoin.roomNumber, myRoomNumber)) return false;
+        const reTenant = (rejoin.tenant || rejoin.tenantName || '').toLowerCase().trim();
+        const rePhone = (rejoin.phone || rejoin.tenantPhone || '').trim();
+        return (
+          (pName && reTenant && (reTenant.includes(pName) || pName.includes(reTenant))) ||
+          (pName.includes('cường') && reTenant.includes('cường')) ||
+          (pName.includes('an') && reTenant.includes('an')) ||
+          (pName.includes('nam') && reTenant.includes('nam')) ||
+          (pPhone && rePhone && pPhone === rePhone)
+        );
+      });
+      if (hasRejoined) return false;
+
+      // 0.1 Nếu trong tenantRooms / rental_tenant_rooms người này đang được gán phòng này -> KHÔNG PHẢI ĐÃ RỜI PHÒNG!
+      if (pName.includes('cường')) {
+        const cRooms = tenantRooms?.tenant2 || tenantRooms?.['Phạm Minh Cường'];
+        if (Array.isArray(cRooms) && cRooms.some(r => isSameRoom(r, myRoomNumber))) return false;
+      }
+      if (pName.includes('an')) {
+        const aRooms = tenantRooms?.tenant1 || tenantRooms?.['Nguyễn Văn An'];
+        if (Array.isArray(aRooms) && aRooms.some(r => isSameRoom(r, myRoomNumber))) return false;
+      }
+
       return (roomRequests || []).some(
         (req) =>
           (req.type === 'CHECKOUT' || req.type === 'LEAVE_ROOM' || req.type === 'RETURN') &&
@@ -671,8 +699,8 @@ export default function UserDashboard() {
             houseCode: targetHouse,
             fullName: req.tenant,
             phone: req.phone || (isCuong ? '0912.888.999' : '0966.123.456'),
-            cccd: req.cccd || (isCuong ? '031201019999' : '036207078901'),
-            maskedCccd: req.cccd ? req.cccd.slice(0, 8) + '****' : (isCuong ? '03120101****' : '03620707****'),
+            cccd: req.cccd || (isCuong ? '034203034567' : '036207078901'),
+            maskedCccd: req.cccd ? req.cccd.slice(0, 8) + '****' : (isCuong ? '03420303****' : '03620707****'),
             roleInRoom: 'MEMBER',
             hometown: isCuong ? 'Hải Phòng' : 'Nam Định',
             joinDate: req.date || new Date().toLocaleDateString('vi-VN'),
@@ -704,7 +732,19 @@ export default function UserDashboard() {
           });
         }
       }
-      if (!hasLeftRoom('Phạm Minh Cường', '0912.888.999')) {
+
+      const isCuongIn102 = Boolean(
+        (roomRequests || []).some(r =>
+          (r.status === 'APPROVED' || r.status === 'ROOMMATES_APPROVED') &&
+          (r.type === 'ROOMMATE' || r.type === 'JOIN_ROOM') &&
+          isSameRoom(r.targetRoom || r.roomNumber, 'P.102') &&
+          (r.tenant || '').toLowerCase().includes('cường')
+        ) ||
+        (tenantRooms?.tenant2 && Array.isArray(tenantRooms.tenant2) && tenantRooms.tenant2.some(r => isSameRoom(r, 'P.102'))) ||
+        (tenantRooms?.['Phạm Minh Cường'] && Array.isArray(tenantRooms['Phạm Minh Cường']) && tenantRooms['Phạm Minh Cường'].some(r => isSameRoom(r, 'P.102')))
+      );
+
+      if (isCuongIn102 && !hasLeftRoom('Phạm Minh Cường', '0912.888.999')) {
         const hasCuong = mems.some(m => (m.fullName || '').toLowerCase().includes('cường'));
         if (!hasCuong) {
           mems.push({
@@ -713,8 +753,8 @@ export default function UserDashboard() {
             houseCode: targetHouse,
             fullName: 'Phạm Minh Cường',
             phone: '0912.888.999',
-            cccd: '031201019999',
-            maskedCccd: '03120101****',
+            cccd: '034203034567',
+            maskedCccd: '03420303****',
             roleInRoom: 'MEMBER',
             hometown: 'Hải Phòng',
             joinDate: '07/11/2026',
