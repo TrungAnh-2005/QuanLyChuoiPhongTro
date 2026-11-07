@@ -1247,6 +1247,8 @@ export default function UserDashboard() {
     const roomNumber = typeof checkoutModal === 'string' ? checkoutModal : checkoutModal.number;
     const res = submitCheckoutRequest({
       room: roomNumber,
+      houseCode: myContract?.houseCode || user?.houseCode || userRoom?.houseCode || 'CS-01',
+      house: myContract?.houseName || user?.houseName || userRoom?.house || 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
       reason: checkoutReason,
       forfeitDeposit: !isContractExpired,
       tenantName: user?.fullName || 'Khách thuê',

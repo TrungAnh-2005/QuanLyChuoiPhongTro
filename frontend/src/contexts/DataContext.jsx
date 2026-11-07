@@ -1143,10 +1143,8 @@ export const DataProvider = ({ children }) => {
               }
             }
 
-            // AUTO-HEAL: Nếu đơn là CHECKOUT mang status PENDING nhưng phòng ở ghép (như P.101 có An & Cường)
-            // chưa có bạn cùng phòng biểu quyết và không kích hoạt deadlock-breaker
-            // -> Chuyển thành WAITING_ROOMMATES để bạn cùng phòng được biểu quyết theo đúng quy định
-            if (req.type === 'CHECKOUT' && req.status === 'PENDING' && !req.isDeadlockBypass) {
+            // AUTO-HEAL: Xử lý chuẩn hóa đơn CHECKOUT / RETURN
+            if (req.type === 'CHECKOUT' || req.type === 'RETURN') {
               const reqRoomClean = String(req.targetRoom || req.currentRoom || '').replace(/^P\.?/i, '').trim();
               let storedMembers = [];
               try {
@@ -1157,17 +1155,46 @@ export const DataProvider = ({ children }) => {
                 const mClean = String(m.roomNumber || '').replace(/^P\.?/i, '').trim();
                 return mClean.toLowerCase() === reqRoomClean.toLowerCase() && m.status !== 'MOVED_OUT';
               });
-              const isSharedRoom = reqRoomClean === '101' || memsInRoom.length > 1;
-              const hasNoVotes = !req.roommateVotes || req.roommateVotes.length === 0;
-              if (isSharedRoom && hasNoVotes) {
-                return {
-                  ...req,
-                  houseCode: hCode || 'CS-01',
-                  house: hName || (hCode === 'CS-02' ? 'Nhà Trọ Bách Khoa - Cơ Sở 2' : 'Nhà Trọ Cầu Giấy - Cơ Sở 1'),
-                  status: 'WAITING_ROOMMATES',
-                  hasMultiplePeople: true
-                };
+              const isSharedRoom = memsInRoom.length > 1;
+
+              // Nếu cơ sở bị nhầm sang S2-CS-01 nhưng khách là Nguyễn Văn An (cư dân CS-01 / S1-CS-01 của Staff 1)
+              let resolvedReqHouseCode = hCode || req.houseCode || 'CS-01';
+              let resolvedReqHouseName = hName || req.house || 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
+              if ((req.tenant || '').includes('An') && resolvedReqHouseCode === 'S2-CS-01') {
+                resolvedReqHouseCode = 'S1-CS-01';
+                resolvedReqHouseName = 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
               }
+
+              // 1. Nếu phòng chỉ có 1 người (hoặc không ở ghép): Tuyệt đối KHÔNG BẮT BIỂU QUYẾT!
+              // Chuyển thẳng về PENDING để Staff duyệt & nghiệm thu hoàn cọc.
+              if (!isSharedRoom) {
+                if (req.status === 'WAITING_ROOMMATES') {
+                  return {
+                    ...req,
+                    houseCode: resolvedReqHouseCode,
+                    house: resolvedReqHouseName,
+                    status: 'PENDING',
+                    hasMultiplePeople: false
+                  };
+                }
+              } else if (req.status === 'PENDING' && !req.isDeadlockBypass) {
+                // 2. Nếu phòng ở ghép (>= 2 người) và chưa kích hoạt deadlock-breaker: Chờ bạn cùng phòng biểu quyết
+                const hasNoVotes = !req.roommateVotes || req.roommateVotes.length === 0;
+                if (hasNoVotes) {
+                  return {
+                    ...req,
+                    houseCode: resolvedReqHouseCode,
+                    house: resolvedReqHouseName,
+                    status: 'WAITING_ROOMMATES',
+                    hasMultiplePeople: true
+                  };
+                }
+              }
+              return {
+                ...req,
+                houseCode: resolvedReqHouseCode,
+                house: resolvedReqHouseName
+              };
             }
 
             return {
@@ -1484,11 +1511,9 @@ export const DataProvider = ({ children }) => {
       const mClean = String(m.roomNumber || '').replace(/^P\.?/i, '').trim().toLowerCase();
       return mClean === fromRoomClean && m.status !== 'MOVED_OUT' && (!requestData.houseCode || isSameHouse(m.houseCode, requestData.houseCode));
     });
-    const isP101Default = fromRoomClean === '101' || fromRoomClean === 'p.101';
     const currentRoomOccupants = Math.max(
       currentRoomMatch ? (currentRoomMatch.occupants || 1) : 1,
-      activeMembersInCurrentRoom.length,
-      isP101Default ? 2 : 1
+      activeMembersInCurrentRoom.length
     );
     const hasRoommatesInCurrentRoom = currentRoomOccupants > 1;
 
@@ -2604,11 +2629,19 @@ export const DataProvider = ({ children }) => {
     refundAccountName = '',
     refundQrCode = null,
     isContractExpired = false,
-    bypassRoommateVoting = false
+    bypassRoommateVoting = false,
+    houseCode = null,
+    house = null
   }) => {
     const cleanRoom = String(room || '').replace(/^P\.?/i, '').trim();
-    const targetRoomObj = (rooms || []).find((r) => String(r.number).replace(/^P\.?/i, '').trim().toLowerCase() === cleanRoom.toLowerCase());
-    const targetHouse = targetRoomObj?.houseCode || 'CS-01';
+    const targetRoomObj = (rooms || []).find((r) => {
+      const matchNum = String(r.number).replace(/^P\.?/i, '').trim().toLowerCase() === cleanRoom.toLowerCase();
+      if (!matchNum) return false;
+      if (houseCode) return isSameHouse(r.houseCode, houseCode) || r.houseCode === houseCode;
+      return true;
+    });
+    const targetHouse = targetRoomObj?.houseCode || houseCode || 'CS-01';
+    const targetHouseName = targetRoomObj?.house || house || (targetHouse === 'CS-02' ? 'Nhà Trọ Bách Khoa - Cơ Sở 2' : 'Nhà Trọ Cầu Giấy - Cơ Sở 1');
 
     // 0. Điều kiện tiên quyết: Phải thanh toán hết hóa đơn tiền phòng/điện nước của đúng phòng và cơ sở này
     const hasUnpaidBills = (invoices || []).some((inv) => {
@@ -2646,19 +2679,20 @@ export const DataProvider = ({ children }) => {
     // Đếm số cư dân thực tế đang ở trong phòng:
     const activeMembersInRoom = (roomMembers || []).filter((m) => {
       const mClean = String(m.roomNumber || '').replace(/^P\.?/i, '').trim().toLowerCase();
-      return mClean === cleanRoom.toLowerCase() && m.status !== 'MOVED_OUT';
+      const matchH = !targetHouse || isSameHouse(m.houseCode, targetHouse);
+      return mClean === cleanRoom.toLowerCase() && m.status !== 'MOVED_OUT' && matchH;
     });
     const activeTenantsInRoom = (tenants || []).filter((t) => {
       if (t.status === 'INACTIVE' || t.status === 'WAITING_ROOM') return false;
       const tRooms = t.rooms || (t.room ? [t.room] : []);
-      return tRooms.some(rn => String(rn || '').replace(/^P\.?/i, '').trim().toLowerCase() === cleanRoom.toLowerCase());
+      const matchH = !targetHouse || isSameHouse(t.houseCode, targetHouse);
+      return tRooms.some(rn => String(rn || '').replace(/^P\.?/i, '').trim().toLowerCase() === cleanRoom.toLowerCase()) && matchH;
     });
-    const isP101Default = cleanRoom === '101' || cleanRoom.toLowerCase() === 'p.101';
+    // Sĩ số phòng thực tế: Nếu phòng chỉ có 1 người thì sĩ số = 1, tuyệt đối không ép lên 2!
     const actualOccupantsCount = Math.max(
       targetRoomObj?.occupants || 0,
       activeMembersInRoom.length,
-      activeTenantsInRoom.length,
-      isP101Default ? 2 : 1
+      activeTenantsInRoom.length
     );
     const hasMultiplePeople = actualOccupantsCount > 1;
 
@@ -2667,8 +2701,8 @@ export const DataProvider = ({ children }) => {
     const isDeadlockBypassActive = Boolean(bypassRoommateVoting);
 
     // Phân loại trạng thái ban đầu:
-    // - Ở 1 mình HOẶC kích hoạt Deadlock-Breaker: Gửi thẳng BQL để nghiệm thu (PENDING)
-    // - Ở ghép bình thường (>= 2 người): Chờ 100% bạn cùng phòng biểu quyết (WAITING_ROOMMATES)
+    // - Phòng chỉ có 1 người HOẶC kích hoạt Deadlock-Breaker: Gửi thẳng BQL để nghiệm thu (PENDING), KHÔNG biểu quyết!
+    // - Phòng ở ghép bình thường (>= 2 người): Mới cần 100% bạn cùng phòng biểu quyết (WAITING_ROOMMATES)
     const initialStatus = (hasMultiplePeople && !isDeadlockBypassActive) ? 'WAITING_ROOMMATES' : 'PENDING';
 
     const formattedNote = isDeadlockBypassActive
@@ -2679,8 +2713,8 @@ export const DataProvider = ({ children }) => {
       type: 'CHECKOUT',
       targetRoom: room,
       currentRoom: room,
-      house: targetRoomObj?.house || 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
-      houseCode: targetRoomObj?.houseCode || 'CS-01',
+      house: targetHouseName,
+      houseCode: targetHouse,
       tenant: tenantName,
       phone: phone,
       note: formattedNote,

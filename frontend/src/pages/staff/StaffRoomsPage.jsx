@@ -681,11 +681,15 @@ export default function StaffRoomsPage() {
     return result;
   }, [filteredRooms, staffManageableHouses, selectedHouse, searchTerm, filterStatus, getHouseTheme]);
 
-  // Dedup danh sách đơn yêu cầu (tránh hiển thị trùng lặp đơn trả phòng)
+  // Dedup danh sách đơn yêu cầu (tránh hiển thị trùng lặp đơn trả phòng & chỉ hiển thị đơn thuộc cơ sở của Staff)
   const dedupedRoomRequests = useMemo(() => {
     const list = roomRequests || [];
     const seen = new Set();
     return list.filter((r) => {
+      if (user?.role !== 'ADMIN' && staffHouseCodes.length > 0) {
+        const isMyHouse = staffHouseCodes.some((code) => isSameHouse(code, r.houseCode) || code === r.houseCode);
+        if (!isMyHouse) return false;
+      }
       const key = [
         r.type,
         String(r.targetRoom || r.roomNumber || r.currentRoom || '').replace(/^P\.?/i, '').trim().toLowerCase(),
@@ -696,7 +700,7 @@ export default function StaffRoomsPage() {
       seen.add(key);
       return true;
     });
-  }, [roomRequests]);
+  }, [roomRequests, staffHouseCodes, user?.role]);
 
   const sortedDedupedRequests = useMemo(() => {
     return [...dedupedRoomRequests].sort((a, b) => {
