@@ -18,7 +18,7 @@ import {
   Menu
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { useData, isSameHouse } from '../../contexts/DataContext';
+import { useData, isSameHouse, isSameRoom } from '../../contexts/DataContext';
 import { Link } from 'react-router-dom';
 
 function parseViDateTime(str) {
@@ -394,11 +394,37 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
       return uName.includes(tName) || tName.includes(uName.split(' ')[0]);
     });
 
-    const userRooms = currentTenant?.rooms && currentTenant.rooms.length > 0
-      ? currentTenant.rooms
-      : (currentTenant?.room
-          ? [currentTenant.room]
-          : (user?.room ? [user.room] : (tenantRooms?.[username] ? [tenantRooms[username]] : [])));
+    const userRooms = (() => {
+      const list = [];
+      if (currentTenant?.room) list.push(currentTenant.room);
+      if (Array.isArray(currentTenant?.rooms)) list.push(...currentTenant.rooms);
+      if (user?.room) list.push(user.room);
+      if (Array.isArray(user?.rooms)) list.push(...user.rooms);
+      const tr = tenantRooms?.[username] ?? tenantRooms?.[fullName];
+      if (Array.isArray(tr)) list.push(...tr);
+      else if (typeof tr === 'string' && tr) list.push(tr);
+      (dataContext.roomMembers || []).forEach((m) => {
+        if (m.status === 'ACTIVE' && m.roomNumber) {
+          const mName = (m.fullName || '').toLowerCase().trim();
+          const uName = (fullName || '').toLowerCase().trim();
+          const uUname = (username || '').toLowerCase().trim();
+          if (
+            (uName && mName.includes(uName)) ||
+            (uUname === 'tenant1' && mName.includes('an')) ||
+            (uUname === 'tenant2' && mName.includes('cường')) ||
+            (uUname === 'tenant_new' && mName.includes('nam'))
+          ) {
+            list.push(m.roomNumber);
+          }
+        }
+      });
+      return Array.from(new Set(list.filter(Boolean)));
+    })();
+
+    const hasUserRoom = (rNum) => {
+      if (!rNum) return false;
+      return userRooms.some(ur => isSameRoom(ur, rNum));
+    };
 
     // 0. Thông báo biến động đơn giá điện nước toàn chuỗi gửi tới TẤT CẢ các tài khoản khách thuê
     // CHỈ hiển thị khi có thông báo thay đổi giá thực tế, bỏ qua thông báo tĩnh mặc định
@@ -418,7 +444,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
 
     // 0.1. Thông báo khi một thành viên thanh toán tiền phòng thì các bạn cùng phòng đều được thông báo rõ ràng
     roomPaymentNotices.forEach((rpn) => {
-      if (userRooms.includes(rpn.room)) {
+      if (hasUserRoom(rpn.room)) {
         const isMe = (fullName || '').toLowerCase().trim() === (rpn.payer || '').toLowerCase().trim();
         addNotif({
           id: rpn.id,
@@ -438,7 +464,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
 
     // 0.2. Thông báo khi bạn cùng phòng rời khỏi phòng (2 người ở cùng 1 phòng, 1 người rời người kia được thông báo)
     roommateLeaveNotices.forEach((rln) => {
-      if (userRooms.includes(rln.room)) {
+      if (hasUserRoom(rln.room)) {
         const isLeaver = (fullName || '').toLowerCase().trim() === (rln.leaver || '').toLowerCase().trim();
         if (!isLeaver) {
           addNotif({
@@ -458,7 +484,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
     roomRequests.forEach((req) => {
       if ((req.type === 'LEAVE_ROOM' || req.type === 'CHECKOUT') && req.status === 'APPROVED') {
         const roomNum = req.targetRoom || req.currentRoom;
-        if (userRooms.includes(roomNum)) {
+        if (hasUserRoom(roomNum)) {
           const isLeaver = (fullName || '').toLowerCase().trim() === (req.tenant || '').toLowerCase().trim();
           if (!isLeaver) {
             addNotif({
@@ -475,19 +501,19 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
       }
     });
 
-    // 1. Kiểm tra đơn biểu quyết ở ghép (CỰC KỲ QUAN TRỌNG CHO KHÁCH 2 - PHẠM MINH CƯỜNG P.103)
+    // 1. Kiểm tra đơn biểu quyết ở ghép (CỰC KỲ QUAN TRỌNG CHO KHÁCH 1 & KHÁCH 2)
     roomRequests.forEach((req) => {
       if (req.type === 'ROOMMATE') {
-        const isTargetMyRoom = userRooms.includes(req.targetRoom);
+        const isTargetMyRoom = hasUserRoom(req.targetRoom);
         if (isTargetMyRoom && req.status === 'WAITING_ROOMMATES') {
           addNotif({
             id: `tenant-roommate-vote-${req.id}`,
             type: 'URGENT',
             title: `🤝 Cần Biểu Quyết: Có người xin ở ghép ${req.targetRoom}!`,
-            desc: `Bạn ${req.tenant} (SĐT: ${req.phone}) vừa gửi đơn xin vào ở ghép: "${req.note}". Hãy vào trang Phòng Trọ để biểu quyết.`,
+            desc: `Bạn ${req.tenant} (SĐT: ${req.phone}) vừa gửi đơn xin vào ở ghép: "${req.note}". Hãy vào Cổng Cư Dân biểu quyết.`,
             time: req.date || 'Hôm nay',
             defaultRead: false,
-            link: '/rooms?action=review-pending'
+            link: '/'
           });
         } else if (isTargetMyRoom && req.status === 'ROOMMATES_APPROVED') {
           addNotif({
@@ -501,17 +527,17 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
           });
         }
       } else if (req.type === 'CHECKOUT') {
-        const isTargetMyRoom = userRooms.includes(req.targetRoom);
+        const isTargetMyRoom = hasUserRoom(req.targetRoom || req.currentRoom);
         const isOtherTenant = (req.tenant || '').toLowerCase() !== (fullName || '').toLowerCase();
         if (isTargetMyRoom && req.status === 'WAITING_ROOMMATES' && isOtherTenant) {
           addNotif({
             id: `tenant-checkout-vote-${req.id}`,
             type: 'URGENT',
-            title: `⚠️ Biểu Quyết: Bạn cùng phòng xin trả phòng ${req.targetRoom}!`,
+            title: `⚠️ Biểu Quyết: Bạn cùng phòng xin trả phòng ${req.targetRoom || req.currentRoom}!`,
             desc: `Bạn ${req.tenant} đã yêu cầu trả phòng trước hạn. Tất cả thành viên trong phòng cùng đồng ý thì mới chuyển BQL. Hãy vào Cổng Cư Dân biểu quyết.`,
             time: req.date || 'Hôm nay',
             defaultRead: false,
-            link: '/rooms?action=review-pending'
+            link: '/'
           });
         } else if (isTargetMyRoom && req.status === 'REJECTED_BY_ROOMMATES') {
           addNotif({
@@ -766,14 +792,25 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
     });
     if (activeContract?.roomNumber) return activeContract.roomNumber;
 
-    // 2. Kiểm tra trong tenantRooms từ context
+    // 2. Kiểm tra trong roomMembers xem có đang là cư dân ACTIVE không
+    const activeMember = (dataContext.roomMembers || []).find((m) => {
+      if (m.status !== 'ACTIVE' || !m.roomNumber) return false;
+      const mName = (m.fullName || '').toLowerCase().trim();
+      return (fullName && mName.includes(fullName.toLowerCase().trim())) ||
+             (username === 'tenant1' && mName.includes('an')) ||
+             (username === 'tenant2' && mName.includes('cường')) ||
+             (username === 'tenant_new' && mName.includes('nam'));
+    });
+    if (activeMember?.roomNumber) return activeMember.roomNumber;
+
+    // 3. Kiểm tra trong tenantRooms từ context
     const tr = tenantRooms?.[username] ?? tenantRooms?.[fullName];
     if (tr !== undefined && tr !== null) {
       const formatted = formatRooms(tr, '');
       if (formatted) return formatted;
     }
 
-    // 3. Nếu là current user và có user.rooms
+    // 4. Nếu là current user và có user.rooms
     if (user?.username === username && user?.rooms && user.rooms.length > 0) {
       return formatRooms(user.rooms, '');
     }
@@ -781,8 +818,8 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
     return defaultRoom || '';
   };
 
-  const tenant1Room = getTenantRoomDisplay('tenant1', 'Nguyễn Văn An', 'P.101');
-  const tenant2Room = getTenantRoomDisplay('tenant2', 'Phạm Minh Cường', 'P.103');
+  const tenant1Room = getTenantRoomDisplay('tenant1', 'Nguyễn Văn An', '');
+  const tenant2Room = getTenantRoomDisplay('tenant2', 'Phạm Minh Cường', '');
   const tenantNewRoom = getTenantRoomDisplay('tenant_new', 'Hoàng Văn Nam', '');
 
   const accountKey = user?.username || user?.role || 'ADMIN';

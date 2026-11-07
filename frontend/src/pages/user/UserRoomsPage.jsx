@@ -318,10 +318,21 @@ export default function UserRoomsPage() {
         (uName && mName && (mName === uName || mName.includes(uName) || uName.includes(mName))) ||
         (uName.includes('cường') && mName.includes('cường')) ||
         (uName.includes('an') && mName.includes('an')) ||
-        (uUsername === 'tenant2' && mName.includes('cường'))
+        (uName.includes('nam') && mName.includes('nam')) ||
+        (uUsername === 'tenant1' && mName.includes('an')) ||
+        (uUsername === 'tenant2' && mName.includes('cường')) ||
+        (uUsername === 'tenant_new' && mName.includes('nam'))
       );
     });
     if (hasActiveMember) return false;
+
+    // 0B. Nếu trong tenantRooms khách này đang có phòng này -> KHÔNG PHẢI RỜI PHÒNG!
+    const cRooms = tenantRooms?.tenant2 || tenantRooms?.['Phạm Minh Cường'];
+    if ((uUsername === 'tenant2' || uName.includes('cường')) && Array.isArray(cRooms) && cRooms.some(r => normalizeRoomNumber(r) === clean)) return false;
+    const aRooms = tenantRooms?.tenant1 || tenantRooms?.['Nguyễn Văn An'];
+    if ((uUsername === 'tenant1' || uName.includes('an')) && Array.isArray(aRooms) && aRooms.some(r => normalizeRoomNumber(r) === clean)) return false;
+    const nRooms = tenantRooms?.tenant_new || tenantRooms?.['Hoàng Văn Nam'];
+    if ((uUsername === 'tenant_new' || uName.includes('nam')) && Array.isArray(nRooms) && nRooms.some(r => normalizeRoomNumber(r) === clean)) return false;
 
     // 1. Kiểm tra đơn CHECKOUT / LEAVE_ROOM / RETURN đã được duyệt / thanh lý
     const reqOut = (roomRequests || []).some((r) => {
@@ -836,11 +847,30 @@ export default function UserRoomsPage() {
     const activeMember = (roomMembers || []).find((m) => {
       if (m.status === 'MOVED_OUT' || m.status === 'INACTIVE' || hasCurrentUserLeftRoom(m.roomNumber)) return false;
       const mName = (m.fullName || '').toLowerCase().trim();
-      const match = (uName && (mName.includes(uName) || uName.includes(mName))) || (uPhone && m.phone === uPhone);
+      const match = (uName && (mName.includes(uName) || uName.includes(mName))) ||
+                    (uPhone && m.phone === uPhone) ||
+                    (myUname === 'tenant2' && mName.includes('cường')) ||
+                    (myUname === 'tenant1' && mName.includes('an')) ||
+                    (myUname === 'tenant_new' && mName.includes('nam'));
       return match;
     });
     if (activeMember && !hasCurrentUserLeftRoom(activeMember.roomNumber || activeMember.room)) {
       return activeMember.roomNumber || activeMember.room;
+    }
+
+    // 2.5. Đơn ở ghép (ROOMMATE/JOIN_ROOM) đã APPROVED của chính khách này
+    const approvedRoommateReq = (roomRequests || []).find((r) => {
+      if (r.status !== 'APPROVED') return false;
+      if (r.type !== 'ROOMMATE' && r.type !== 'JOIN_ROOM') return false;
+      const tRoom = r.targetRoom || r.roomNumber;
+      if (hasCurrentUserLeftRoom(tRoom)) return false;
+      const rTenant = (r.tenant || r.tenantName || '').toLowerCase().trim();
+      return (uName && (rTenant.includes(uName) || uName.includes(rTenant))) ||
+             (myUname === 'tenant2' && rTenant.includes('cường')) ||
+             (myUname === 'tenant_new' && rTenant.includes('nam'));
+    });
+    if (approvedRoommateReq?.targetRoom && !hasCurrentUserLeftRoom(approvedRoommateReq.targetRoom)) {
+      return approvedRoommateReq.targetRoom;
     }
 
     // 3. Nếu user explicitly không có phòng
@@ -954,18 +984,8 @@ export default function UserRoomsPage() {
 
     if (matching.length === 0) return null;
 
-    // Sắp xếp: Ưu tiên đơn đang chờ duyệt (WAITING_ROOMMATES, ROOMMATES_APPROVED, PENDING),
-    // sau đó đến đơn bị từ chối (REJECTED_BY_ROOMMATES, REJECTED)
+    // Sắp xếp: Ưu tiên đơn mới nhất theo thời gian (ID) để phản ánh đúng trạng thái thực tế mới nhất
     return matching.sort((a, b) => {
-      const getPriority = (status) => {
-        if (status === 'WAITING_ROOMMATES') return 4;
-        if (status === 'ROOMMATES_APPROVED' || status === 'PENDING') return 3;
-        if (status === 'REJECTED_BY_ROOMMATES' || status === 'REJECTED') return 2;
-        if (status === 'APPROVED') return 1;
-        return 0;
-      };
-      const diffPriority = getPriority(b.status) - getPriority(a.status);
-      if (diffPriority !== 0) return diffPriority;
       const timeB = Number(String(b.id || 0).replace(/\D/g, '')) || 0;
       const timeA = Number(String(a.id || 0).replace(/\D/g, '')) || 0;
       return timeB - timeA;

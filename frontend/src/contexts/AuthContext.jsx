@@ -183,25 +183,37 @@ const getStoredTenantRooms = () => {
 
           // NẾU LÀ ĐƠN CÁ NHÂN RỜI PHÒNG (LEAVE_ROOM)
           if (req.type === 'LEAVE_ROOM') {
-            if (tNorm.includes('an')) {
-              res.tenant1 = [];
-              res['Nguyễn Văn An'] = [];
-            } else if (tNorm.includes('cường')) {
-              res.tenant2 = [];
-              res['Phạm Minh Cường'] = [];
-            } else if (tNorm.includes('nam')) {
-              res.tenant_new = [];
-              res['Hoàng Văn Nam'] = [];
-            } else {
-              res[req.tenant] = [];
+            const hasRejoinAfter = pReqs.some((other) =>
+              (other.status === 'APPROVED' || other.status === 'ROOMMATES_APPROVED') &&
+              (other.type === 'ROOMMATE' || other.type === 'JOIN_ROOM' || other.type === 'RENT' || other.type === 'NEW_RENT') &&
+              String(other.targetRoom || other.roomNumber || '').replace(/^P\.?/i, '').trim().toLowerCase() === targetNum &&
+              (
+                (tNorm.includes('cường') && (other.tenant || '').toLowerCase().includes('cường')) ||
+                (tNorm.includes('an') && (other.tenant || '').toLowerCase().includes('an')) ||
+                (tNorm.includes('nam') && (other.tenant || '').toLowerCase().includes('nam'))
+              )
+            );
+            if (!hasRejoinAfter) {
+              if (tNorm.includes('an')) {
+                res.tenant1 = [];
+                res['Nguyễn Văn An'] = [];
+              } else if (tNorm.includes('cường')) {
+                res.tenant2 = [];
+                res['Phạm Minh Cường'] = [];
+              } else if (tNorm.includes('nam')) {
+                res.tenant_new = [];
+                res['Hoàng Văn Nam'] = [];
+              } else {
+                res[req.tenant] = [];
+              }
             }
             return;
           }
 
-          // Chỉ gán phòng khi là đơn thuê mới hoặc chuyển phòng
-          if (req.type === 'RENT' || req.type === 'NEW_RENT' || req.type === 'TRANSFER') {
+          // Gán phòng khi là đơn thuê mới, chuyển phòng hoặc ở ghép đã được duyệt
+          if (req.type === 'RENT' || req.type === 'NEW_RENT' || req.type === 'TRANSFER' || req.type === 'ROOMMATE' || req.type === 'JOIN_ROOM') {
             if (tNorm.includes('nam')) {
-              if (!req.depositPaid && req.type !== 'TRANSFER') return;
+              if (!req.depositPaid && req.type !== 'TRANSFER' && req.type !== 'ROOMMATE' && req.type !== 'JOIN_ROOM') return;
               res.tenant_new = [req.targetRoom];
               res['Hoàng Văn Nam'] = [req.targetRoom];
             } else if (tNorm.includes('an')) {

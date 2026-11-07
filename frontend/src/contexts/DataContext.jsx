@@ -1913,12 +1913,12 @@ export const DataProvider = ({ children }) => {
 
   // 3. Quản lý / Admin phê duyệt đơn (Chuyển phòng / Thuê thêm / Ở ghép bước 2)
   const approveRoomRequest = (requestId, adminNote = 'Đã phê duyệt') => {
-    const targetReq = roomRequests.find((r) => r.id === requestId);
+    const targetReq = roomRequests.find((r) => String(r.id) === String(requestId));
     if (!targetReq) return;
 
     setRoomRequests((prev) => {
       const updated = prev.map((req) =>
-        req.id === requestId
+        String(req.id) === String(requestId)
           ? { ...req, status: 'APPROVED', adminNote, approvedAt: new Date().toLocaleDateString('vi-VN') }
           : req
       );
@@ -2136,11 +2136,12 @@ export const DataProvider = ({ children }) => {
           roomId: Date.now(),
           roomNumber: targetReq.targetRoom,
           houseCode: targetReq.houseCode || 'CS-01',
-          fullName: targetReq.tenant || 'Phạm Minh Cường',
-          phone: targetReq.phone || '0912.888.999',
-          cccd: targetReq.cccd || '034203034567',
-          maskedCccd: targetReq.cccd ? `${targetReq.cccd.slice(0, 8)}****` : '03420303****',
+          fullName: targetReq.tenant || 'Cư dân',
+          phone: targetReq.phone || ((targetReq.tenant || '').toLowerCase().includes('cường') ? '0912.888.999' : '0966.123.456'),
+          cccd: targetReq.cccd || ((targetReq.tenant || '').toLowerCase().includes('cường') ? '034203034567' : '001201019999'),
+          maskedCccd: targetReq.cccd ? `${targetReq.cccd.slice(0, 8)}****` : ((targetReq.tenant || '').toLowerCase().includes('cường') ? '03420303****' : '00120101****'),
           roleInRoom: 'MEMBER',
+          hometown: targetReq.hometown || ((targetReq.tenant || '').toLowerCase().includes('cường') ? 'Hải Phòng' : 'Hà Nội'),
           joinDate: new Date().toLocaleDateString('vi-VN'),
           temporaryResidenceStatus: 'REGISTERED',
           status: 'ACTIVE'
@@ -2163,6 +2164,12 @@ export const DataProvider = ({ children }) => {
         if ((targetReq.tenant || '').toLowerCase().includes('cường')) {
           updateTenantRoom('tenant2', targetReq.targetRoom, 'SET');
           updateTenantRoom('Phạm Minh Cường', targetReq.targetRoom, 'SET');
+        } else if ((targetReq.tenant || '').toLowerCase().includes('nam')) {
+          updateTenantRoom('tenant_new', targetReq.targetRoom, 'SET');
+          updateTenantRoom('Hoàng Văn Nam', targetReq.targetRoom, 'SET');
+        } else if ((targetReq.tenant || '').toLowerCase().includes('an')) {
+          updateTenantRoom('tenant1', targetReq.targetRoom, 'SET');
+          updateTenantRoom('Nguyễn Văn An', targetReq.targetRoom, 'SET');
         }
       }
 
@@ -2175,6 +2182,12 @@ export const DataProvider = ({ children }) => {
         if ((targetReq.tenant || '').toLowerCase().includes('cường')) {
           parsed.tenant2 = [targetReq.targetRoom];
           parsed['Phạm Minh Cường'] = [targetReq.targetRoom];
+        } else if ((targetReq.tenant || '').toLowerCase().includes('nam')) {
+          parsed.tenant_new = [targetReq.targetRoom];
+          parsed['Hoàng Văn Nam'] = [targetReq.targetRoom];
+        } else if ((targetReq.tenant || '').toLowerCase().includes('an')) {
+          parsed.tenant1 = [targetReq.targetRoom];
+          parsed['Nguyễn Văn An'] = [targetReq.targetRoom];
         }
         localStorage.setItem('rental_tenant_rooms', JSON.stringify(parsed));
       } catch {}
@@ -2184,12 +2197,12 @@ export const DataProvider = ({ children }) => {
         const reqName = (targetReq.tenant || '').toLowerCase().trim();
         const targetClean = normalizeRoomNumber(targetReq.targetRoom);
         const nextReqs = prev.map((r) => {
-          if (r.id === requestId) {
+          if (String(r.id) === String(requestId)) {
             return { ...r, status: 'APPROVED', adminNote, approvedAt: new Date().toLocaleDateString('vi-VN') };
           }
           const rName = (r.tenant || r.tenantName || '').toLowerCase().trim();
           const rRoom = normalizeRoomNumber(r.targetRoom || r.currentRoom || r.roomNumber);
-          const isSameTenant = rName === reqName || (reqName.includes('cường') && rName.includes('cường')) || (reqName.includes('an') && rName.includes('an'));
+          const isSameTenant = rName === reqName || (reqName.includes('cường') && rName.includes('cường')) || (reqName.includes('an') && rName.includes('an')) || (reqName.includes('nam') && rName.includes('nam'));
           const isExit = r.type === 'LEAVE_ROOM' || r.type === 'CHECKOUT' || r.type === 'RETURN';
           if (isExit && isSameTenant && rRoom === targetClean) {
             return { ...r, status: 'CANCELLED_BY_REJOIN', cancelledAt: new Date().toLocaleDateString('vi-VN') };

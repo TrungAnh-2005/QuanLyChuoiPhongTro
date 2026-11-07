@@ -213,10 +213,25 @@ export default function UserDashboard() {
           (uPhone && m.phone === uPhone) ||
           (uName && mName && (mName === uName || mName.includes(uName) || uName.includes(mName))) ||
           (myUname === 'tenant2' && mName.includes('cường')) ||
-          (myUname === 'tenant1' && mName.includes('an'))
+          (myUname === 'tenant1' && mName.includes('an')) ||
+          (myUname === 'tenant_new' && mName.includes('nam'))
         );
       });
       if (hasActiveRecord) return false;
+
+      // 0C. Nếu trong tenantRooms khách này đang có targetRoom -> Không tính là đã rời phòng
+      if (myUname === 'tenant2' || uName.includes('cường')) {
+        const cRooms = tenantRooms?.tenant2 || tenantRooms?.['Phạm Minh Cường'];
+        if (Array.isArray(cRooms) && cRooms.some(r => isSameRoom(r, targetRoom))) return false;
+      }
+      if (myUname === 'tenant1' || uName.includes('an')) {
+        const aRooms = tenantRooms?.tenant1 || tenantRooms?.['Nguyễn Văn An'];
+        if (Array.isArray(aRooms) && aRooms.some(r => isSameRoom(r, targetRoom))) return false;
+      }
+      if (myUname === 'tenant_new' || uName.includes('nam')) {
+        const nRooms = tenantRooms?.tenant_new || tenantRooms?.['Hoàng Văn Nam'];
+        if (Array.isArray(nRooms) && nRooms.some(r => isSameRoom(r, targetRoom))) return false;
+      }
 
       return (roomRequests || []).some((r) => {
         const isExitType = r.type === 'LEAVE_ROOM' || r.type === 'CHECKOUT' || r.type === 'RETURN';
@@ -648,6 +663,24 @@ export default function UserDashboard() {
         const aRooms = tenantRooms?.tenant1 || tenantRooms?.['Nguyễn Văn An'];
         if (Array.isArray(aRooms) && aRooms.some(r => isSameRoom(r, myRoomNumber))) return false;
       }
+      if (pName.includes('nam')) {
+        const nRooms = tenantRooms?.tenant_new || tenantRooms?.['Hoàng Văn Nam'];
+        if (Array.isArray(nRooms) && nRooms.some(r => isSameRoom(r, myRoomNumber))) return false;
+      }
+
+      // 0.2 Nếu trong roomMembers người này đang có bản ghi ACTIVE -> KHÔNG PHẢI ĐÃ RỜI PHÒNG!
+      const hasActiveInRoomMembers = (roomMembers || []).some((m) => {
+        if (!isSameRoom(m.roomNumber, myRoomNumber) || m.status !== 'ACTIVE') return false;
+        const mName = (m.fullName || '').toLowerCase().trim();
+        return (
+          (pName && mName && (mName === pName || mName.includes(pName) || pName.includes(mName))) ||
+          (pName.includes('cường') && mName.includes('cường')) ||
+          (pName.includes('an') && mName.includes('an')) ||
+          (pName.includes('nam') && mName.includes('nam')) ||
+          (pPhone && m.phone && m.phone === pPhone)
+        );
+      });
+      if (hasActiveInRoomMembers) return false;
 
       return (roomRequests || []).some(
         (req) =>
@@ -1157,7 +1190,13 @@ export default function UserDashboard() {
       if (isMyOwnRequest) return false;
 
       const hasNotVoted = !(req.roommateVotes || []).some(
-        (v) => (v.voter || '').toLowerCase().trim() === uName
+        (v) => {
+          const vName = (v.voter || '').toLowerCase().trim();
+          return vName === uName ||
+            (uName.includes('an') && vName.includes('an')) ||
+            (uName.includes('cường') && vName.includes('cường')) ||
+            (uName.includes('nam') && vName.includes('nam'));
+        }
       );
       return isTarget && isWaiting && hasNotVoted;
     });
@@ -2504,7 +2543,7 @@ export default function UserDashboard() {
                   }}
                   className="px-4 py-2 bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 font-bold rounded-xl text-xs transition-colors btn-press-ghost cursor-pointer"
                 >
-                  ❌ Tôi Muốn Ở Tiếp (Từ Chối)
+                  {req.type === 'CHECKOUT' ? '❌ Tôi Muốn Ở Tiếp (Từ Chối)' : '❌ Từ Chối Cho Vào Ở'}
                 </button>
                 <button
                   type="button"
@@ -2515,7 +2554,7 @@ export default function UserDashboard() {
                   }}
                   className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-emerald-600/20 btn-press cursor-pointer flex items-center gap-1.5"
                 >
-                  <span>✅ Đồng Ý Trả Phòng</span>
+                  <span>{req.type === 'CHECKOUT' ? '✅ Đồng Ý Trả Phòng' : '✅ Đồng Ý Cho Vào Ở'}</span>
                 </button>
               </div>
             </div>
