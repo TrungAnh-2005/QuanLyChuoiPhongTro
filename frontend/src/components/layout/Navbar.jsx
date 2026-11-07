@@ -82,6 +82,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
     roomRequests = [],
     tenants = [],
     rooms = [],
+    roomMembers = [],
     tenantRooms = {},
     systemNotices = [],
     roomPaymentNotices = [],
@@ -403,7 +404,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
       const tr = tenantRooms?.[username] ?? tenantRooms?.[fullName];
       if (Array.isArray(tr)) list.push(...tr);
       else if (typeof tr === 'string' && tr) list.push(tr);
-      (dataContext.roomMembers || []).forEach((m) => {
+      (roomMembers || []).forEach((m) => {
         if (m.status === 'ACTIVE' && m.roomNumber) {
           const mName = (m.fullName || '').toLowerCase().trim();
           const uName = (fullName || '').toLowerCase().trim();
@@ -865,6 +866,7 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
         roomRequests: dataContext.roomRequests || [],
         tenants: dataContext.tenants || [],
         rooms: dataContext.rooms || [],
+        roomMembers: dataContext.roomMembers || [],
         systemNotices: dataContext.systemNotices || [],
         roomPaymentNotices: dataContext.roomPaymentNotices || [],
         roommateLeaveNotices: dataContext.roommateLeaveNotices || [],
