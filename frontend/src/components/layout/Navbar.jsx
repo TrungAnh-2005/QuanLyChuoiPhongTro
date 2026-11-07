@@ -658,6 +658,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
             link: '/rooms'
           });
         } else if (req.type === 'CHECKOUT' || req.type === 'RETURN') {
+          const isMeRequester = (fullName || '').toLowerCase().includes((req.tenant || '').toLowerCase());
           if (req.status === 'REJECTED_BY_ROOMMATES') {
             const isMeRejecter = (fullName || '').toLowerCase().includes((req.rejectedBy || '').toLowerCase());
             addNotif({
@@ -675,7 +676,6 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
               link: isMeRequester ? '/rooms?action=history' : '/rooms?action=review-pending'
             });
           } else if (req.status === 'WAITING_ROOMMATES') {
-            const isMeRequester = (fullName || '').toLowerCase().includes((req.tenant || '').toLowerCase());
             addNotif({
               id: `my-checkout-req-${req.id}-${req.status}`,
               type: isMeRequester ? 'CONTRACT' : 'URGENT',
