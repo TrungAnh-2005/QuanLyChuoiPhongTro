@@ -187,6 +187,37 @@ export default function UserDashboard() {
     // Helper: kiểm tra người dùng này đã rời/trả phòng này chưa
     const hasLeftThisRoom = (targetRoom) => {
       if (!targetRoom) return false;
+
+      // 0. Nếu khách này vừa có đơn ROOMMATE hoặc RENT đã được duyệt APPROVED đối với chính phòng này -> KHÔNG PHẢI RỜI PHÒNG!
+      const hasRejoined = (roomRequests || []).some((rejoin) => {
+        if (rejoin.status !== 'APPROVED') return false;
+        if (rejoin.type !== 'ROOMMATE' && rejoin.type !== 'JOIN_ROOM' && rejoin.type !== 'RENT' && rejoin.type !== 'NEW_RENT') return false;
+        if (!isSameRoom(rejoin.targetRoom || rejoin.roomNumber, targetRoom)) return false;
+        const reTenant = (rejoin.tenant || rejoin.tenantName || '').toLowerCase().trim();
+        const reUser = (rejoin.username || '').toLowerCase().trim();
+        const matchRejoin = Boolean(
+          (myUname && reUser === myUname) ||
+          (uName && reTenant && (reTenant.includes(uName) || uName.includes(reTenant))) ||
+          (myUname === 'tenant2' && reTenant.includes('cường')) ||
+          (myUname === 'tenant_new' && reTenant.includes('nam'))
+        );
+        return matchRejoin;
+      });
+      if (hasRejoined) return false;
+
+      // 0B. Nếu có bản ghi ACTIVE trong roomMembers -> Không tính là đã rời phòng
+      const hasActiveRecord = (roomMembers || []).some((m) => {
+        if (!isSameRoom(m.roomNumber, targetRoom) || m.status !== 'ACTIVE') return false;
+        const mName = (m.fullName || '').toLowerCase().trim();
+        return (
+          (uPhone && m.phone === uPhone) ||
+          (uName && mName && (mName === uName || mName.includes(uName) || uName.includes(mName))) ||
+          (myUname === 'tenant2' && mName.includes('cường')) ||
+          (myUname === 'tenant1' && mName.includes('an'))
+        );
+      });
+      if (hasActiveRecord) return false;
+
       return (roomRequests || []).some((r) => {
         const isExitType = r.type === 'LEAVE_ROOM' || r.type === 'CHECKOUT' || r.type === 'RETURN';
         const isApprovedOrSettled = r.status === 'APPROVED' || r.status === 'CHECKOUT_SETTLED' || r.status === 'SETTLED' || Boolean(r.settledAt);

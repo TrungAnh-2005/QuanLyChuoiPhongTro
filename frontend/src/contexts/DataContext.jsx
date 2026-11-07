@@ -1569,6 +1569,7 @@ export const DataProvider = ({ children }) => {
         const cleanTarget = String(requestData.targetRoom || '').replace(/^P\.?/i, '').trim().toLowerCase();
         const tNorm = (requestData.tenant || '').toLowerCase().trim();
         const pNorm = (requestData.phone || '').trim();
+        const uNorm = (requestData.username || '').toLowerCase().trim();
         filtered = prev.filter((r) => {
           if (r.type !== 'ROOMMATE' && r.type !== 'JOIN_ROOM') return true;
           const rRoom = String(r.targetRoom || r.roomNumber || '').replace(/^P\.?/i, '').trim().toLowerCase();
@@ -1576,7 +1577,8 @@ export const DataProvider = ({ children }) => {
           if (r.houseCode && targetHouseCode && !isSameHouse(r.houseCode, targetHouseCode)) return true;
           const rTenant = (r.tenant || r.tenantName || '').toLowerCase().trim();
           const rPhone = (r.phone || '').trim();
-          const isSameUser = (tNorm && (rTenant.includes(tNorm) || tNorm.includes(rTenant))) || (pNorm && rPhone === pNorm);
+          const rUser = (r.username || '').toLowerCase().trim();
+          const isSameUser = (uNorm && rUser && rUser === uNorm) || (tNorm && (rTenant.includes(tNorm) || tNorm.includes(rTenant))) || (pNorm && rPhone === pNorm);
           // Loại bỏ đơn cũ của khách này đối với phòng này (dù là REJECTED hay CANCELLED hay WAITING cũ) để đơn mới thay thế hoàn toàn
           return !isSameUser;
         });
@@ -1584,6 +1586,7 @@ export const DataProvider = ({ children }) => {
       const updated = [newEntry, ...filtered];
       try {
         localStorage.setItem('rental_room_requests', JSON.stringify(updated));
+        window.dispatchEvent(new Event('storage'));
       } catch {}
       return updated;
     });
@@ -1618,7 +1621,9 @@ export const DataProvider = ({ children }) => {
             roommateVotes: newVotes,
             status: 'REJECTED_BY_ROOMMATES',
             rejectedBy: voterName,
-            rejectedReason: 'Bạn cùng phòng muốn tiếp tục ở lại, không đồng ý trả toàn bộ phòng'
+            rejectedReason: req.type === 'CHECKOUT'
+              ? 'Bạn cùng phòng muốn tiếp tục ở lại, không đồng ý trả toàn bộ phòng'
+              : 'Bạn cùng phòng từ chối yêu cầu ở ghép'
           };
         }
 
@@ -1654,6 +1659,7 @@ export const DataProvider = ({ children }) => {
       });
       try {
         localStorage.setItem('rental_room_requests', JSON.stringify(next));
+        window.dispatchEvent(new Event('storage'));
       } catch {}
       return next;
     });
@@ -1751,6 +1757,7 @@ export const DataProvider = ({ children }) => {
       const next = [newRequest, ...filtered];
       try {
         localStorage.setItem('rental_room_requests', JSON.stringify(next));
+        window.dispatchEvent(new Event('storage'));
       } catch {}
       return next;
     });
@@ -1871,6 +1878,7 @@ export const DataProvider = ({ children }) => {
       });
       try {
         localStorage.setItem('rental_room_requests', JSON.stringify(next));
+        window.dispatchEvent(new Event('storage'));
       } catch {}
       return next;
     });
@@ -2052,14 +2060,16 @@ export const DataProvider = ({ children }) => {
     } else if (targetReq.type === 'ROOMMATE') {
       // 2. Xin vào ở ghép: Cư dân chuyển sang ở ghép phòng mục tiêu
       // Tăng số người phòng mục tiêu
-      setRooms((prev) =>
-        prev.map((r) => {
-          const isMatch = r.number === targetReq.targetRoom && (!targetReq.houseCode || r.houseCode === targetReq.houseCode);
+      setRooms((prev) => {
+        const next = prev.map((r) => {
+          const isMatch = isSameRoom(r.number, targetReq.targetRoom) && (!targetReq.houseCode || isSameHouse(r.houseCode, targetReq.houseCode));
           return isMatch
-            ? { ...r, status: 'OCCUPIED', occupants: Math.min(r.maxOccupants, (r.occupants || 1) + 1) }
+            ? { ...r, status: 'OCCUPIED', occupants: Math.min(r.maxOccupants || 3, (r.occupants || 1) + 1) }
             : r;
-        })
-      );
+        });
+        try { localStorage.setItem('rental_rooms', JSON.stringify(next)); } catch {}
+        return next;
+      });
 
       // Cập nhật hồ sơ khách thuê
       setTenants((prev) => {
@@ -2069,11 +2079,12 @@ export const DataProvider = ({ children }) => {
         const updatedList = prev.map((t) => {
           const tNorm = (t.fullName || '').toLowerCase();
           const isMatch = tNorm.includes(reqNorm) || reqNorm.includes(tNorm) ||
+            (reqNorm.includes('cường') && tNorm.includes('cường')) ||
             (reqNorm.includes('nam') && tNorm.includes('nam')) ||
             (reqNorm.includes('an') && tNorm.includes('an'));
           if (!isMatch) return t;
 
-          if (t.room && t.room !== targetReq.targetRoom) {
+          if (t.room && !isSameRoom(t.room, targetReq.targetRoom)) {
             oldRoomToFree = t.room;
           }
 
@@ -2087,53 +2098,55 @@ export const DataProvider = ({ children }) => {
         });
 
         if (oldRoomToFree) {
-          setRooms((roomsPrev) =>
-            roomsPrev.map((r) => {
-              if (r.number === oldRoomToFree) {
+          setRooms((roomsPrev) => {
+            const nextRooms = roomsPrev.map((r) => {
+              if (isSameRoom(r.number, oldRoomToFree)) {
                 return {
-            ...r,
-            occupants: 0,
-            status: 'AVAILABLE'
-          };
+                  ...r,
+                  occupants: 0,
+                  status: 'AVAILABLE'
+                };
               }
               return r;
-            })
-          );
+            });
+            try { localStorage.setItem('rental_rooms', JSON.stringify(nextRooms)); } catch {}
+            return nextRooms;
+          });
         }
 
+        try { localStorage.setItem('rental_tenants', JSON.stringify(updatedList)); } catch {}
         return updatedList;
       });
 
       // Thêm khách vào danh sách cư dân phòng (roomMembers) với vai trò MEMBER (Ở ghép)
       setRoomMembers((prev) => {
-        const alreadyIn = prev.some(
-          (m) => m.roomNumber === targetReq.targetRoom && (m.fullName || '').toLowerCase().includes((targetReq.tenant || '').toLowerCase())
-        );
-        if (alreadyIn) {
-          return prev.map((m) =>
-            m.roomNumber === targetReq.targetRoom && (m.fullName || '').toLowerCase().includes((targetReq.tenant || '').toLowerCase())
-              ? { ...m, status: 'ACTIVE', roleInRoom: 'MEMBER' }
-              : m
-          );
-        }
-        const updated = [
-          ...prev,
-          {
-            id: `RM-${Date.now()}`,
-            roomId: Date.now(),
-            roomNumber: targetReq.targetRoom,
-            houseCode: targetReq.houseCode || 'CS-01',
-            fullName: targetReq.tenant,
-            phone: targetReq.phone || '0966.123.456',
-            cccd: '036207078901',
-            maskedCccd: '03620707****',
-            roleInRoom: 'MEMBER',
-            joinDate: new Date().toLocaleDateString('vi-VN'),
-            temporaryResidenceStatus: 'REGISTERED',
-            status: 'ACTIVE'
-          }
-        ];
-        localStorage.setItem('rental_room_members', JSON.stringify(updated));
+        const targetClean = normalizeRoomNumber(targetReq.targetRoom);
+        const reqName = (targetReq.tenant || '').toLowerCase().trim();
+        // Lọc bỏ mọi bản ghi trùng lặp của khách này tại phòng này
+        const filtered = prev.filter((m) => {
+          const mClean = normalizeRoomNumber(m.roomNumber);
+          const mName = (m.fullName || '').toLowerCase().trim();
+          const isThisPerson = (mName === reqName || (reqName.includes('cường') && mName.includes('cường')) || (reqName.includes('an') && mName.includes('an')) || (reqName.includes('nam') && mName.includes('nam')));
+          return !(mClean === targetClean && isThisPerson);
+        });
+
+        const newMem = {
+          id: `RM-${Date.now()}`,
+          roomId: Date.now(),
+          roomNumber: targetReq.targetRoom,
+          houseCode: targetReq.houseCode || 'CS-01',
+          fullName: targetReq.tenant || 'Phạm Minh Cường',
+          phone: targetReq.phone || '0912.888.999',
+          cccd: targetReq.cccd || '034203034567',
+          maskedCccd: targetReq.cccd ? `${targetReq.cccd.slice(0, 8)}****` : '03420303****',
+          roleInRoom: 'MEMBER',
+          joinDate: new Date().toLocaleDateString('vi-VN'),
+          temporaryResidenceStatus: 'REGISTERED',
+          status: 'ACTIVE'
+        };
+
+        const updated = [...filtered, newMem];
+        try { localStorage.setItem('rental_room_members', JSON.stringify(updated)); } catch {}
         return updated;
       });
 
@@ -2143,7 +2156,51 @@ export const DataProvider = ({ children }) => {
           houseCode: targetReq.houseCode || 'CS-01',
           house: targetReq.house || (targetReq.houseCode === 'CS-02' ? 'Nhà Trọ Bách Khoa - Cơ Sở 2' : 'Nhà Trọ Cầu Giấy - Cơ Sở 1')
         });
+        if (targetReq.username) {
+          updateTenantRoom(targetReq.username, targetReq.targetRoom, 'SET');
+        }
+        if ((targetReq.tenant || '').toLowerCase().includes('cường')) {
+          updateTenantRoom('tenant2', targetReq.targetRoom, 'SET');
+          updateTenantRoom('Phạm Minh Cường', targetReq.targetRoom, 'SET');
+        }
       }
+
+      // Cập nhật rental_tenant_rooms trong localStorage
+      try {
+        const s = localStorage.getItem('rental_tenant_rooms');
+        const parsed = s ? JSON.parse(s) : {};
+        if (targetReq.username) parsed[targetReq.username] = [targetReq.targetRoom];
+        if (targetReq.tenant) parsed[targetReq.tenant] = [targetReq.targetRoom];
+        if ((targetReq.tenant || '').toLowerCase().includes('cường')) {
+          parsed.tenant2 = [targetReq.targetRoom];
+          parsed['Phạm Minh Cường'] = [targetReq.targetRoom];
+        }
+        localStorage.setItem('rental_tenant_rooms', JSON.stringify(parsed));
+      } catch {}
+
+      // Vô hiệu hóa các đơn rời phòng / checkout cũ của khách này đối với targetRoom để không bị coi là đã rời phòng
+      setRoomRequests((prev) => {
+        const reqName = (targetReq.tenant || '').toLowerCase().trim();
+        const targetClean = normalizeRoomNumber(targetReq.targetRoom);
+        const nextReqs = prev.map((r) => {
+          if (r.id === requestId) {
+            return { ...r, status: 'APPROVED', adminNote, approvedAt: new Date().toLocaleDateString('vi-VN') };
+          }
+          const rName = (r.tenant || r.tenantName || '').toLowerCase().trim();
+          const rRoom = normalizeRoomNumber(r.targetRoom || r.currentRoom || r.roomNumber);
+          const isSameTenant = rName === reqName || (reqName.includes('cường') && rName.includes('cường')) || (reqName.includes('an') && rName.includes('an'));
+          const isExit = r.type === 'LEAVE_ROOM' || r.type === 'CHECKOUT' || r.type === 'RETURN';
+          if (isExit && isSameTenant && rRoom === targetClean) {
+            return { ...r, status: 'CANCELLED_BY_REJOIN', cancelledAt: new Date().toLocaleDateString('vi-VN') };
+          }
+          return r;
+        });
+        try {
+          localStorage.setItem('rental_room_requests', JSON.stringify(nextReqs));
+          window.dispatchEvent(new Event('storage'));
+        } catch {}
+        return nextReqs;
+      });
 
       resetRoomPaymentStatus(targetReq.targetRoom);
         } else if (targetReq.type === 'NEW_RENT' || targetReq.type === 'RENT' || targetReq.type === 'ADDITIONAL_RENT') {
@@ -2437,6 +2494,7 @@ export const DataProvider = ({ children }) => {
       );
       try {
         localStorage.setItem('rental_room_requests', JSON.stringify(next));
+        window.dispatchEvent(new Event('storage'));
       } catch {}
       return next;
     });
@@ -2482,6 +2540,7 @@ export const DataProvider = ({ children }) => {
       }
       try {
         localStorage.setItem('rental_room_requests', JSON.stringify(next));
+        window.dispatchEvent(new Event('storage'));
       } catch {}
       return next;
     });
@@ -2848,9 +2907,15 @@ export const DataProvider = ({ children }) => {
     };
     setRoomRequests((prev) => {
       const updated = prev.map((r) => {
-        const matchRoom = (r.targetRoom === roomNumber || r.roomNumber === roomNumber || r.currentRoom === roomNumber);
+        const matchRoom = isSameRoom(r.targetRoom || r.roomNumber || r.currentRoom, roomNumber);
         const rTenant = (r.tenant || r.tenantName || '').toLowerCase();
-        const matchTenant = rTenant.includes(tNorm) || tNorm.includes(rTenant);
+        const matchTenant =
+          rTenant.includes(tNorm) ||
+          tNorm.includes(rTenant) ||
+          (tNorm.includes('an') && rTenant.includes('an')) ||
+          (tNorm.includes('cường') && rTenant.includes('cường')) ||
+          (tNorm.includes('nam') && rTenant.includes('nam')) ||
+          (r.phone && auth?.user?.phone && r.phone === auth.user.phone);
         const isRentType = r.type === 'RENT' || r.type === 'NEW_RENT' || r.type === 'RENTAL' || r.type === 'HOLD' || r.type === 'ROOMMATE' || r.type === 'JOIN_ROOM' || r.type === 'STAY_WITH';
         if (matchRoom && matchTenant && isRentType) {
           return {
@@ -2865,6 +2930,7 @@ export const DataProvider = ({ children }) => {
       const next = [newEntry, ...updated];
       try {
         localStorage.setItem('rental_room_requests', JSON.stringify(next));
+        window.dispatchEvent(new Event('storage'));
       } catch {}
       return next;
     });
@@ -4091,6 +4157,7 @@ export const DataProvider = ({ children }) => {
       });
       try {
         localStorage.setItem('rental_room_requests', JSON.stringify(next));
+        window.dispatchEvent(new Event('storage'));
       } catch {}
       return next;
     });
@@ -4707,6 +4774,22 @@ export const DataProvider = ({ children }) => {
         });
       }
     } catch (err) {}
+
+    // DEDUPLICATE: Tuyệt đối không cho phép thành viên trùng lặp trong cùng một phòng (chống lỗi 18/3)
+    const seenMem = new Set();
+    list = list.filter((m) => {
+      if (m.status === 'MOVED_OUT' || m.status === 'INACTIVE') return true;
+      const cleanR = normalizeRoomNumber(m.roomNumber);
+      const raw = (m.fullName || '').toLowerCase().trim();
+      let k = raw;
+      if (k.includes('an')) k = 'an';
+      else if (k.includes('cường')) k = 'cuong';
+      else if (k.includes('nam')) k = 'nam';
+      const key = `${cleanR}__${k}`;
+      if (seenMem.has(key)) return false;
+      seenMem.add(key);
+      return true;
+    });
 
     try {
       localStorage.setItem('rental_room_members', JSON.stringify(list));
@@ -6017,6 +6100,7 @@ export const DataProvider = ({ children }) => {
       });
       try {
         localStorage.setItem('rental_room_requests', JSON.stringify(next));
+        window.dispatchEvent(new Event('storage'));
       } catch {}
       return next;
     });
