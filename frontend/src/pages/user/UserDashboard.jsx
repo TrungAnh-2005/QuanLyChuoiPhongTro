@@ -639,7 +639,7 @@ export default function UserDashboard() {
 
       // 0. Nếu người này có đơn xin ở ghép (ROOMMATE/JOIN_ROOM) hoặc thuê phòng (RENT) đã được DUYỆT (APPROVED) đối với phòng này -> KHÔNG PHẢI ĐÃ RỜI PHÒNG!
       const hasRejoined = (roomRequests || []).some((rejoin) => {
-        if (rejoin.status !== 'APPROVED' && rejoin.status !== 'ROOMMATES_APPROVED') return false;
+        if (rejoin.status !== 'APPROVED') return false;
         if (rejoin.type !== 'ROOMMATE' && rejoin.type !== 'JOIN_ROOM' && rejoin.type !== 'RENT' && rejoin.type !== 'NEW_RENT') return false;
         if (!isSameRoom(rejoin.targetRoom || rejoin.roomNumber, myRoomNumber)) return false;
         const reTenant = (rejoin.tenant || rejoin.tenantName || '').toLowerCase().trim();
@@ -713,7 +713,7 @@ export default function UserDashboard() {
     (roomRequests || []).forEach((req) => {
       const isRoommate = req.type === 'ROOMMATE' || req.type === 'JOIN_ROOM';
       const matchRoom = isSameRoom(req.targetRoom || req.roomNumber, myRoomNumber);
-      if (isRoommate && matchRoom && (req.status === 'APPROVED' || req.status === 'ROOMMATES_APPROVED') && req.tenant && req.status !== 'SETTLED') {
+      if (isRoommate && matchRoom && req.status === 'APPROVED' && req.tenant && req.status !== 'SETTLED') {
         // TUYỆT ĐỐI KHÔNG BỔ SUNG NẾU NGƯỜI NÀY ĐÃ RỜI PHÒNG!
         if (hasLeftRoom(req.tenant, req.phone)) return;
 
@@ -768,7 +768,7 @@ export default function UserDashboard() {
 
       const isCuongIn102 = Boolean(
         (roomRequests || []).some(r =>
-          (r.status === 'APPROVED' || r.status === 'ROOMMATES_APPROVED') &&
+          r.status === 'APPROVED' &&
           (r.type === 'ROOMMATE' || r.type === 'JOIN_ROOM') &&
           isSameRoom(r.targetRoom || r.roomNumber, 'P.102') &&
           (r.tenant || '').toLowerCase().includes('cường')

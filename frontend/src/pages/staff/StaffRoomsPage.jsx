@@ -1638,8 +1638,8 @@ export default function StaffRoomsPage() {
                       </div>
                     )}
 
-                    {/* Có thể phê duyệt khi PENDING hoặc ROOMMATES_APPROVED */}
-                    {(req.status === 'PENDING' || req.status === 'ROOMMATES_APPROVED') && (
+                    {/* Có thể phê duyệt: với đơn ROOMMATE/JOIN_ROOM BẮT BUỘC phải là ROOMMATES_APPROVED (đã đạt 100% cư dân duyệt), không cho duyệt khi đang WAITING_ROOMMATES hoặc PENDING */}
+                    {((req.type === 'ROOMMATE' || req.type === 'JOIN_ROOM') ? req.status === 'ROOMMATES_APPROVED' : (req.status === 'PENDING' || req.status === 'ROOMMATES_APPROVED')) && (
                       <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200 flex-wrap">
                         {req.status === 'ROOMMATES_APPROVED' && (
                           <span className="text-[11px] font-bold text-emerald-700 flex items-center gap-1">

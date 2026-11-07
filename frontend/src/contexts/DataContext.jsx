@@ -1642,7 +1642,7 @@ export const DataProvider = ({ children }) => {
         // - Xin vào ở ghép (ROOMMATE): Cần 100% người đang ở trong phòng đích đồng ý!
         // - Đại diện xin chuyển phòng hoặc trả phòng (TRANSFER / CHECKOUT): Cần 100% các bạn cùng phòng còn lại đồng ý!
         let requiredApprovals = 1;
-        if (req.type === 'ROOMMATE') {
+        if (req.type === 'ROOMMATE' || req.type === 'JOIN_ROOM') {
           requiredApprovals = Math.max(1, activeMembers.length || occupants);
         } else if (req.type === 'CHECKOUT' || req.type === 'TRANSFER') {
           // Người làm đơn là 1 người, cần tất cả (occupants - 1) người còn lại đồng ý
@@ -2058,7 +2058,7 @@ export const DataProvider = ({ children }) => {
       if (targetReq.currentRoom) {
         resetRoomPaymentStatus(targetReq.currentRoom);
       }
-    } else if (targetReq.type === 'ROOMMATE') {
+    } else if (targetReq.type === 'ROOMMATE' || targetReq.type === 'JOIN_ROOM') {
       // 2. Xin vào ở ghép: Cư dân chuyển sang ở ghép phòng mục tiêu
       // Tăng số người phòng mục tiêu
       setRooms((prev) => {

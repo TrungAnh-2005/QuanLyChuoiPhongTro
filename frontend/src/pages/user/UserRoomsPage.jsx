@@ -425,7 +425,7 @@ export default function UserRoomsPage() {
       }
       if (cleanNum === '102') {
         const hasApprovedCuong102 = (roomRequests || []).some(r =>
-          (r.status === 'APPROVED' || r.status === 'ROOMMATES_APPROVED') &&
+          r.status === 'APPROVED' &&
           (r.type === 'ROOMMATE' || r.type === 'JOIN_ROOM') &&
           normalizeRoomNumber(r.targetRoom || r.roomNumber) === '102' &&
           (r.tenant || '').toLowerCase().includes('cường')
