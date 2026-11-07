@@ -59,23 +59,42 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
   // Kiểm tra khách đã thuê phòng hoặc đang ở chế độ cọc với chủ trọ chưa
   const isAssociatedWithLandlord = React.useMemo(() => {
     if (role !== 'TENANT' || !user) return false;
-    if (user.status === 'WAITING_ROOM') return false;
+    if (user.status === 'WAITING_ROOM' || user.status === 'INACTIVE') return false;
 
-    // 1. Kiểm tra phòng đang thuê trực tiếp từ user
-    if (user.room || (user.rooms && user.rooms.length > 0)) return true;
-
-    // 2. Kiểm tra tenantRooms từ localStorage
+    // 1. Kiểm tra tenantRooms từ localStorage (nguồn chuẩn sự thật)
     try {
       const s = localStorage.getItem('rental_tenant_rooms');
       if (s) {
         const parsed = JSON.parse(s);
-        const myRooms = parsed[user.username] || (user.fullName ? parsed[user.fullName] : null);
-        if (Array.isArray(myRooms) && myRooms.length > 0) return true;
-        if (typeof myRooms === 'string' && myRooms.trim()) return true;
+        const uNorm = (user.fullName || user.username || '').toLowerCase();
+        let myRooms = parsed[user.username] ?? (user.fullName ? parsed[user.fullName] : undefined);
+        if (myRooms === undefined) {
+          if (uNorm.includes('an')) myRooms = parsed.tenant1 ?? parsed['Nguyễn Văn An'];
+          else if (uNorm.includes('cường')) myRooms = parsed.tenant2 ?? parsed['Phạm Minh Cường'];
+          else if (uNorm.includes('nam')) myRooms = parsed.tenant_new ?? parsed['Hoàng Văn Nam'];
+        }
+        if (Array.isArray(myRooms)) {
+          if (myRooms.length === 0) return false;
+          if (myRooms.length > 0) return true;
+        }
       }
     } catch {}
 
-    // 3. Kiểm tra đơn cọc / holding hoặc hợp đồng pending deposit
+    // 2. Kiểm tra phòng đang thuê trực tiếp từ user
+    if (user.room || (user.rooms && user.rooms.length > 0)) {
+      try {
+        const s = localStorage.getItem('rental_tenant_rooms');
+        if (s) {
+          const parsed = JSON.parse(s);
+          const uNorm = (user.fullName || user.username || '').toLowerCase();
+          const rList = parsed[user.username] ?? (uNorm.includes('an') ? parsed.tenant1 : (uNorm.includes('cường') ? parsed.tenant2 : null));
+          if (Array.isArray(rList) && rList.length === 0) return false;
+        }
+      } catch {}
+      return true;
+    }
+
+    // 3. Kiểm tra đơn giữ chỗ / nộp cọc đang có hiệu lực (HOLDING hoặc PENDING)
     try {
       const sReq = localStorage.getItem('rental_room_requests');
       if (sReq) {
@@ -83,10 +102,11 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
         const uName = (user.fullName || '').toLowerCase().trim();
         const uPhone = (user.phone || '').trim();
         const hasDeposit = reqs.some((r) => {
-          const isDep = r.status === 'APPROVED' || r.status === 'HOLDING';
+          if (r.status !== 'HOLDING' && r.status !== 'PENDING') return false;
+          if (r.type !== 'HOLD' && r.type !== 'RENT' && r.type !== 'NEW_RENT') return false;
           const rTenant = (r.tenant || '').toLowerCase().trim();
           const rPhone = (r.phone || '').trim();
-          return isDep && ((uName && rTenant.includes(uName)) || (uPhone && rPhone === uPhone));
+          return ((uName && rTenant.includes(uName)) || (uPhone && rPhone === uPhone));
         });
         if (hasDeposit) return true;
       }

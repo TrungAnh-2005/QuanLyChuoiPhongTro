@@ -2433,7 +2433,14 @@ export const DataProvider = ({ children }) => {
       // 4B. Cập nhật tất cả các đơn cũ (CHECKOUT, REJECTED_BY_ROOMMATES, ROOMMATES_APPROVED, RENT, TRANSFER) của phòng này thành SETTLED
       setRoomRequests((prev) => {
         const next = prev.map((r) => {
-          if (r.id === requestId) return r;
+          if (r.id === requestId) {
+            return {
+              ...r,
+              status: 'APPROVED',
+              settledAt: new Date().toLocaleDateString('vi-VN'),
+              note: 'Đã hoàn tất trả phòng & thanh lý hợp đồng'
+            };
+          }
           const reqClean = String(r.targetRoom || r.roomNumber || r.currentRoom || '').replace(/^phòng\s*/i, '').replace(/^p[\.\s_-]*/i, '').trim().toLowerCase();
           const matchRoom = reqClean === cleanRoom;
           if (matchRoom) {
@@ -2479,6 +2486,28 @@ export const DataProvider = ({ children }) => {
           tr['Phạm Minh Cường'] = [];
         }
         localStorage.setItem('rental_tenant_rooms', JSON.stringify(tr));
+      } catch {}
+
+      // Đồng bộ xóa phòng khỏi rental_user trong sessionStorage và localStorage
+      try {
+        ['sessionStorage', 'localStorage'].forEach((storeType) => {
+          const store = typeof window !== 'undefined' ? window[storeType] : null;
+          if (!store) return;
+          const uStr = store.getItem('rental_user');
+          if (uStr) {
+            const u = JSON.parse(uStr);
+            const uNorm = (u.fullName || u.username || '').toLowerCase();
+            const tNorm = (tName || '').toLowerCase();
+            if (uNorm.includes(tNorm) || tNorm.includes(uNorm) || (uNorm.includes('an') && cleanRoom === '101') || (uNorm.includes('cường') && cleanRoom === '101')) {
+              u.room = null;
+              u.rooms = [];
+              u.houseCode = null;
+              u.house = null;
+              u.houseName = null;
+              store.setItem('rental_user', JSON.stringify(u));
+            }
+          }
+        });
       } catch {}
 
       // Ghi nhận vào rental_move_out_settlements để đồng bộ tức thì toàn hệ thống
