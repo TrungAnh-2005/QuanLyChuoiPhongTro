@@ -89,7 +89,6 @@ export const BACKUP_INVOICES = [
   { id: 2, code: 'HD-202609-02', room: 'P.102', house: 'Cơ Sở 1 - Cầu Giấy', tenant: 'Trần Thị Bình', roomFee: 3800000, elec: 266000, water: 175000, service: 100000, total: 4341000, status: 'UNPAID', paidAt: null },
   { id: 3, code: 'HD-202609-03', room: 'P.101', house: 'Cơ Sở 1 - Cầu Giấy', tenant: 'Phạm Minh Cường', roomFee: 3200000, elec: 294000, water: 200000, service: 100000, total: 3794000, status: 'PAID', paidAt: '07/09/2026' },
   { id: 4, code: 'HD-202609-04', room: 'P.201', house: 'Cơ Sở 1 - Cầu Giấy', tenant: 'Vũ Hoàng Dũng', roomFee: 3600000, elec: 0, water: 0, service: 100000, total: 3700000, status: 'PENDING_METER', paidAt: null },
-  { id: 5, code: 'HD-202609-05', room: 'P.101', house: 'Cơ Sở 2 - Bách Khoa', tenant: 'Hoàng Văn Nam', roomFee: 2800000, elec: 210000, water: 150000, service: 80000, total: 3240000, status: 'PAID', paidAt: '05/09/2026' },
   { id: 6, code: 'HD-202609-06', room: 'P.101', house: 'Cơ Sở 3 - Đống Đa', tenant: 'Trịnh Thanh Tùng', roomFee: 4200000, elec: 350000, water: 200000, service: 120000, total: 4870000, status: 'UNPAID', paidAt: null }
 ];
 
@@ -238,21 +237,6 @@ export const BACKUP_TENANTS = [
 
 export const BACKUP_ROOM_REQUESTS = [
   {
-    id: 1,
-    type: 'ROOMMATE',
-    targetRoom: 'P.103',
-    house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
-    houseCode: 'CS-01',
-    currentRoom: null,
-    tenant: 'Hoàng Văn Nam',
-    phone: '0966.123.456',
-    email: 'nam.hv@gmail.com',
-    note: 'Em là sinh viên năm 3 Bách Khoa, muốn tìm bạn ở ghép chia đôi tiền phòng, không hút thuốc, giữ vệ sinh tốt.',
-    date: '24/09/2026',
-    status: 'WAITING_ROOMMATES',
-    roommateVotes: []
-  },
-  {
     id: 2,
     type: 'TRANSFER',
     targetRoom: 'P.203',
@@ -297,21 +281,6 @@ export const BACKUP_ROOM_REQUESTS = [
     newContractEnd: '01/07/2027',
     currentContractEnd: '31/12/2026',
     note: 'Em muốn đăng ký gia hạn tiếp hợp đồng 6 tháng (từ 01/01/2027 đến 01/07/2027) để tiếp tục ở.',
-    date: '25/09/2026',
-    status: 'PENDING',
-    roommateVotes: []
-  },
-  {
-    id: 6,
-    type: 'RENT',
-    tenant: 'Hoàng Văn Nam',
-    targetRoom: 'P.102',
-    currentRoom: null,
-    house: 'Nhà Trọ Bách Khoa - Cơ Sở 2',
-    houseCode: 'CS-02',
-    phone: '0966.123.456',
-    email: 'nam.hv@gmail.com',
-    note: 'Em là sinh viên Bách Khoa, muốn đăng ký thuê phòng P.102 tại Cơ Sở 2 Bách Khoa.',
     date: '25/09/2026',
     status: 'PENDING',
     roommateVotes: []
@@ -444,27 +413,6 @@ export const BACKUP_CONTRACTS = [
     depositPaymentMethod: 'VIETQR',
     signedElectronically: true,
     signedAt: '10/03/2026 14:00'
-  },
-  {
-    id: 3,
-    contractCode: 'HD-2026-007',
-    roomNumber: 'P.102',
-    houseCode: 'CS-02',
-    houseName: 'Nhà Trọ Bách Khoa - Cơ Sở 2',
-    tenantName: 'Hoàng Văn Nam',
-    tenantPhone: '0966.123.456',
-    startDate: '01/10/2026',
-    endDate: '01/10/2027',
-    rentalPrice: 2800000,
-    depositAmount: 2800000,
-    paymentCycle: 1,
-    paymentDay: 5,
-    terms: 'Hợp đồng thuê phòng sinh viên. Tiền cọc giữ chỗ đúng 1 tháng tiền phòng = 2.800.000 đ (không bao gồm dịch vụ). Phải nộp tiền cọc và ký điện tử mới được nhận phòng.',
-    status: 'WAITING_APPROVAL',
-    depositPaid: false,
-    signedElectronically: false,
-    signedAt: null,
-    holdingUntil: null
   }
 ];
 
@@ -530,27 +478,6 @@ export const BACKUP_MOVE_OUT_SETTLEMENTS = [
     refundStatus: 'PENDING',
     settledAt: '2026-10-03 16:30',
     createdAt: '2026-10-01'
-  },
-  {
-    id: 2,
-    contractId: 'HD-2026-004',
-    roomNumber: 'P.102',
-    houseCode: 'CS-02',
-    tenantName: 'Hoàng Văn Nam',
-    tenantPhone: '0966.123.456',
-    bankAccount: '0966123456',
-    bankName: 'MB Bank',
-    accountHolder: 'HOANG VAN NAM',
-    moveOutDate: '2026-10-05',
-    reason: 'Hết hạn hợp đồng thuê phòng',
-    originalDeposit: 3000000,
-    unpaidUtilitiesFee: 150000,
-    damageFee: 0,
-    damageDescription: 'Bàn giao nguyên trạng, thiết bị hoạt động tốt',
-    refundAmount: 2850000,
-    refundStatus: 'PENDING',
-    settledAt: null,
-    createdAt: '2026-10-05'
   }
 ];
 

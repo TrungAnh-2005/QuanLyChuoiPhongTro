@@ -275,8 +275,12 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
       if (r.type === 'CHECKOUT' || r.type === 'RETURN') {
         const isReadyForStaff = r.status === 'ROOMMATES_APPROVED' || (r.status === 'PENDING' && !r.hasMultiplePeople) || r.isDeadlockBypass;
         if (!isReadyForStaff) return false;
+      } else if (r.type === 'ROOMMATE') {
+        // Đơn xin ở ghép: Báo Staff khi 100% cư dân đã duyệt (ROOMMATES_APPROVED) hoặc đơn PENDING cần duyệt
+        const isReadyForStaff = r.status === 'ROOMMATES_APPROVED' || r.status === 'PENDING';
+        if (!isReadyForStaff) return false;
       } else {
-        const isRelevant = ['PENDING', 'APPROVED'].includes(r.status);
+        const isRelevant = ['PENDING', 'APPROVED', 'ROOMMATES_APPROVED'].includes(r.status);
         if (!isRelevant) return false;
       }
       const reqHouse = r.houseCode || (rooms || []).find((rm) => rm.number === (r.targetRoom || r.currentRoom))?.houseCode || 'CS-01';
@@ -313,8 +317,14 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
         title = `Đơn thuê thêm phòng (${reqHouse}): ${req.targetRoom}`;
         desc = `Khách ${req.tenant} (phòng ${req.currentRoom}) gửi đơn đăng ký thuê thêm phòng ${req.targetRoom}.`;
       } else if (req.type === 'ROOMMATE') {
-        title = `Đơn xin ở ghép (${reqHouse}): Phòng ${req.targetRoom}`;
-        desc = `Khách ${req.tenant} xin vào ở ghép phòng ${req.targetRoom} (Trạng thái: ${req.status}).`;
+        if (req.status === 'ROOMMATES_APPROVED') {
+          title = `🤝 Đơn xin ở ghép (${reqHouse}): Phòng ${req.targetRoom} (Phòng đã duyệt 100%)`;
+          desc = `100% cư dân phòng ${req.targetRoom} đã đồng ý! Chờ Quản lý/Staff kiểm tra CCCD & phê duyệt nhận bạn ${req.tenant}.`;
+          notifType = 'URGENT';
+        } else {
+          title = `🤝 Đơn xin ở ghép (${reqHouse}): Phòng ${req.targetRoom}`;
+          desc = `Khách ${req.tenant} xin vào ở ghép phòng ${req.targetRoom}. Nhân viên kiểm tra và phê duyệt hồ sơ.`;
+        }
       }
 
       const reqTimestamp = (typeof req.id === 'number' && req.id > 1600000000000) ? req.id : (Date.now() + 10000);

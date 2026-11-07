@@ -267,11 +267,39 @@ const getStoredTenantRooms = () => {
       if (Array.isArray(pR)) {
         const r101 = pR.find(r => String(r.number || '').replace(/^P\.?/i, '').trim() === '101');
         if (r101 && (r101.status === 'AVAILABLE' || r101.occupants === 0)) {
-          res.tenant1 = [];
-          res['Nguyễn Văn An'] = [];
-          res.tenant2 = [];
-          res['Phạm Minh Cường'] = [];
+          // Chỉ xóa nếu phòng cũ là 101 và không có phòng khác trong rental_room_members
+          if (Array.isArray(res.tenant1) && res.tenant1.includes('P.101')) res.tenant1 = [];
+          if (Array.isArray(res['Nguyễn Văn An']) && res['Nguyễn Văn An'].includes('P.101')) res['Nguyễn Văn An'] = [];
+          if (Array.isArray(res.tenant2) && res.tenant2.includes('P.101')) res.tenant2 = [];
+          if (Array.isArray(res['Phạm Minh Cường']) && res['Phạm Minh Cường'].includes('P.101')) res['Phạm Minh Cường'] = [];
         }
+      }
+    }
+  } catch {}
+
+  // ĐỐI CHIẾU NGUỒN SỰ THẬT TỐI CAO: rental_room_members (Cư dân thực tế đang ở trong phòng)
+  try {
+    const sMem = localStorage.getItem('rental_room_members');
+    if (sMem) {
+      const pMem = JSON.parse(sMem);
+      if (Array.isArray(pMem)) {
+        pMem.forEach((m) => {
+          if (m.status !== 'MOVED_OUT' && m.status !== 'INACTIVE' && m.roomNumber) {
+            const mNorm = (m.fullName || '').toLowerCase().trim();
+            if (mNorm.includes('an')) {
+              res.tenant1 = [m.roomNumber];
+              res['Nguyễn Văn An'] = [m.roomNumber];
+            } else if (mNorm.includes('cường')) {
+              res.tenant2 = [m.roomNumber];
+              res['Phạm Minh Cường'] = [m.roomNumber];
+            } else if (mNorm.includes('nam')) {
+              res.tenant_new = [m.roomNumber];
+              res['Hoàng Văn Nam'] = [m.roomNumber];
+            } else if (m.fullName) {
+              res[m.fullName] = [m.roomNumber];
+            }
+          }
+        });
       }
     }
   } catch {}
