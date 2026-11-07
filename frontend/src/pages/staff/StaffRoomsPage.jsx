@@ -658,19 +658,25 @@ export default function StaffRoomsPage() {
   }, [roomRequests]);
 
   const sortedDedupedRequests = useMemo(() => {
-    if (!highlightedRequestId) return dedupedRoomRequests;
     return [...dedupedRoomRequests].sort((a, b) => {
-      if (Number(a.id) === Number(highlightedRequestId)) return -1;
-      if (Number(b.id) === Number(highlightedRequestId)) return 1;
-      return 0;
+      if (highlightedRequestId) {
+        if (Number(a.id) === Number(highlightedRequestId)) return -1;
+        if (Number(b.id) === Number(highlightedRequestId)) return 1;
+      }
+      const isActionableA = a.status === 'ROOMMATES_APPROVED' || a.status === 'PENDING';
+      const isActionableB = b.status === 'ROOMMATES_APPROVED' || b.status === 'PENDING';
+      if (isActionableA && !isActionableB) return -1;
+      if (!isActionableA && isActionableB) return 1;
+      return (b.id || 0) - (a.id || 0);
     });
   }, [dedupedRoomRequests, highlightedRequestId]);
 
   const pendingRequestsCount = useMemo(() => {
     return dedupedRoomRequests.filter((req) => {
-      if (req.status !== 'PENDING') return false;
+      const isPendingStatus = req.status === 'PENDING' || req.status === 'ROOMMATES_APPROVED';
+      if (!isPendingStatus) return false;
       if (user?.role === 'ADMIN') return true;
-      return staffHouseCodes.includes(req.houseCode);
+      return staffHouseCodes.some((code) => isSameHouse(code, req.houseCode));
     }).length;
   }, [dedupedRoomRequests, staffHouseCodes, user?.role]);
 

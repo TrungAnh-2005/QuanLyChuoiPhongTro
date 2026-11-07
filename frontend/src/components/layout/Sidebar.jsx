@@ -114,6 +114,20 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
     return 0;
   }, [role]);
 
+  const staffPendingRequestsCount = React.useMemo(() => {
+    if (role !== 'STAFF') return 0;
+    try {
+      const s = localStorage.getItem('rental_room_requests');
+      if (s) {
+        const arr = JSON.parse(s);
+        if (Array.isArray(arr)) {
+          return arr.filter(r => r.status === 'PENDING' || r.status === 'ROOMMATES_APPROVED').length;
+        }
+      }
+    } catch {}
+    return 0;
+  }, [role]);
+
   const sidebarContent = (
     <div className="flex flex-col h-full bg-white/95 backdrop-blur-md text-slate-700">
       {/* Brand Logo & Close Button */}
@@ -187,6 +201,11 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
                   {item.path === '/admin/houses' && role === 'ADMIN' && pendingHousesCount > 0 && (
                     <span className="ml-auto px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white animate-pulse shadow-xs">
                       {pendingHousesCount}
+                    </span>
+                  )}
+                  {item.path === '/rooms' && role === 'STAFF' && staffPendingRequestsCount > 0 && (
+                    <span className="ml-auto px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-600 text-white animate-pulse shadow-xs">
+                      {staffPendingRequestsCount}
                     </span>
                   )}
                 </>
