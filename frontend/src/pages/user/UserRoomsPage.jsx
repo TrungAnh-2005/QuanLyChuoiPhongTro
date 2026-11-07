@@ -812,10 +812,21 @@ export default function UserRoomsPage() {
         if (n === uName || n.includes(uName) || uName.includes(n)) return true;
         if (uName.includes('an') && n.includes('an')) return true;
         if (uName.includes('cường') && n.includes('cường')) return true;
-        if (uName.includes('nam') && n.includes('nam')) return true;
       }
       return false;
     };
+
+    // KHÁCH MỚI (chưa thuê phòng nào): Tuyệt đối xem được toàn bộ cơ sở và phòng của tất cả staff
+    // "vì khách mới đã vào hay cọc trọ nào đâu"
+    if (user?.username === 'tenant_new') {
+      const hasRealContract = (contracts || []).some(
+        c => (c.status === 'ACTIVE' || (c.status === 'PENDING_SIGN' && c.depositPaid)) &&
+             matchesCurrentTenant(c.tenantName, c.tenantPhone, c.tenantUsername || c.username, c.tenantCccd)
+      );
+      if (!hasRealContract) {
+        return null;
+      }
+    }
 
     // Helper: trích xuất key chủ trọ từ mã cơ sở hoặc tên cơ sở
     const findLandlordKeyForHouse = (hCode, hName) => {

@@ -1084,8 +1084,12 @@ export const DataProvider = ({ children }) => {
       if (saved) {
         const parsedRaw = JSON.parse(saved);
         if (Array.isArray(parsedRaw) && parsedRaw.length > 0) {
-          // Loại bỏ đơn mock cũ (ID 4 CHECKOUT PENDING của P.101) để khách test luồng trả phòng thật
-          const parsed = parsedRaw.filter((r) => !(r.id === 4 && r.type === 'CHECKOUT' && r.targetRoom === 'P.101'));
+          // Loại bỏ đơn mock cũ (ID 4 CHECKOUT PENDING của P.101, ID 1 và 6 của Nam) để khách test luồng thật
+          const parsed = parsedRaw.filter((r) =>
+            !(r.id === 4 && r.type === 'CHECKOUT' && r.targetRoom === 'P.101') &&
+            !(r.id === 6 && (r.tenant || '').includes('Nam')) &&
+            !(r.id === 1 && (r.tenant || '').includes('Nam'))
+          );
           // Đọc danh sách hợp đồng để đối soát
           let storedContracts = [];
           try {
@@ -4738,45 +4742,9 @@ export const DataProvider = ({ children }) => {
       const s = localStorage.getItem('rental_contracts');
       if (s) {
         const parsed = JSON.parse(s);
-        // Chuẩn hóa danh sách hợp đồng từ localStorage
-        let filtered = parsed;
+        // Chuẩn hóa danh sách hợp đồng từ localStorage, loại bỏ hợp đồng mock cũ HD-2026-007 của Nam
+        let filtered = (parsed || []).filter(c => c.contractCode !== 'HD-2026-007' && !(c.tenantName && c.tenantName.includes('Nam') && c.status !== 'ACTIVE'));
 
-        // Kiểm tra xem đơn thuê phòng của Nam trong rental_room_requests đã được Staff APPROVED chưa
-        let isNamReqApproved = false;
-        try {
-          const reqRaw = localStorage.getItem('rental_room_requests');
-          if (reqRaw) {
-            const reqs = JSON.parse(reqRaw);
-            const namReq = reqs.find(r => (r.id === 6 || (r.tenant && r.tenant.includes('Nam'))) && (r.type === 'RENT' || r.type === 'NEW_RENT'));
-            if (namReq && namReq.status === 'APPROVED') {
-              isNamReqApproved = true;
-            }
-          }
-        } catch {}
-
-        if (!filtered.some(c => c.contractCode === 'HD-2026-007' || (c.tenantName && c.tenantName.includes('Nam')))) {
-          filtered.push({
-            id: 3,
-            contractCode: 'HD-2026-007',
-            roomNumber: 'P.102',
-            houseCode: 'CS-02',
-            houseName: 'Nhà Trọ Bách Khoa - Cơ Sở 2',
-            tenantName: 'Hoàng Văn Nam',
-            tenantPhone: '0966.123.456',
-            startDate: '01/10/2026',
-            endDate: '01/10/2027',
-            rentalPrice: 2800000,
-            depositAmount: 2800000,
-            paymentCycle: 1,
-            paymentDay: 5,
-            terms: 'Hợp đồng thuê phòng sinh viên. Tiền cọc giữ chỗ đúng 1 tháng tiền phòng = 2.800.000 đ (không bao gồm dịch vụ). Phải nộp tiền cọc và ký điện tử mới được nhận phòng.',
-            status: isNamReqApproved ? 'PENDING_DEPOSIT' : 'WAITING_APPROVAL',
-            depositPaid: false,
-            signedElectronically: false,
-            signedAt: null,
-            holdingUntil: isNamReqApproved ? Date.now() + 15 * 60 * 1000 : null
-          });
-        }
         let isP101CheckedOut = false;
         try {
           const reqRaw = localStorage.getItem('rental_room_requests');
@@ -4811,25 +4779,6 @@ export const DataProvider = ({ children }) => {
               signedElectronically: true
             };
           }
-          if (c.contractCode === 'HD-2026-007' || (c.tenantName && c.tenantName.includes('Nam'))) {
-            // Tôn trọng status đã lưu trong localStorage nếu là PENDING_DEPOSIT
-            const finalStatus = c.status === 'ACTIVE'
-              ? 'ACTIVE'
-              : (c.status === 'PENDING_DEPOSIT' || isNamReqApproved ? 'PENDING_DEPOSIT' : 'WAITING_APPROVAL');
-
-            return {
-              ...c,
-              roomNumber: c.roomNumber || 'P.102',
-              houseCode: c.houseCode || 'CS-02',
-              houseName: c.houseName || 'Nhà Trọ Bách Khoa - Cơ Sở 2',
-              status: finalStatus,
-              depositPaid: Boolean(c.depositPaid),
-              depositAmount: c.depositAmount || 2800000,
-              rentalPrice: c.rentalPrice || 2800000,
-              signedElectronically: Boolean(c.signedElectronically),
-              holdingUntil: finalStatus === 'PENDING_DEPOSIT' ? (c.holdingUntil || (Date.now() + 15 * 60 * 1000)) : null
-            };
-          }
           return c;
         });
       }
@@ -4838,6 +4787,50 @@ export const DataProvider = ({ children }) => {
       return isZeroSandbox ? [] : DEFAULT_CONTRACTS;
     }
   });
+
+  // DỌN SẠCH MOCK CŨ CỦA KHÁCH MỚI (Hoàng Văn Nam) ĐỂ KHÁCH MỚI HOÀN TOÀN TỰ DO XEM TOÀN BỘ CƠ SỞ CỦA TẤT CẢ STAFF
+  useEffect(() => {
+    try {
+      // 1. rental_contracts
+      const sContracts = localStorage.getItem('rental_contracts');
+      if (sContracts) {
+        const list = JSON.parse(sContracts);
+        if (Array.isArray(list)) {
+          const cleaned = list.filter(c => c.contractCode !== 'HD-2026-007' && !(c.tenantName && c.tenantName.includes('Nam') && c.status !== 'ACTIVE'));
+          if (cleaned.length !== list.length) {
+            localStorage.setItem('rental_contracts', JSON.stringify(cleaned));
+            setContracts(cleaned);
+          }
+        }
+      }
+
+      // 2. rental_room_requests
+      const sReq = localStorage.getItem('rental_room_requests');
+      if (sReq) {
+        const list = JSON.parse(sReq);
+        if (Array.isArray(list)) {
+          const cleaned = list.filter(r => !(r.id === 6 && (r.tenant || '').includes('Nam')) && !(r.id === 1 && (r.tenant || '').includes('Nam')));
+          if (cleaned.length !== list.length) {
+            localStorage.setItem('rental_room_requests', JSON.stringify(cleaned));
+            setRoomRequests(cleaned);
+          }
+        }
+      }
+
+      // 3. rental_move_out_settlements
+      const sSet = localStorage.getItem('rental_move_out_settlements');
+      if (sSet) {
+        const list = JSON.parse(sSet);
+        if (Array.isArray(list)) {
+          const cleaned = list.filter(s => !(s.id === 2 && (s.tenantName || '').includes('Nam')));
+          if (cleaned.length !== list.length) {
+            localStorage.setItem('rental_move_out_settlements', JSON.stringify(cleaned));
+            setMoveOutSettlements(cleaned);
+          }
+        }
+      }
+    } catch {}
+  }, []);
 
   // Tự động giải phóng trạng thái phòng khi khách đã trả phòng / rời phòng
   // Đồng thời đồng bộ trạng thái OCCUPIED khi có hợp đồng ACTIVE hoặc cư dân thực tế
@@ -5702,7 +5695,8 @@ export const DataProvider = ({ children }) => {
   const [moveOutSettlements, setMoveOutSettlements] = useState(() => {
     try {
       const s = localStorage.getItem('rental_move_out_settlements');
-      return s ? JSON.parse(s) : DEFAULT_MOVE_OUT_SETTLEMENTS;
+      const list = s ? JSON.parse(s) : DEFAULT_MOVE_OUT_SETTLEMENTS;
+      return (list || []).filter(item => !(item.id === 2 && (item.tenantName || '').includes('Nam')));
     } catch {
       return DEFAULT_MOVE_OUT_SETTLEMENTS;
     }
