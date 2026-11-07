@@ -5041,8 +5041,10 @@ export const DataProvider = ({ children }) => {
 
     let targetContract = null;
     setContracts((prev) => {
+      let found = false;
       const updated = prev.map((c) => {
         if (c.id === contractId || c.contractCode === contractId) {
+          found = true;
           targetContract = { ...c };
           return {
             ...c,
@@ -5056,11 +5058,45 @@ export const DataProvider = ({ children }) => {
         }
         return c;
       });
+
+      if (!found && options.contractData) {
+        targetContract = {
+          ...options.contractData,
+          status: 'ACTIVE',
+          depositPaid: true,
+          depositPaidAt: nowStr,
+          depositPaymentMethod: paymentMethod,
+          signedElectronically: true,
+          signedAt: nowStr
+        };
+        updated.push(targetContract);
+      }
+
       localStorage.setItem('rental_contracts', JSON.stringify(updated));
       return updated;
     });
 
     if (targetContract) {
+      // 0. Cập nhật đơn thuê phòng tương ứng trong roomRequests sang COMPLETED
+      setRoomRequests((prev) => {
+        const next = prev.map((r) => {
+          const isRent = r.type === 'RENT' || r.type === 'NEW_RENT' || r.type === 'ADDITIONAL_RENT';
+          const matchRoom = String(r.targetRoom || '').replace(/^p[\.\s_-]*/i, '') === String(targetContract.roomNumber || '').replace(/^p[\.\s_-]*/i, '');
+          const matchTenant = (targetContract.tenantName && (r.tenant || '').toLowerCase().includes(targetContract.tenantName.toLowerCase())) ||
+                              (targetContract.tenantPhone && r.phone === targetContract.tenantPhone);
+          if (isRent && matchRoom && matchTenant && r.status === 'APPROVED') {
+            return {
+              ...r,
+              status: 'COMPLETED',
+              completedAt: nowStr,
+              note: 'Đã hoàn tất nộp cọc và ký hợp đồng điện tử'
+            };
+          }
+          return r;
+        });
+        localStorage.setItem('rental_room_requests', JSON.stringify(next));
+        return next;
+      });
       // 1. Chuyển phòng sang OCCUPIED
       setRooms((prev) => {
         const next = prev.map((r) => {
