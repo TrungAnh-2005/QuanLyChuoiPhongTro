@@ -136,6 +136,114 @@ export default function UserRoomsPage() {
     cancelRoomRequest
   } = useData();
 
+  const uName = (user?.fullName || '').toLowerCase().trim();
+  const uPhone = (user?.phone || '').trim();
+  const uUsername = (user?.username || '').toLowerCase().trim();
+  const uCccd = (user?.cccd || '').trim();
+
+  const [storedBoardingHouses, setStoredBoardingHouses] = useState(() => {
+    try {
+      const saved = localStorage.getItem('rental_boarding_houses');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return healBoardingHousesList(parsed);
+        }
+      }
+    } catch { }
+    return [];
+  });
+
+  const [selectedHouse, setSelectedHouse] = useState('ALL');
+  const [tenantLocation, setTenantLocation] = useState(null);
+  const [tenantViewAllFlat, setTenantViewAllFlat] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState('ALL');
+  const [priceRange, setPriceRange] = useState('ALL');
+
+  const [selectedRoomDetails, setSelectedRoomDetails] = useState(null);
+  const [selectedContractForModal, setSelectedContractForModal] = useState(null);
+  const [showRoommateModal, setShowRoommateModal] = useState(false);
+  const [showMoveOutModal, setShowMoveOutModal] = useState(false);
+  const [showRequestsHistory, setShowRequestsHistory] = useState(false);
+  const [showPendingReviewModal, setShowPendingReviewModal] = useState(false);
+  const [actionToast, setActionToast] = useState(null);
+
+  const [rentModalRoom, setRentModalRoom] = useState(null);
+  const [rentNote, setRentNote] = useState('');
+  const [isSubmittingRent, setIsSubmittingRent] = useState(false);
+
+  const [joinRoomModalData, setJoinRoomModalData] = useState(null);
+  const [isReapplying, setIsReapplying] = useState(false);
+  const [joinNote, setJoinNote] = useState('');
+  const [joinPhone, setJoinPhone] = useState('');
+  const [joinCccd, setJoinCccd] = useState('');
+  const [joinHometown, setJoinHometown] = useState('');
+
+  useEffect(() => {
+    const handleSyncHouses = () => {
+      try {
+        const saved = localStorage.getItem('rental_boarding_houses');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            setStoredBoardingHouses(healBoardingHousesList(parsed));
+          }
+        }
+      } catch { }
+    };
+    window.addEventListener('storage', handleSyncHouses);
+    return () => window.removeEventListener('storage', handleSyncHouses);
+  }, []);
+
+  useEffect(() => {
+    const action = searchParams.get('action');
+    if (action === 'review-pending' || action === 'pending-review' || action === 'vote') {
+      setShowPendingReviewModal(true);
+      setShowRequestsHistory(false);
+    } else if (action === 'history' || action === 'review-requests') {
+      setShowRequestsHistory(true);
+      setShowPendingReviewModal(false);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    const handleOpenPendingReview = () => {
+      setShowPendingReviewModal(true);
+      setShowRequestsHistory(false);
+    };
+
+    const handleOpenRequestsManager = (e) => {
+      const notif = e?.detail?.notif;
+      const title = (notif?.title || '').toLowerCase();
+      const id = String(notif?.id || '').toLowerCase();
+      const link = String(notif?.link || '').toLowerCase();
+      const action = e?.detail?.action;
+
+      if (
+        action === 'review-pending' ||
+        link.includes('action=review-pending') ||
+        id.includes('vote') ||
+        title.includes('biểu quyết') ||
+        title.includes('cần biểu quyết') ||
+        title.includes('chờ bạn duyệt')
+      ) {
+        setShowPendingReviewModal(true);
+        setShowRequestsHistory(false);
+      } else {
+        setShowRequestsHistory(true);
+        setShowPendingReviewModal(false);
+      }
+    };
+
+    window.addEventListener('rental:open-pending-review', handleOpenPendingReview);
+    window.addEventListener('rental:open-requests-manager', handleOpenRequestsManager);
+    return () => {
+      window.removeEventListener('rental:open-pending-review', handleOpenPendingReview);
+      window.removeEventListener('rental:open-requests-manager', handleOpenRequestsManager);
+    };
+  }, []);
+
   const isRoomCheckedOut = useCallback((rNum) => {
     if (!rNum) return false;
     const clean = normalizeRoomNumber(rNum);
@@ -369,63 +477,6 @@ export default function UserRoomsPage() {
     return getRoomHoldingOrDepositStatus(room).isHeld;
   }, [getRoomHoldingOrDepositStatus]);
 
-  // State cho Modal Đăng ký Giữ trọ đặt cọc chờ Staff duyệt
-  const [rentModalRoom, setRentModalRoom] = useState(null);
-
-  // Tự động mở Modal Lịch Sử Đơn hoặc Yêu Cầu Chờ Duyệt khi tenant click từ Thông Báo Navbar
-  useEffect(() => {
-    const action = searchParams.get('action');
-    if (action === 'review-pending' || action === 'pending-review' || action === 'vote') {
-      setShowPendingReviewModal(true);
-      setShowRequestsHistory(false);
-    } else if (action === 'history' || action === 'review-requests') {
-      setShowRequestsHistory(true);
-      setShowPendingReviewModal(false);
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
-    const handleOpenPendingReview = () => {
-      setShowPendingReviewModal(true);
-      setShowRequestsHistory(false);
-    };
-
-    const handleOpenRequestsManager = (e) => {
-      const notif = e?.detail?.notif;
-      const title = (notif?.title || '').toLowerCase();
-      const id = String(notif?.id || '').toLowerCase();
-      const link = String(notif?.link || '').toLowerCase();
-      const action = e?.detail?.action;
-
-      if (
-        action === 'review-pending' ||
-        link.includes('action=review-pending') ||
-        id.includes('vote') ||
-        title.includes('biểu quyết') ||
-        title.includes('cần biểu quyết') ||
-        title.includes('chờ bạn duyệt')
-      ) {
-        setShowPendingReviewModal(true);
-        setShowRequestsHistory(false);
-      } else {
-        setShowRequestsHistory(true);
-        setShowPendingReviewModal(false);
-      }
-    };
-
-    window.addEventListener('rental:open-pending-review', handleOpenPendingReview);
-    window.addEventListener('rental:open-requests-manager', handleOpenRequestsManager);
-    return () => {
-      window.removeEventListener('rental:open-pending-review', handleOpenPendingReview);
-      window.removeEventListener('rental:open-requests-manager', handleOpenRequestsManager);
-    };
-  }, []);
-  const [rentNote, setRentNote] = useState('');
-  const [isSubmittingRent, setIsSubmittingRent] = useState(false);
-
-  const uName = (user?.fullName || '').toLowerCase().trim();
-  const uPhone = (user?.phone || '').trim();
-
   // Đơn đăng ký giữ trọ của khách đã được Quản lý phê duyệt (chờ nộp cọc & ký HĐ)
   const myApprovedRequest = useMemo(() => {
     if (!user) return null;
@@ -522,60 +573,6 @@ export default function UserRoomsPage() {
       return matchUsername || matchName || matchPhone;
     });
   }, [user, roomRequests, uName, uPhone]);
-
-
-
-  const [storedBoardingHouses, setStoredBoardingHouses] = useState(() => {
-    try {
-      const saved = localStorage.getItem('rental_boarding_houses');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return healBoardingHousesList(parsed);
-        }
-      }
-    } catch { }
-    return [];
-  });
-
-  useEffect(() => {
-    const handleSyncHouses = () => {
-      try {
-        const saved = localStorage.getItem('rental_boarding_houses');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
-            setStoredBoardingHouses(healBoardingHousesList(parsed));
-          }
-        }
-      } catch { }
-    };
-    window.addEventListener('storage', handleSyncHouses);
-    return () => window.removeEventListener('storage', handleSyncHouses);
-  }, []);
-
-  const [selectedHouse, setSelectedHouse] = useState('ALL');
-  const [tenantLocation, setTenantLocation] = useState(null);
-  const [tenantViewAllFlat, setTenantViewAllFlat] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState('ALL');
-  const [priceRange, setPriceRange] = useState('ALL');
-
-  const [selectedRoomDetails, setSelectedRoomDetails] = useState(null);
-  const [selectedContractForModal, setSelectedContractForModal] = useState(null);
-  const [showRoommateModal, setShowRoommateModal] = useState(false);
-  const [showMoveOutModal, setShowMoveOutModal] = useState(false);
-  const [showRequestsHistory, setShowRequestsHistory] = useState(false);
-  const [showPendingReviewModal, setShowPendingReviewModal] = useState(false);
-  const [actionToast, setActionToast] = useState(null);
-
-  // State cho Modal Xin Vào Ở Ghép (Phòng có người nhưng chưa đầy)
-  const [joinRoomModalData, setJoinRoomModalData] = useState(null);
-  const [isReapplying, setIsReapplying] = useState(false);
-  const [joinNote, setJoinNote] = useState('');
-  const [joinPhone, setJoinPhone] = useState('');
-  const [joinCccd, setJoinCccd] = useState('');
-  const [joinHometown, setJoinHometown] = useState('');
 
   const handleConfirmJoinRoom = (e) => {
     e.preventDefault();
