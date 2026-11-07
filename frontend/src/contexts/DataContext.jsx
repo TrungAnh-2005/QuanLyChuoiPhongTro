@@ -5166,6 +5166,30 @@ export const DataProvider = ({ children }) => {
         return nextObj;
       });
 
+      // 5. Cập nhật roomRequests: Đánh dấu đơn giữ trọ / thuê phòng hoàn tất
+      setRoomRequests((prev) => {
+        const next = prev.map((req) => {
+          const isRentType = req.type === 'RENT' || req.type === 'NEW_RENT' || req.type === 'RENTAL' || req.type === 'HOLD';
+          if (!isRentType) return req;
+          const matchRoom = isSameRoom(req.targetRoom || req.roomNumber, targetContract.roomNumber);
+          const matchHouse = !targetContract.houseCode || !req.houseCode || isSameHouse(req.houseCode, targetContract.houseCode);
+          if (matchRoom && matchHouse) {
+            return { ...req, status: 'COMPLETED' };
+          }
+          return req;
+        });
+        localStorage.setItem('rental_room_requests', JSON.stringify(next));
+        return next;
+      });
+
+      // 6. Xoá cờ nộp cọc tạm thời trong localStorage
+      try {
+        localStorage.removeItem(`rental_deposit_paid_${targetContract.id}`);
+        localStorage.removeItem(`rental_deposit_paid_${targetContract.roomNumber}`);
+        const cClean = String(targetContract.roomNumber).replace(/^p\.?/i, '').trim();
+        localStorage.removeItem(`rental_deposit_paid_${cClean}`);
+      } catch {}
+
       addAuditLog({
         role: 'ROLE_TENANT',
         username: 'tenant',
@@ -5296,10 +5320,13 @@ export const DataProvider = ({ children }) => {
   };
 
   const signContractElectronically = (contractId) => {
+    let targetContract = null;
+    const nowStr = new Date().toLocaleString('vi-VN');
+
     setContracts((prev) => {
       const updated = prev.map((c) => {
-        if (c.id === contractId) {
-          const nowStr = new Date().toLocaleString('vi-VN');
+        if (c.id === contractId || c.contractCode === contractId) {
+          targetContract = { ...c };
           addAuditLog({
             role: 'ROLE_TENANT',
             username: 'tenant1',
@@ -5310,6 +5337,8 @@ export const DataProvider = ({ children }) => {
           return {
             ...c,
             status: 'ACTIVE',
+            depositPaid: true,
+            depositPaidAt: c.depositPaidAt || nowStr,
             signedElectronically: true,
             signedAt: nowStr
           };
@@ -5319,6 +5348,114 @@ export const DataProvider = ({ children }) => {
       localStorage.setItem('rental_contracts', JSON.stringify(updated));
       return updated;
     });
+
+    if (targetContract) {
+      // 1. Chuyển phòng sang OCCUPIED, xóa giữ chỗ, tăng occupants
+      setRooms((prev) => {
+        const next = prev.map((r) => {
+          const isMatch = isSameRoom(r.number, targetContract.roomNumber) && (!targetContract.houseCode || isSameHouse(r.houseCode, targetContract.houseCode));
+          return isMatch
+            ? {
+                ...r,
+                status: 'OCCUPIED',
+                occupants: Math.max(1, r.occupants || 1),
+                holdingBy: null,
+                holdingPhone: null,
+                holdingUntil: null
+              }
+            : r;
+        });
+        localStorage.setItem('rental_rooms', JSON.stringify(next));
+        return next;
+      });
+
+      // 2. Chuyển tenant sang ACTIVE
+      setTenants((prev) => {
+        const next = prev.map((t) => {
+          const isMatch = (targetContract.tenantName && t.fullName?.toLowerCase().includes(targetContract.tenantName.toLowerCase())) ||
+                          (targetContract.tenantPhone && t.phone === targetContract.tenantPhone);
+          return isMatch
+            ? {
+                ...t,
+                room: targetContract.roomNumber,
+                rooms: [targetContract.roomNumber],
+                houseCode: targetContract.houseCode || 'CS-01',
+                house: targetContract.houseName || 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
+                deposit: targetContract.depositAmount,
+                status: 'ACTIVE',
+                contractStart: targetContract.startDate,
+                contractEnd: targetContract.endDate
+              }
+            : t;
+        });
+        localStorage.setItem('rental_tenants', JSON.stringify(next));
+        return next;
+      });
+
+      // 3. AuthContext tenantRooms
+      if (updateTenantRoom) {
+        updateTenantRoom(targetContract.tenantName, targetContract.roomNumber, 'SET', {
+          houseCode: targetContract.houseCode,
+          house: targetContract.houseName
+        });
+      }
+
+      // 4. roomMembers (Đại diện phòng)
+      setRoomMembers((prev) => {
+        const exists = prev.some((m) => isSameRoom(m.roomNumber, targetContract.roomNumber) && (m.fullName || '').toLowerCase().includes((targetContract.tenantName || '').toLowerCase()));
+        if (exists) {
+          return prev.map((m) => {
+            if (isSameRoom(m.roomNumber, targetContract.roomNumber) && (m.fullName || '').toLowerCase().includes((targetContract.tenantName || '').toLowerCase())) {
+              return { ...m, status: 'ACTIVE', roleInRoom: 'REPRESENTATIVE' };
+            }
+            return m;
+          });
+        }
+        const updated = [
+          ...prev,
+          {
+            id: `RM-${Date.now()}`,
+            roomId: Date.now(),
+            roomNumber: targetContract.roomNumber,
+            houseCode: targetContract.houseCode || 'CS-01',
+            fullName: targetContract.tenantName,
+            phone: targetContract.tenantPhone || '0966.123.456',
+            cccd: targetContract.tenantCccd || '036207078901',
+            maskedCccd: targetContract.tenantCccd ? targetContract.tenantCccd.replace(/(\d{4})\d+(\d{4})/, '$1****$2') : '03620707****',
+            roleInRoom: 'REPRESENTATIVE',
+            joinDate: new Date().toLocaleDateString('vi-VN'),
+            temporaryResidenceStatus: 'REGISTERED',
+            status: 'ACTIVE'
+          }
+        ];
+        localStorage.setItem('rental_room_members', JSON.stringify(updated));
+        return updated;
+      });
+
+      // 5. Cập nhật roomRequests: Đánh dấu đơn thuê hoàn tất
+      setRoomRequests((prev) => {
+        const next = prev.map((req) => {
+          const isRentType = req.type === 'RENT' || req.type === 'NEW_RENT' || req.type === 'RENTAL' || req.type === 'HOLD';
+          if (!isRentType) return req;
+          const matchRoom = isSameRoom(req.targetRoom || req.roomNumber, targetContract.roomNumber);
+          const matchHouse = !targetContract.houseCode || !req.houseCode || isSameHouse(req.houseCode, targetContract.houseCode);
+          if (matchRoom && matchHouse) {
+            return { ...req, status: 'COMPLETED' };
+          }
+          return req;
+        });
+        localStorage.setItem('rental_room_requests', JSON.stringify(next));
+        return next;
+      });
+
+      // 6. Xoá cờ nộp cọc tạm thời trong localStorage
+      try {
+        localStorage.removeItem(`rental_deposit_paid_${targetContract.id}`);
+        localStorage.removeItem(`rental_deposit_paid_${targetContract.roomNumber}`);
+        const cClean = String(targetContract.roomNumber).replace(/^p\.?/i, '').trim();
+        localStorage.removeItem(`rental_deposit_paid_${cClean}`);
+      } catch {}
+    }
   };
 
   // 6. Phản ánh đối soát chỉ số điện nước meterDisputes (UC-T02)

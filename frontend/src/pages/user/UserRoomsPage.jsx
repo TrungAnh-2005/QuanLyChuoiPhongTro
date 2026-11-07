@@ -347,6 +347,21 @@ export default function UserRoomsPage() {
     const cleanRoom = normalizeRoomNumber(room.number);
     const rHouse = room.houseCode || 'CS-01';
 
+    // 0. BẢO VỆ TUYỆT ĐỐI: NẾU PHÒNG ĐÃ CÓ HỢP ĐỒNG ACTIVE HOẶC ĐÃ CÓ NGƯỜI Ở THỰC TẾ
+    // Khách thuê đại diện đã ký xong HĐ và đang ở. Giai đoạn giữ cọc thuê nguyên phòng đã kết thúc!
+    // Phòng chuyển sang trạng thái Ở GHÉP nếu còn chỗ trống. Tuyệt đối không coi là Đang giữ cọc!
+    const hasActiveContract = (contracts || []).some((c) => {
+      if (c.status !== 'ACTIVE') return false;
+      if (!isSameRoom(c.roomNumber, cleanRoom)) return false;
+      if (c.houseCode && rHouse && !isSameHouse(c.houseCode, rHouse)) return false;
+      return true;
+    });
+
+    const curOcc = getActualOccupants(room);
+    if (hasActiveContract || curOcc > 0) {
+      return { isHeld: false, isDepositPaid: false, isPending: false, isMine: false, text: '' };
+    }
+
     // 1. Kiểm tra trong danh sách Hợp Đồng (contracts)
     const matchedContract = (contracts || []).find((c) => {
       if (!isSameRoom(c.roomNumber, cleanRoom)) return false;
@@ -1731,7 +1746,7 @@ export default function UserRoomsPage() {
                             const freeSlots = maxOcc - curOccupants;
 
                             // NẾU PHÒNG THỰC TẾ ĐANG CÓ NGƯỜI Ở
-                            const isEffectivelyOccupied = room.status !== 'AVAILABLE' && curOccupants > 0 && !isRoomCheckedOut(room.number);
+                            const isEffectivelyOccupied = curOccupants > 0 && !isRoomCheckedOut(room.number);
                             if (isEffectivelyOccupied) {
                               if (freeSlots > 0) {
                                 return (
@@ -1875,67 +1890,8 @@ export default function UserRoomsPage() {
                           );
                         }
 
-                        // 2. Nếu phòng ĐANG ĐƯỢC GIỮ CHỖ hoặc ĐÃ NỘP CỌC
-                        if (holdStatus.isHeld) {
-                          // Nếu do CHÍNH TÔI giữ chỗ / nộp cọc
-                          if (holdStatus.isMine) {
-                            if (holdStatus.isPending) {
-                              return (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setActionToast('ℹ️ Đơn giữ trọ đang chờ Quản lý phê duyệt. Hệ thống sẽ mở cổng nộp cọc ngay khi được duyệt!');
-                                    setTimeout(() => setActionToast(null), 4000);
-                                  }}
-                                  className="text-[11px] text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 font-bold px-2.5 py-2 rounded-xl shadow-xs transition-all flex-1 text-center cursor-pointer flex items-center justify-center gap-1"
-                                >
-                                  <Clock className="w-3.5 h-3.5" />
-                                  <span>Chờ Quản Lý Duyệt</span>
-                                </button>
-                              );
-                            }
-                            return (
-                              <button
-                                type="button"
-                                onClick={() => navigate('/')}
-                                className="text-xs text-white font-bold px-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-xl shadow-xs transition-all flex-1 text-center btn-press cursor-pointer flex items-center justify-center gap-1 animate-pulse"
-                              >
-                                <span>{holdStatus.isDepositPaid ? 'Ký Hợp Đồng Ngay' : 'Nộp Cọc & Ký HĐ'}</span>
-                                <ArrowRight className="w-3.5 h-3.5" />
-                              </button>
-                            );
-                          }
-
-                          // Nếu do KHÁCH KHÁC giữ chỗ / nộp cọc -> KHÓA NÚT VỚI KHÁCH NÀY!
-                          return (
-                            <button
-                              type="button"
-                              disabled
-                              onClick={(e) => {
-                                e.preventDefault();
-                                setActionToast(holdStatus.isDepositPaid
-                                  ? `⚠️ Phòng ${room.number} đã có khách nộp tiền cọc giữ phòng và đang chờ ký HĐ điện tử. Không thể đăng ký giữ cọc phòng này!`
-                                  : `⚠️ Phòng ${room.number} đang có khách đăng ký giữ chỗ và chờ Quản lý duyệt hồ sơ!`
-                                );
-                                setTimeout(() => setActionToast(null), 4000);
-                              }}
-                              className={`text-[11px] font-bold px-2 py-2 rounded-xl border opacity-85 flex-1 text-center cursor-not-allowed flex items-center justify-center gap-1 select-none ${
-                                holdStatus.isDepositPaid
-                                  ? 'bg-purple-50 text-purple-800 border-purple-200'
-                                  : 'bg-amber-50 text-amber-800 border-amber-200'
-                              }`}
-                              title={holdStatus.isDepositPaid
-                                ? 'Phòng này đã có khách nộp tiền cọc và đang chờ ký hợp đồng'
-                                : 'Phòng này đang có khách gửi đơn đăng ký giữ chỗ chờ duyệt'
-                              }
-                            >
-                              <Lock className="w-3.5 h-3.5" />
-                              <span>{holdStatus.isDepositPaid ? 'Đã Có Người Nộp Cọc' : 'Đang Có Người Giữ Cọc'}</span>
-                            </button>
-                          );
-                        }
-
-                        // 3. Nếu phòng ĐANG CÓ NGƯỜI Ở (curOcc > 0)
+                        // 2. Nếu phòng ĐANG CÓ NGƯỜI Ở (curOcc > 0):
+                        // ƯU TIÊN HÀNG ĐẦU: Khách chính đã ở, các khách khác vào là Ở GHÉP (ROOMMATE)
                         if (curOcc > 0) {
                           if (isFull) {
                             return (
@@ -1950,7 +1906,7 @@ export default function UserRoomsPage() {
                             );
                           }
 
-                          // Phòng chưa đầy (ví dụ 1/2 người): Có thể xin vào ở ghép
+                          // Phòng chưa đầy (ví dụ 1/2 người hoặc 1/3 người): MỞ NÚT XIN VÀO Ở GHÉP
                           const myRoommateReq = (roomRequests || []).find((req) => {
                             if (req.type !== 'ROOMMATE') return false;
                             if (req.status === 'CANCELLED' || req.status === 'CANCELLED_BY_CANDIDATE' || req.status === 'CANCELLED_BY_TENANT') return false;
@@ -2050,6 +2006,66 @@ export default function UserRoomsPage() {
                             >
                               <UserPlus className="w-3.5 h-3.5" />
                               <span>Xin Vào Ở Ghép</span>
+                            </button>
+                          );
+                        }
+
+                        // 3. Nếu phòng hoàn toàn trống nhưng ĐANG ĐƯỢC GIỮ CHỖ hoặc ĐÃ NỘP CỌC THUÊ NGUYÊN PHÒNG
+                        if (holdStatus.isHeld) {
+                          // Nếu do CHÍNH TÔI giữ chỗ / nộp cọc
+                          if (holdStatus.isMine) {
+                            if (holdStatus.isPending) {
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActionToast('ℹ️ Đơn giữ trọ đang chờ Quản lý phê duyệt. Hệ thống sẽ mở cổng nộp cọc ngay khi được duyệt!');
+                                    setTimeout(() => setActionToast(null), 4000);
+                                  }}
+                                  className="text-[11px] text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 font-bold px-2.5 py-2 rounded-xl shadow-xs transition-all flex-1 text-center cursor-pointer flex items-center justify-center gap-1"
+                                >
+                                  <Clock className="w-3.5 h-3.5" />
+                                  <span>Chờ Quản Lý Duyệt</span>
+                                </button>
+                              );
+                            }
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => navigate('/')}
+                                className="text-xs text-white font-bold px-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-xl shadow-xs transition-all flex-1 text-center btn-press cursor-pointer flex items-center justify-center gap-1 animate-pulse"
+                              >
+                                <span>{holdStatus.isDepositPaid ? 'Ký Hợp Đồng Ngay' : 'Nộp Cọc & Ký HĐ'}</span>
+                                <ArrowRight className="w-3.5 h-3.5" />
+                              </button>
+                            );
+                          }
+
+                          // Nếu do KHÁCH KHÁC giữ chỗ / nộp cọc -> KHÓA NÚT VỚI KHÁCH NÀY!
+                          return (
+                            <button
+                              type="button"
+                              disabled
+                              onClick={(e) => {
+                                e.preventDefault();
+                                setActionToast(holdStatus.isDepositPaid
+                                  ? `⚠️ Phòng ${room.number} đã có khách nộp tiền cọc giữ phòng và đang chờ ký HĐ điện tử. Không thể đăng ký giữ cọc phòng này!`
+                                  : `⚠️ Phòng ${room.number} đang có khách đăng ký giữ chỗ và chờ Quản lý duyệt hồ sơ!`
+                                );
+                                setTimeout(() => setActionToast(null), 4000);
+                              }}
+                              className={`text-[11px] font-bold px-2 py-2 rounded-xl border opacity-85 flex-1 text-center cursor-not-allowed flex items-center justify-center gap-1 select-none ${
+                                holdStatus.isDepositPaid
+                                  ? 'bg-purple-50 text-purple-800 border-purple-200'
+                                  : 'bg-amber-50 text-amber-800 border-amber-200'
+                              }`}
+                              title={holdStatus.isDepositPaid
+                                ? 'Phòng này đã có khách nộp tiền cọc và đang chờ ký hợp đồng'
+                                : 'Phòng này đang có khách gửi đơn đăng ký giữ chỗ chờ duyệt'
+                              }
+                            >
+                              <Lock className="w-3.5 h-3.5" />
+                              <span>{holdStatus.isDepositPaid ? 'Đã Có Người Nộp Cọc' : 'Đang Có Người Giữ Cọc'}</span>
                             </button>
                           );
                         }
@@ -2169,33 +2185,6 @@ export default function UserRoomsPage() {
                   );
                 }
 
-                if (holdStatus.isHeld) {
-                  if (holdStatus.isMine) {
-                    return (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedRoomDetails(null);
-                          navigate('/');
-                        }}
-                        className="px-5 py-2 font-bold bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl shadow-md cursor-pointer animate-pulse"
-                      >
-                        {holdStatus.isDepositPaid ? 'Ký Hợp Đồng Nhận Phòng' : 'Nộp Cọc & Ký Hợp Đồng'}
-                      </button>
-                    );
-                  }
-                  return (
-                    <button
-                      type="button"
-                      disabled
-                      className="px-5 py-2 font-bold bg-amber-100 text-amber-900 border border-amber-300 rounded-xl cursor-not-allowed flex items-center gap-1.5 opacity-80 select-none"
-                    >
-                      <Lock className="w-4 h-4 text-amber-700" />
-                      <span>{holdStatus.isDepositPaid ? 'Phòng Đã Có Người Nộp Cọc' : 'Phòng Đang Có Người Giữ Cọc'}</span>
-                    </button>
-                  );
-                }
-
                 if (curOcc > 0) {
                   if (isFull) {
                     return (
@@ -2225,6 +2214,33 @@ export default function UserRoomsPage() {
                     >
                       <UserPlus className="w-4 h-4" />
                       <span>Xin Vào Ở Ghép</span>
+                    </button>
+                  );
+                }
+
+                if (holdStatus.isHeld) {
+                  if (holdStatus.isMine) {
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedRoomDetails(null);
+                          navigate('/');
+                        }}
+                        className="px-5 py-2 font-bold bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl shadow-md cursor-pointer animate-pulse"
+                      >
+                        {holdStatus.isDepositPaid ? 'Ký Hợp Đồng Nhận Phòng' : 'Nộp Cọc & Ký Hợp Đồng'}
+                      </button>
+                    );
+                  }
+                  return (
+                    <button
+                      type="button"
+                      disabled
+                      className="px-5 py-2 font-bold bg-amber-100 text-amber-900 border border-amber-300 rounded-xl cursor-not-allowed flex items-center gap-1.5 opacity-80 select-none"
+                    >
+                      <Lock className="w-4 h-4 text-amber-700" />
+                      <span>{holdStatus.isDepositPaid ? 'Phòng Đã Có Người Nộp Cọc' : 'Phòng Đang Có Người Giữ Cọc'}</span>
                     </button>
                   );
                 }
