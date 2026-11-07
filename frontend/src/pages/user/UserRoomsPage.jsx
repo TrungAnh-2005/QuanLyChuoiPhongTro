@@ -714,26 +714,54 @@ export default function UserRoomsPage() {
     const uPhone = (user?.phone || '').trim();
     const myUname = (user?.username || '').toLowerCase().trim();
 
+    // Helper: kiểm tra xem khách đang đăng nhập có đơn trả/rời phòng đã duyệt cho phòng này hay không
+    const hasCurrentUserLeftRoom = (rNum) => {
+      if (!rNum) return false;
+      const clean = normalizeRoomNumber(rNum);
+      return (roomRequests || []).some((r) => {
+        const isExitType = r.type === 'CHECKOUT' || r.type === 'LEAVE_ROOM' || r.type === 'RETURN';
+        const isApprovedOrSettled = r.status === 'APPROVED' || r.status === 'CHECKOUT_SETTLED' || r.status === 'SETTLED' || Boolean(r.settledAt);
+        if (!isExitType || !isApprovedOrSettled) return false;
+        if (normalizeRoomNumber(r.targetRoom || r.currentRoom || r.roomNumber) !== clean) return false;
+        const rName = (r.tenant || r.tenantName || '').toLowerCase().trim();
+        const rPhone = (r.phone || r.tenantPhone || '').trim();
+        const rUser = (r.username || '').toLowerCase().trim();
+        return (
+          (myUname && rUser === myUname) ||
+          (uPhone && rPhone === uPhone) ||
+          (uName && rName && (rName === uName || rName.includes(uName) || uName.includes(rName))) ||
+          (uName.includes('nam') && rName.includes('nam')) ||
+          (uName.includes('cường') && rName.includes('cường')) ||
+          (uName.includes('an') && rName.includes('an')) ||
+          (myUname === 'tenant1' && rName.includes('an')) ||
+          (myUname === 'tenant2' && rName.includes('cường')) ||
+          (myUname === 'tenant_new' && rName.includes('nam'))
+        );
+      });
+    };
+
     // 1. NGUỒN SỰ THẬT TỐI CAO: Hợp đồng ACTIVE của chính khách này
     const activeContract = (contracts || []).find((c) => {
-      if (c.status !== 'ACTIVE') return false;
+      if (c.status !== 'ACTIVE' || hasCurrentUserLeftRoom(c.roomNumber)) return false;
       const cName = (c.tenantName || '').toLowerCase().trim();
       const cPhone = (c.tenantPhone || '').trim();
       return (uName && (cName.includes(uName) || uName.includes(cName))) || (uPhone && cPhone === uPhone);
     });
-    if (activeContract?.roomNumber) return activeContract.roomNumber;
+    if (activeContract?.roomNumber && !hasCurrentUserLeftRoom(activeContract.roomNumber)) return activeContract.roomNumber;
 
     // 2. Thành viên đang cư trú trong roomMembers (dành cho người ở ghép cùng phòng)
     const activeMember = (roomMembers || []).find((m) => {
-      if (m.status === 'MOVED_OUT' || m.status === 'INACTIVE') return false;
+      if (m.status === 'MOVED_OUT' || m.status === 'INACTIVE' || hasCurrentUserLeftRoom(m.roomNumber)) return false;
       const mName = (m.fullName || '').toLowerCase().trim();
       const match = (uName && (mName.includes(uName) || uName.includes(mName))) || (uPhone && m.phone === uPhone);
       return match;
     });
-    if (activeMember) return activeMember.roomNumber || activeMember.room;
+    if (activeMember && !hasCurrentUserLeftRoom(activeMember.roomNumber || activeMember.room)) {
+      return activeMember.roomNumber || activeMember.room;
+    }
 
-    // 3. Nếu là khách mới hoặc user explicitly không có phòng
-    if (user?.username === 'tenant_new' || user?.hasRentedRoom === false) {
+    // 3. Nếu user explicitly không có phòng
+    if (user?.hasRentedRoom === false) {
       return null;
     }
 
@@ -757,7 +785,7 @@ export default function UserRoomsPage() {
         }
         if (Array.isArray(storedList)) {
           if (storedList.length === 0) return null;
-          const valid = storedList.find((rn) => !isRoomCheckedOut(rn));
+          const valid = storedList.find((rn) => !isRoomCheckedOut(rn) && !hasCurrentUserLeftRoom(rn));
           if (valid) return valid;
         }
       }
@@ -773,23 +801,25 @@ export default function UserRoomsPage() {
         stored = tenantRooms?.tenant2 !== undefined ? tenantRooms.tenant2 : tenantRooms?.['Phạm Minh Cường'];
       } else if (myUname === 'tenant1' || uName.includes('an')) {
         stored = tenantRooms?.tenant1 !== undefined ? tenantRooms.tenant1 : tenantRooms?.['Nguyễn Văn An'];
+      } else if (myUname === 'tenant_new' || uName.includes('nam')) {
+        stored = tenantRooms?.tenant_new !== undefined ? tenantRooms.tenant_new : tenantRooms?.['Hoàng Văn Nam'];
       }
     }
 
     if (Array.isArray(stored)) {
       if (stored.length === 0) return null;
-      const validRoom = stored.find((rn) => !isRoomCheckedOut(rn));
+      const validRoom = stored.find((rn) => !isRoomCheckedOut(rn) && !hasCurrentUserLeftRoom(rn));
       if (validRoom) return validRoom;
     }
     if (typeof stored === 'string') {
-      if (stored && !isRoomCheckedOut(stored)) return stored;
+      if (stored && !isRoomCheckedOut(stored) && !hasCurrentUserLeftRoom(stored)) return stored;
     }
 
     // 6. Nếu user object có room fallback
     const fallbackRooms = Array.isArray(user?.rooms) ? user.rooms : (user?.room ? [user.room] : []);
-    const validFallback = fallbackRooms.find((rn) => !isRoomCheckedOut(rn));
+    const validFallback = fallbackRooms.find((rn) => !isRoomCheckedOut(rn) && !hasCurrentUserLeftRoom(rn));
     return validFallback || null;
-  }, [user, tenantRooms, contracts, roomMembers, isRoomCheckedOut]);
+  }, [user, tenantRooms, contracts, roomMembers, roomRequests, isRoomCheckedOut]);
 
   const tenantAssociatedLandlordKey = useMemo(() => {
     // Chỉ áp dụng logic khóa theo chủ trọ cho tài khoản TENANT / Khách thuê
@@ -812,21 +842,10 @@ export default function UserRoomsPage() {
         if (n === uName || n.includes(uName) || uName.includes(n)) return true;
         if (uName.includes('an') && n.includes('an')) return true;
         if (uName.includes('cường') && n.includes('cường')) return true;
+        if (uName.includes('nam') && n.includes('nam')) return true;
       }
       return false;
     };
-
-    // KHÁCH MỚI (chưa thuê phòng nào): Tuyệt đối xem được toàn bộ cơ sở và phòng của tất cả staff
-    // "vì khách mới đã vào hay cọc trọ nào đâu"
-    if (user?.username === 'tenant_new') {
-      const hasRealContract = (contracts || []).some(
-        c => (c.status === 'ACTIVE' || (c.status === 'PENDING_SIGN' && c.depositPaid)) &&
-             matchesCurrentTenant(c.tenantName, c.tenantPhone, c.tenantUsername || c.username, c.tenantCccd)
-      );
-      if (!hasRealContract) {
-        return null;
-      }
-    }
 
     // Helper: trích xuất key chủ trọ từ mã cơ sở hoặc tên cơ sở
     const findLandlordKeyForHouse = (hCode, hName) => {
@@ -932,9 +951,10 @@ export default function UserRoomsPage() {
     if (activeContract) {
       const cleanR = normalizeRoomNumber(activeContract.roomNumber);
       const isSettled = (roomRequests || []).some((r) =>
-        (r.type === 'CHECKOUT' || r.type === 'RETURN') &&
+        (r.type === 'CHECKOUT' || r.type === 'RETURN' || r.type === 'LEAVE_ROOM') &&
         normalizeRoomNumber(r.targetRoom || r.roomNumber || r.currentRoom) === cleanR &&
-        (r.settledAt || r.status === 'CHECKOUT_SETTLED' || r.status === 'SETTLED')
+        matchesCurrentTenant(r.tenant || r.tenantName, r.phone || r.tenantPhone, r.username, r.cccd) &&
+        (r.settledAt || r.status === 'APPROVED' || r.status === 'CHECKOUT_SETTLED' || r.status === 'SETTLED')
       );
       if (!isSettled) {
         const lKey = findLandlordKeyForHouse(activeContract.houseCode, activeContract.houseName || activeContract.house) ||
@@ -947,9 +967,10 @@ export default function UserRoomsPage() {
     if (myCurrentRoom) {
       const cleanR = normalizeRoomNumber(myCurrentRoom);
       const isSettled = (roomRequests || []).some((r) =>
-        (r.type === 'CHECKOUT' || r.type === 'RETURN') &&
+        (r.type === 'CHECKOUT' || r.type === 'RETURN' || r.type === 'LEAVE_ROOM') &&
         normalizeRoomNumber(r.targetRoom || r.roomNumber || r.currentRoom) === cleanR &&
-        (r.settledAt || r.status === 'CHECKOUT_SETTLED' || r.status === 'SETTLED')
+        matchesCurrentTenant(r.tenant || r.tenantName, r.phone || r.tenantPhone, r.username, r.cccd) &&
+        (r.settledAt || r.status === 'APPROVED' || r.status === 'CHECKOUT_SETTLED' || r.status === 'SETTLED')
       );
       if (!isSettled) {
         const matchRoom = (rooms || []).find((r) => normalizeRoomNumber(r.number) === cleanR);
@@ -968,9 +989,10 @@ export default function UserRoomsPage() {
     if (activeMember) {
       const cleanR = normalizeRoomNumber(activeMember.roomNumber || activeMember.room);
       const isSettled = (roomRequests || []).some((r) =>
-        (r.type === 'CHECKOUT' || r.type === 'RETURN') &&
+        (r.type === 'CHECKOUT' || r.type === 'RETURN' || r.type === 'LEAVE_ROOM') &&
         normalizeRoomNumber(r.targetRoom || r.roomNumber || r.currentRoom) === cleanR &&
-        (r.settledAt || r.status === 'CHECKOUT_SETTLED' || r.status === 'SETTLED')
+        matchesCurrentTenant(r.tenant || r.tenantName, r.phone || r.tenantPhone, r.username, r.cccd) &&
+        (r.settledAt || r.status === 'APPROVED' || r.status === 'CHECKOUT_SETTLED' || r.status === 'SETTLED')
       );
       if (!isSettled) {
         const lKey = findLandlordKeyForHouse(activeMember.houseCode, activeMember.house) ||
@@ -1045,17 +1067,38 @@ export default function UserRoomsPage() {
     }));
   }, [visibleHousesForUser, rooms, getLandlordDisplayName]);
 
-  // Tự động điều chỉnh khi bị giới hạn theo cơ sở của chủ trọ đang đặt cọc
+  // Tự động điều chỉnh khi bị giới hạn theo cơ sở của chủ trọ đang đặt cọc / đang ở
   useEffect(() => {
     if (tenantAssociatedLandlordKey) {
-      if (selectedHouse !== 'ALL' && !visibleHousesForUser.some((h) => h.code === selectedHouse)) {
+      // 1. Nếu khách đang ở một phòng cụ thể, tự động chọn thẳng cơ sở của phòng đó
+      if (myCurrentRoom) {
+        const cleanR = normalizeRoomNumber(myCurrentRoom);
+        const matchRoom = (rooms || []).find((r) => normalizeRoomNumber(r.number) === cleanR);
+        if (matchRoom?.houseCode) {
+          const targetHouse = visibleHousesForUser.find((h) => isSameHouse(h.code, matchRoom.houseCode));
+          if (targetHouse && selectedHouse !== targetHouse.code) {
+            setSelectedHouse(targetHouse.code);
+            setTenantLocation(getHouseDistrict(targetHouse));
+            return;
+          }
+        }
+      }
+
+      // 2. Nếu chủ trọ này chỉ có duy nhất 1 cơ sở, tự động chọn luôn cơ sở đó
+      if (visibleHousesForUser.length === 1 && selectedHouse === 'ALL') {
+        setSelectedHouse(visibleHousesForUser[0].code);
+        setTenantLocation(getHouseDistrict(visibleHousesForUser[0]));
+        return;
+      }
+
+      if (selectedHouse !== 'ALL' && !visibleHousesForUser.some((h) => isSameHouse(h.code, selectedHouse))) {
         setSelectedHouse('ALL');
       }
       if (tenantLocation && !locationGroups.some((g) => g.district === tenantLocation)) {
         setTenantLocation(null);
       }
     }
-  }, [tenantAssociatedLandlordKey, visibleHousesForUser, locationGroups, selectedHouse, tenantLocation]);
+  }, [tenantAssociatedLandlordKey, visibleHousesForUser, locationGroups, selectedHouse, tenantLocation, myCurrentRoom, rooms]);
 
   const myRequests = useMemo(() => {
     const uName = (user?.fullName || '').toLowerCase().trim();
