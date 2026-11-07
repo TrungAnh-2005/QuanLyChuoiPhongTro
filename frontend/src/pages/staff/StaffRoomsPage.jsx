@@ -228,22 +228,84 @@ export default function StaffRoomsPage() {
   const landlordPackage = currentLandlord?.packageCode || 'BASIC';
   const maxRoomsAllowed = landlordPackage === 'ENTERPRISE' ? 9999 : landlordPackage === 'PRO' ? 100 : 30;
 
-  // Lọc cơ sở mà Staff có thẩm quyền
+  // Lọc cơ sở mà Staff có thẩm quyền (Cách ly 100% giữa Staff 1 và Staff 2)
   const staffManageableHouses = useMemo(() => {
     if (user?.role === 'ADMIN') return storedBoardingHouses;
     const u = (user?.username || '').toLowerCase();
-    return storedBoardingHouses.filter((h) => {
+
+    let houses = storedBoardingHouses.filter((h) => {
       const created = (h.createdBy || '').toLowerCase();
       const manager = (h.managerUsername || '').toLowerCase();
+      const code = (h.code || '').toUpperCase();
+      const name = (h.name || '').toLowerCase();
+
+      // NẾU LÀ STAFF 2 (Đàm Văn Táo): Tuyệt đối CHỈ thấy CS-02, các mã S2-*, hoặc cơ sở Bách Khoa!
+      if (u === 'staff2') {
+        if (created === 'staff2' || manager === 'staff2') return true;
+        if (code === 'CS-02' || code.startsWith('S2-') || name.includes('bách khoa')) return true;
+        return false;
+      }
+
+      // NẾU LÀ STAFF 1 (Lê Thị Thu Ngân): Tuyệt đối CHỈ thấy CS-01, các mã S1-*, hoặc cơ sở Cầu Giấy!
+      if (u === 'staff' || u === 'staff1') {
+        if (created === 'staff' || created === 'staff1' || manager === 'staff' || manager === 'staff1') return true;
+        if (code === 'CS-01' || code.startsWith('S1-') || name.includes('cầu giấy') || !h.createdBy) return true;
+        return false;
+      }
+
       if (created && created === u) return true;
       if (manager && manager === u) return true;
-      if (user?.houseCode && h.code === user.houseCode) return true;
-      if (!isZeroSandbox) {
-        if (u === 'staff' && (h.code === 'CS-01' || !h.createdBy)) return true;
-        if (u === 'staff2' && h.code === 'CS-02') return true;
-      }
+      if (user?.houseCode && isSameHouse(h.code, user.houseCode)) return true;
       return false;
     });
+
+    // Nếu Staff 2 chưa có cơ sở nào trong danh sách: Tự động khởi tạo CS-02 Bách Khoa cho Staff 2
+    if (u === 'staff2' && houses.length === 0) {
+      const defaultCS2 = {
+        id: 2,
+        code: 'CS-02',
+        name: 'Nhà Trọ Bách Khoa - Cơ Sở 2',
+        address: 'Số 45 Tạ Quang Bửu, Phường Bách Khoa, Hai Bà Trưng, Hà Nội',
+        manager: 'Đàm Văn Táo',
+        managerPhone: '0988.777.999',
+        managerUsername: 'staff2',
+        createdBy: 'staff2',
+        floors: 4,
+        totalFloors: 4,
+        totalRooms: 10,
+        status: 'ACTIVE'
+      };
+      houses = [defaultCS2];
+      try {
+        const next = [...storedBoardingHouses.filter(h => h.code !== 'CS-02'), defaultCS2];
+        localStorage.setItem('rental_boarding_houses', JSON.stringify(next));
+      } catch {}
+    }
+
+    // Nếu Staff 1 chưa có cơ sở nào trong danh sách: Tự động khởi tạo CS-01 Cầu Giấy cho Staff 1
+    if ((u === 'staff' || u === 'staff1') && houses.length === 0) {
+      const defaultCS1 = {
+        id: 1,
+        code: 'CS-01',
+        name: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
+        address: 'Số 12 Ngõ 86 Cầu Giấy, Phường Quan Hoa, Cầu Giấy, Hà Nội',
+        manager: 'Lê Thị Thu Ngân',
+        managerPhone: '0912.888.666',
+        managerUsername: 'staff',
+        createdBy: 'staff',
+        floors: 4,
+        totalFloors: 4,
+        totalRooms: 12,
+        status: 'ACTIVE'
+      };
+      houses = [defaultCS1];
+      try {
+        const next = [...storedBoardingHouses.filter(h => h.code !== 'CS-01'), defaultCS1];
+        localStorage.setItem('rental_boarding_houses', JSON.stringify(next));
+      } catch {}
+    }
+
+    return houses;
   }, [storedBoardingHouses, user]);
 
   const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
@@ -256,9 +318,16 @@ export default function StaffRoomsPage() {
   }, [staffManageableHouses]);
 
   const [selectedHouse, setSelectedHouse] = useState(() => {
-    if (rawParam !== 'ALL' && staffHouseCodes.includes(rawParam)) return rawParam;
+    if (rawParam !== 'ALL' && staffHouseCodes.some((c) => isSameHouse(c, rawParam) || c === rawParam)) return rawParam;
     return 'ALL';
   });
+
+  // Tự động giải phóng selectedHouse nếu cơ sở đã chọn không thuộc quyền quản lý của Staff hiện tại
+  useEffect(() => {
+    if (selectedHouse !== 'ALL' && !staffHouseCodes.some((c) => isSameHouse(c, selectedHouse) || c === selectedHouse)) {
+      setSelectedHouse('ALL');
+    }
+  }, [user, staffHouseCodes, selectedHouse]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('ALL');
@@ -722,20 +791,22 @@ export default function StaffRoomsPage() {
       return;
     }
 
+    const u = (user?.username || '').toLowerCase();
+    const isStaff2 = u === 'staff2';
     const availableList = activeManageableHouses.length > 0 ? activeManageableHouses : staffManageableHouses;
     const defaultHouseCode =
       selectedHouse && selectedHouse !== 'ALL' && availableList.some((h) => isSameHouse(h.code, selectedHouse) || h.code === selectedHouse)
         ? selectedHouse
-        : (availableList[0]?.code || 'CS-01');
+        : (availableList[0]?.code || (isStaff2 ? 'CS-02' : 'CS-01'));
 
     setRoomFormError('');
     setRoomFormData({
       number: '101',
       houseCode: defaultHouseCode,
       floor: 'Tầng 1',
-      price: 3500000,
-      area: 25,
-      maxOccupants: 3,
+      price: isStaff2 ? 2800000 : 3500000,
+      area: isStaff2 ? 20 : 25,
+      maxOccupants: isStaff2 ? 2 : 3,
       status: 'AVAILABLE',
       amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'],
       image: '/assets/images/room_studio_1.jpg'
