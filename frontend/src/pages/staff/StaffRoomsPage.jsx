@@ -248,10 +248,10 @@ export default function StaffRoomsPage() {
 
   const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
 
-  // Chỉ các cơ sở đã được Admin duyệt / đang hoạt động mới được phép thêm phòng mới
+  // Các cơ sở mà Staff có thể quản lý và thêm phòng (chỉ loại trừ cơ sở bị LOCKED)
   const activeManageableHouses = useMemo(() => {
     return staffManageableHouses.filter(
-      (h) => !h.status || h.status === 'ACTIVE' || h.status === 'APPROVED'
+      (h) => h.status !== 'LOCKED'
     );
   }, [staffManageableHouses]);
 
@@ -700,8 +700,9 @@ export default function StaffRoomsPage() {
   };
 
   const handleOpenAddModal = () => {
-    // 1. Nếu chưa có cơ sở nào hoặc cơ sở chưa hoạt động: CHUYỂN SANG TRANG CƠ SỞ TRỌ LUÔN
-    if (activeManageableHouses.length === 0 || staffManageableHouses.length === 0) {
+    // 1. Nếu chưa có cơ sở nào
+    if (staffManageableHouses.length === 0) {
+      alert('Bạn chưa có cơ sở/tòa nhà nào! Vui lòng khởi tạo cơ sở nhà trọ trước.');
       navigate('/houses');
       return;
     }
@@ -711,19 +712,20 @@ export default function StaffRoomsPage() {
       return;
     }
 
+    const availableList = activeManageableHouses.length > 0 ? activeManageableHouses : staffManageableHouses;
     const defaultHouseCode =
-      selectedHouse && selectedHouse !== 'ALL' && activeManageableHouses.some((h) => h.code === selectedHouse)
+      selectedHouse && selectedHouse !== 'ALL' && availableList.some((h) => isSameHouse(h.code, selectedHouse) || h.code === selectedHouse)
         ? selectedHouse
-        : activeManageableHouses[0].code;
+        : (availableList[0]?.code || 'CS-01');
 
     setRoomFormError('');
     setRoomFormData({
-      number: '1',
+      number: '101',
       houseCode: defaultHouseCode,
       floor: 'Tầng 1',
       price: 3500000,
       area: 25,
-      maxOccupants: 2,
+      maxOccupants: 3,
       status: 'AVAILABLE',
       amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'],
       image: '/assets/images/room_studio_1.jpg'
@@ -742,19 +744,19 @@ export default function StaffRoomsPage() {
     }
 
     // Kiểm tra cơ sở tồn tại và hợp lệ
-    const selectableHouses = editingRoom ? staffManageableHouses : activeManageableHouses;
-    const targetHouse = selectableHouses.find((h) => h.code === roomFormData.houseCode);
+    const selectableHouses = editingRoom ? staffManageableHouses : (activeManageableHouses.length > 0 ? activeManageableHouses : staffManageableHouses);
+    const targetHouse = selectableHouses.find((h) => isSameHouse(h.code, roomFormData.houseCode) || h.code === roomFormData.houseCode);
     if (!targetHouse) {
       setRoomFormError(
         staffManageableHouses.length === 0
           ? 'Bạn chưa tạo cơ sở/tòa nhà nào! Vui lòng khởi tạo cơ sở trước khi tạo phòng.'
-          : 'Vui lòng chọn một cơ sở/tòa nhà đang hoạt động hợp lệ!'
+          : 'Vui lòng chọn một cơ sở/tòa nhà hợp lệ!'
       );
       return;
     }
 
     // Kiểm tra số tầng hợp lệ theo quy mô của cơ sở
-    const floorNum = parseFloorNum(roomFormData.floor);
+    const floorNum = parseFloorNum(roomFormData.floor) || 1;
     const maxFloors = Number(targetHouse.floors || targetHouse.totalFloors || 30);
     if (!floorNum || floorNum < 1 || floorNum > maxFloors) {
       setRoomFormError(
@@ -763,13 +765,10 @@ export default function StaffRoomsPage() {
       return;
     }
 
-    // Kiểm tra quy tắc bắt buộc: Khi chọn Tầng X thì số phòng phải bắt đầu bằng X và có dạng Xxx (ví dụ Tầng 5 -> 501, 502)
+    // Lấy số phòng chuẩn hóa
     const onlyDigits = rawNumber.replace(/^P\.?/i, '').trim();
-    const expectedFloorPrefixRegex = new RegExp(`^${floorNum}\\d{2}$`);
-    if (!expectedFloorPrefixRegex.test(onlyDigits)) {
-      setRoomFormError(
-        `Bạn đang chọn Tầng ${floorNum}, số phòng bắt buộc phải bắt đầu bằng số ${floorNum} theo định dạng ${floorNum}xx (ví dụ: ${floorNum}01, ${floorNum}02)!`
-      );
+    if (!onlyDigits) {
+      setRoomFormError('Vui lòng nhập số phòng hợp lệ (ví dụ: 101, 102)!');
       return;
     }
 
@@ -823,7 +822,13 @@ export default function StaffRoomsPage() {
         id: `room-${Date.now()}`,
         occupants: 0
       };
-      if (addRoom) addRoom(newRoomObj);
+      if (addRoom) {
+        const res = addRoom(newRoomObj);
+        if (res && res.success === false) {
+          setRoomFormError(res.message);
+          return;
+        }
+      }
       setShowAddModal(false);
       setActionToast(`Đã thêm mới phòng ${formattedRoomNumber} vào cơ sở ${targetHouse.name}!`);
     }
