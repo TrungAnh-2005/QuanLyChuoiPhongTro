@@ -20,9 +20,9 @@ import {
 export function normalizeHouseCode(code) {
   if (!code) return '';
   const c = String(code).trim().toUpperCase();
-  if (c === 'CS-01' || c === 'CS1') return 'CS-01';
-  if (c === 'CS-02' || c === 'CS2') return 'CS-02';
-  if (c === 'CS-03' || c === 'CS3') return 'CS-03';
+  if (c === 'CS-01' || c === 'CS1' || c === 'S1-CS-01' || c === 'S1-CS-02' || c.startsWith('S1-')) return 'CS-01';
+  if (c === 'CS-02' || c === 'CS2' || c === 'S2-CS-01' || c === 'S2-CS-02' || c.startsWith('S2-')) return 'CS-02';
+  if (c === 'CS-03' || c === 'CS3' || c === 'S3-CS-01' || c === 'S3-CS-02' || c.startsWith('S3-')) return 'CS-03';
   return c;
 }
 
@@ -30,11 +30,7 @@ export function isSameHouse(codeA, codeB) {
   if (!codeA || !codeB) return false;
   const a = normalizeHouseCode(codeA);
   const b = normalizeHouseCode(codeB);
-  if (a === b) return true;
-  // Cho phép CS-01 và S1-CS-01 đồng nhất (Cơ sở ban đầu của Staff 1)
-  if ((a === 'CS-01' && b === 'S1-CS-01') || (a === 'S1-CS-01' && b === 'CS-01')) return true;
-  // Cho phép CS-02 và S2-CS-02 đồng nhất (Cơ sở ban đầu của Staff 2)
-  if ((a === 'CS-02' && b === 'S2-CS-02') || (a === 'S2-CS-02' && b === 'CS-02')) return true;
+  if (a && b && a === b) return true;
   return false;
 }
 
@@ -4898,6 +4894,8 @@ export const DataProvider = ({ children }) => {
 
           // CHỈ ĐƠN Ở GHÉP HOẶC THUÊ MỚI ĐÃ DUYỆT MỚI ĐƯỢC THÊM VÀO PHÒNG!
           if (req.status === 'APPROVED' && req.targetRoom && req.tenant && (req.type === 'ROOMMATE' || req.type === 'JOIN_ROOM' || req.type === 'RENT' || req.type === 'NEW_RENT')) {
+            const isCuong = req.tenant.toLowerCase().includes('cường');
+            const reqHouse = normalizeHouseCode(req.houseCode || (isCuong ? 'CS-02' : 'CS-01'));
             const hasLeftAfter = pReqs.some((other) =>
               (other.type === 'LEAVE_ROOM' || other.type === 'CHECKOUT' || other.type === 'RETURN') &&
               (other.status === 'APPROVED' || other.status === 'CHECKOUT_SETTLED' || other.settledAt) &&
@@ -4910,22 +4908,29 @@ export const DataProvider = ({ children }) => {
               (m) =>
                 isSameRoom(m.roomNumber, req.targetRoom) &&
                 matchTenantName(m.fullName, req.tenant) &&
+                isSameHouse(m.houseCode || 'CS-01', reqHouse) &&
                 m.status !== 'MOVED_OUT'
             );
             if (!hasMember) {
-              const hasRep = list.some((m) => isSameRoom(m.roomNumber, req.targetRoom) && m.roleInRoom === 'REPRESENTATIVE' && m.status !== 'MOVED_OUT');
+              const hasRep = list.some(
+                (m) =>
+                  isSameRoom(m.roomNumber, req.targetRoom) &&
+                  isSameHouse(m.houseCode || 'CS-01', reqHouse) &&
+                  m.roleInRoom === 'REPRESENTATIVE' &&
+                  m.status !== 'MOVED_OUT'
+              );
               const role = req.type === 'ROOMMATE' ? 'MEMBER' : (hasRep ? 'MEMBER' : 'REPRESENTATIVE');
               list.push({
                 id: `RM-auto-${req.id || Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                 roomId: Date.now(),
                 roomNumber: req.targetRoom,
-                houseCode: req.houseCode || 'CS-01',
+                houseCode: reqHouse,
                 fullName: req.tenant,
-                phone: req.phone || (req.tenant?.toLowerCase().includes('cường') ? '0912.888.999' : '0966.123.456'),
-                cccd: req.cccd || (req.tenant?.toLowerCase().includes('cường') ? '034203034567' : '036207078901'),
-                maskedCccd: req.cccd ? req.cccd.slice(0, 8) + '****' : (req.tenant?.toLowerCase().includes('cường') ? '03420303****' : '03620707****'),
+                phone: req.phone || (isCuong ? '0912.888.999' : '0966.123.456'),
+                cccd: req.cccd || (isCuong ? '034203034567' : '036207078901'),
+                maskedCccd: req.cccd ? req.cccd.slice(0, 8) + '****' : (isCuong ? '03420303****' : '03620707****'),
                 roleInRoom: role,
-                hometown: req.tenant?.toLowerCase().includes('cường') ? 'Hải Phòng' : 'Nam Định',
+                hometown: isCuong ? 'Hải Phòng' : 'Nam Định',
                 joinDate: req.date || new Date().toLocaleDateString('vi-VN'),
                 temporaryResidenceStatus: 'REGISTERED',
                 status: 'ACTIVE'
@@ -4948,9 +4953,11 @@ export const DataProvider = ({ children }) => {
       if (Array.isArray(pKyc)) {
         pKyc.forEach((req) => {
           if (req.status === 'APPROVED' && req.roomNumber && req.fullName) {
+            const reqHouse = normalizeHouseCode(req.houseCode || (req.fullName.toLowerCase().includes('cường') ? 'CS-02' : 'CS-01'));
             const hasMember = list.some(
               (m) =>
                 m.roomNumber === req.roomNumber &&
+                isSameHouse(m.houseCode || 'CS-01', reqHouse) &&
                 (m.fullName || '').toLowerCase().includes(req.fullName.toLowerCase()) &&
                 m.status !== 'MOVED_OUT'
             );
@@ -4959,7 +4966,7 @@ export const DataProvider = ({ children }) => {
                 id: `RM-kyc-${req.id || Date.now()}`,
                 roomId: Date.now(),
                 roomNumber: req.roomNumber,
-                houseCode: req.houseCode || 'CS-01',
+                houseCode: reqHouse,
                 fullName: req.fullName,
                 phone: req.phone,
                 cccd: req.identityCard,
@@ -4984,13 +4991,18 @@ export const DataProvider = ({ children }) => {
     });
     const seenMem = new Set();
     list = sortedForDedup.filter((m) => {
+      // Dọn dẹp dữ liệu rác nếu Cường bị gán nhầm vào CS-01:
+      if (m.fullName && m.fullName.toLowerCase().includes('cường') && isSameHouse(m.houseCode, 'CS-01')) {
+        return false;
+      }
+      const hCode = normalizeHouseCode(m.houseCode || 'CS-01');
       const cleanR = normalizeRoomNumber(m.roomNumber);
       const raw = (m.fullName || '').toLowerCase().trim();
       let k = raw;
       if (k.includes('an')) k = 'an';
       else if (k.includes('cường')) k = 'cuong';
       else if (k.includes('nam')) k = 'nam';
-      const key = `${cleanR}__${k}`;
+      const key = `${hCode}__${cleanR}__${k}`;
       if (seenMem.has(key)) return false;
       seenMem.add(key);
       return true;

@@ -1124,6 +1124,15 @@ export default function UserRoomsPage() {
     if (hasCurrentUserLeftRoom(room.number)) return false;
 
     const rNum = room.number || room.roomNumber;
+    const roomHouseCode = normalizeHouseCode(room.houseCode || room.house);
+
+    // BẢO VỆ CÁCH LY CHỦ TRỌ TUYỆT ĐỐI GIỮA KHÁCH 1 VÀ KHÁCH 2:
+    if (user?.username === 'tenant2' || user?.fullName?.toLowerCase().includes('cường')) {
+      if (isSameHouse(roomHouseCode, 'CS-01')) return false;
+    }
+    if (user?.username === 'tenant1' || user?.username === 'tenant' || user?.fullName?.toLowerCase().includes('an')) {
+      if (isSameHouse(roomHouseCode, 'CS-02')) return false;
+    }
 
     // 0. BẢO VỆ: Nếu khách đang có hợp đồng PENDING_DEPOSIT hoặc PENDING_SIGN nhưng chưa ký điện tử
     const hasPending = (contracts || []).some(
@@ -1194,6 +1203,9 @@ export default function UserRoomsPage() {
       return null;
     }
 
+    const isTenant2 = user?.username === 'tenant2' || user?.fullName?.toLowerCase().includes('cường');
+    const isTenant1 = user?.username === 'tenant1' || user?.username === 'tenant' || user?.fullName?.toLowerCase().includes('an');
+
     // Helper: trích xuất key chủ trọ từ mã cơ sở hoặc tên cơ sở
     const findLandlordKeyForHouse = (hCode, hName) => {
       if (hCode) {
@@ -1236,6 +1248,9 @@ export default function UserRoomsPage() {
     // TRƯỜNG HỢP 1: KHÁCH ĐANG TRONG PHÒNG THUÊ (ACTIVE RENTAL HOẶC ĐANG TRẢ PHÒNG CHƯA XONG)
     // =========================================================================
     if (isActivelyRenting) {
+      if (isTenant2) return 'staff2';
+      if (isTenant1) return 'staff';
+
       // 1.1 HỢP ĐỒNG ACTIVE CỦA CHÍNH KHÁCH NÀY (ƯU TIÊN SỐ 1 - CHÍNH XÁC TUYỆT ĐỐI VÌ CÓ HOUSECODE VÀ CHỦ TRỌ)
       if (activeContract) {
         const lKey = findLandlordKeyForHouse(activeContract.houseCode, activeContract.houseName || activeContract.house) ||
@@ -1305,6 +1320,8 @@ export default function UserRoomsPage() {
       return holdInfo.isHeld && holdInfo.isMine && !hasCurrentUserLeftRoom(r.number);
     });
     if (myHeldRoom) {
+      if (isTenant2) return 'staff2';
+      if (isTenant1) return 'staff';
       const lKey = findLandlordKeyForHouse(myHeldRoom.houseCode, myHeldRoom.house);
       if (lKey) return lKey;
     }
@@ -1323,6 +1340,8 @@ export default function UserRoomsPage() {
       return matchesCurrentTenant(c.tenantName, c.tenantPhone, c.tenantUsername || c.username, c.tenantCccd);
     });
     if (activeHoldingContract) {
+      if (isTenant2) return 'staff2';
+      if (isTenant1) return 'staff';
       const lKey = findLandlordKeyForHouse(activeHoldingContract.houseCode, activeHoldingContract.houseName || activeHoldingContract.house) ||
                    findLandlordKeyForRoom(activeHoldingContract.roomNumber, activeHoldingContract.houseCode);
       if (lKey) return lKey;
@@ -1337,6 +1356,8 @@ export default function UserRoomsPage() {
       return matchesCurrentTenant(r.tenant || r.tenantName, r.phone || r.tenantPhone, r.username, r.cccd);
     });
     if (activePendingRequest) {
+      if (isTenant2) return 'staff2';
+      if (isTenant1) return 'staff';
       const lKey = findLandlordKeyForHouse(activePendingRequest.houseCode, activePendingRequest.house) ||
                    findLandlordKeyForRoom(activePendingRequest.targetRoom || activePendingRequest.roomNumber, activePendingRequest.houseCode);
       if (lKey) return lKey;

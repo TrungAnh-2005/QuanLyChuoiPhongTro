@@ -87,7 +87,7 @@ export const BACKUP_BOARDING_HOUSES = [
 export const BACKUP_INVOICES = [
   { id: 1, code: 'HD-202609-01', room: 'P.101', house: 'Cơ Sở 1 - Cầu Giấy', tenant: 'Nguyễn Văn An', roomFee: 2000, elec: 0, water: 0, service: 0, total: 2000, status: 'UNPAID', paidAt: null },
   { id: 2, code: 'HD-202609-02', room: 'P.102', house: 'Cơ Sở 1 - Cầu Giấy', tenant: 'Trần Thị Bình', roomFee: 3800000, elec: 266000, water: 175000, service: 100000, total: 4341000, status: 'UNPAID', paidAt: null },
-  { id: 3, code: 'HD-202609-03', room: 'P.101', house: 'Cơ Sở 1 - Cầu Giấy', tenant: 'Phạm Minh Cường', roomFee: 3200000, elec: 294000, water: 200000, service: 100000, total: 3794000, status: 'PAID', paidAt: '07/09/2026' },
+  { id: 3, code: 'HD-202609-03', room: 'P.101', house: 'Nhà Trọ Bách Khoa - Cơ Sở 2', tenant: 'Phạm Minh Cường', roomFee: 3200000, elec: 294000, water: 200000, service: 100000, total: 3794000, status: 'PAID', paidAt: '07/09/2026' },
   { id: 4, code: 'HD-202609-04', room: 'P.201', house: 'Cơ Sở 1 - Cầu Giấy', tenant: 'Vũ Hoàng Dũng', roomFee: 3600000, elec: 0, water: 0, service: 100000, total: 3700000, status: 'PENDING_METER', paidAt: null },
   { id: 6, code: 'HD-202609-06', room: 'P.101', house: 'Cơ Sở 3 - Đống Đa', tenant: 'Trịnh Thanh Tùng', roomFee: 4200000, elec: 350000, water: 200000, service: 120000, total: 4870000, status: 'UNPAID', paidAt: null }
 ];
@@ -97,7 +97,7 @@ export const BACKUP_TICKETS = [
   { id: 2, room: 'P.202', houseCode: 'CS-02', category: 'ELECTRICITY', issue: 'Điều hòa không lạnh, có tiếng kêu to', tenant: 'Vũ Hoàng Dũng', date: '21/09/2026', priority: 'HIGH', status: 'PENDING' },
   { id: 3, room: 'P.301', houseCode: 'CS-01', category: 'ELECTRICITY', issue: 'Bóng đèn tuýp ban công bị cháy', tenant: 'Đỗ Thị Mai', date: '18/09/2026', priority: 'LOW', status: 'RESOLVED' },
   { id: 4, room: 'P.101', houseCode: 'CS-01', category: 'FURNITURE', issue: 'Cửa sổ ban công bị kẹt khóa', tenant: 'Nguyễn Văn An', date: '15/09/2026', priority: 'MEDIUM', status: 'RESOLVED' },
-  { id: 5, room: 'P.101', houseCode: 'CS-01', category: 'WATER', issue: 'Áp lực nước vòi sen yếu vào giờ cao điểm', tenant: 'Phạm Minh Cường', date: '22/09/2026', priority: 'LOW', status: 'IN_PROGRESS' }
+  { id: 5, room: 'P.101', houseCode: 'CS-02', category: 'WATER', issue: 'Áp lực nước vòi sen yếu vào giờ cao điểm', tenant: 'Phạm Minh Cường', date: '22/09/2026', priority: 'LOW', status: 'IN_PROGRESS' }
 ];
 
 export const BACKUP_TENANTS = [
