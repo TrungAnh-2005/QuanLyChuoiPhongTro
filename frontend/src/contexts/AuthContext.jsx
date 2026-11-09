@@ -78,8 +78,8 @@ const DEMO_USERS = {
     hometown: 'Hải Phòng',
     room: isZeroSandbox ? null : 'P.101',
     rooms: isZeroSandbox ? [] : ['P.101'],
-    houseCode: isZeroSandbox ? null : 'CS-01',
-    houseName: isZeroSandbox ? null : 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
+    houseCode: isZeroSandbox ? null : 'CS-02',
+    houseName: isZeroSandbox ? null : 'Nhà Trọ Bách Khoa - Cơ Sở 2',
     role: 'TENANT',
     token: 'demo-tenant2-token'
   },
@@ -371,8 +371,8 @@ export const AuthProvider = ({ children }) => {
           ...u,
           rooms: roomsList,
           room: hasRooms ? roomsList[0] : null,
-          houseCode: hasRooms ? 'CS-01' : null,
-          houseName: hasRooms ? 'Nhà Trọ Cầu Giấy - Cơ Sở 1' : null
+          houseCode: hasRooms ? (u.houseCode || 'CS-02') : null,
+          houseName: hasRooms ? (u.houseName || 'Nhà Trọ Bách Khoa - Cơ Sở 2') : null
         };
       }
       if (u.username === 'tenant' || u.username === 'tenant1' || u.fullName?.includes('An')) {
@@ -599,18 +599,25 @@ export const AuthProvider = ({ children }) => {
         userHouseCode = null;
         userHouseName = null;
       } else {
-        // Tự động đồng bộ cơ sở thực tế từ roomMembers hoặc contracts của phòng đang thuê
+        // Tự động đồng bộ cơ sở thực tế từ roomMembers hoặc contracts của phòng đang thuê (khớp đúng người dùng)
         let matchedHouse = null;
         try {
           const sM = localStorage.getItem('rental_room_members');
           const pM = sM ? JSON.parse(sM) : [];
-          const mem = pM.find(m => currentRooms.includes(m.roomNumber) && m.status !== 'MOVED_OUT');
+          const mem = pM.find(m => currentRooms.includes(m.roomNumber) && m.status !== 'MOVED_OUT' && (
+            (baseUser.fullName && m.fullName && (m.fullName.includes(baseUser.fullName) || baseUser.fullName.includes(m.fullName))) ||
+            (baseUser.phone && m.phone === baseUser.phone)
+          ));
           if (mem?.houseCode) {
             matchedHouse = { code: mem.houseCode, name: mem.house };
           } else {
             const sC = localStorage.getItem('rental_contracts');
             const pC = sC ? JSON.parse(sC) : [];
-            const contract = pC.find(c => currentRooms.includes(c.roomNumber) && c.status === 'ACTIVE');
+            const contract = pC.find(c => currentRooms.includes(c.roomNumber) && c.status === 'ACTIVE' && (
+              (baseUser.fullName && c.tenantName && (c.tenantName.includes(baseUser.fullName) || baseUser.fullName.includes(c.tenantName))) ||
+              (baseUser.phone && c.tenantPhone === baseUser.phone) ||
+              c.tenantUsername === baseUser.username
+            ));
             if (contract?.houseCode) {
               matchedHouse = { code: contract.houseCode, name: contract.houseName };
             }

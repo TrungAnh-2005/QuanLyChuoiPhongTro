@@ -41,7 +41,7 @@ import {
   SEPAY_PORTAL_URL
 } from '../../services/sepayService';
 import { useAuth } from '../../contexts/AuthContext';
-import { useData, isSameHouse, isSameRoom } from '../../contexts/DataContext';
+import { useData, isSameHouse, isSameRoom, normalizeHouseCode } from '../../contexts/DataContext';
 
 function getRoomImage(room) {
   if (room?.image) return room.image;
@@ -669,7 +669,7 @@ export default function UserDashboard() {
   // Danh sách toàn bộ cư dân thực tế đang ở trong phòng (Bất kể Khách 1 hay Khách 2 đăng nhập đều xem đúng danh sách này)
   const currentRoomResidents = useMemo(() => {
     if (!myRoomNumber) return [];
-    const targetHouse = currentRoomObj?.houseCode || myContract?.houseCode || 'CS-01';
+    const targetHouse = normalizeHouseCode(currentRoomObj?.houseCode || myContract?.houseCode || user?.houseCode || 'CS-01');
 
     // Helper: kiểm tra xem người này có đơn rời / trả phòng đã duyệt cho phòng này không
     const hasLeftRoom = (personName, personPhone) => {
@@ -681,6 +681,7 @@ export default function UserDashboard() {
         if (rejoin.status !== 'APPROVED') return false;
         if (rejoin.type !== 'ROOMMATE' && rejoin.type !== 'JOIN_ROOM' && rejoin.type !== 'RENT' && rejoin.type !== 'NEW_RENT') return false;
         if (!isSameRoom(rejoin.targetRoom || rejoin.roomNumber, myRoomNumber)) return false;
+        if (rejoin.houseCode && !isSameHouse(rejoin.houseCode, targetHouse)) return false;
         const reTenant = (rejoin.tenant || rejoin.tenantName || '').toLowerCase().trim();
         const rePhone = (rejoin.phone || rejoin.tenantPhone || '').trim();
         return (
@@ -710,6 +711,7 @@ export default function UserDashboard() {
       // 0.2 Nếu trong roomMembers người này đang có bản ghi ACTIVE -> KHÔNG PHẢI ĐÃ RỜI PHÒNG!
       const hasActiveInRoomMembers = (roomMembers || []).some((m) => {
         if (!isSameRoom(m.roomNumber, myRoomNumber) || m.status !== 'ACTIVE') return false;
+        if (m.houseCode && !isSameHouse(m.houseCode, targetHouse)) return false;
         const mName = (m.fullName || '').toLowerCase().trim();
         return (
           (pName && mName && (mName === pName || mName.includes(pName) || pName.includes(mName))) ||
@@ -725,6 +727,7 @@ export default function UserDashboard() {
         (req) =>
           (req.type === 'CHECKOUT' || req.type === 'LEAVE_ROOM' || req.type === 'RETURN') &&
           isSameRoom(req.targetRoom || req.currentRoom || req.roomNumber, myRoomNumber) &&
+          (!req.houseCode || isSameHouse(req.houseCode, targetHouse)) &&
           (req.status === 'APPROVED' || req.status === 'CHECKOUT_SETTLED' || req.status === 'SETTLED' || Boolean(req.settledAt)) &&
           (
             (pName && req.tenant && ((req.tenant || '').toLowerCase().includes(pName) || pName.includes((req.tenant || '').toLowerCase()))) ||
@@ -739,11 +742,26 @@ export default function UserDashboard() {
     // 1. Lọc tất cả thành viên trong roomMembers của đúng phòng và cơ sở này, LOẠI BỎ người đã rời/trả phòng
     let mems = (roomMembers || []).filter((m) => {
       const matchRoom = isSameRoom(m.roomNumber, myRoomNumber);
-      const matchHouse = !targetHouse || !m.houseCode || isSameHouse(m.houseCode, targetHouse);
+      const matchHouse = isSameHouse(m.houseCode || 'CS-01', targetHouse);
       if (!matchRoom || !matchHouse || m.status === 'MOVED_OUT' || m.status === 'INACTIVE') return false;
 
       // Loại bỏ nếu thành viên có đơn CHECKOUT / LEAVE_ROOM đã được duyệt của ĐÚNG phòng này
       if (hasLeftRoom(m.fullName, m.phone)) return false;
+
+      // ĐỐI SOÁT CHÉO CƠ SỞ: Người này có hợp đồng ACTIVE ở cơ sở KHÁC không?
+      // Nếu một khách (vd: Cường) đang đứng tên hợp đồng ACTIVE ở cơ sở khác (vd: Đống Đa),
+      // thì TUYỆT ĐỐI không thể là bạn ở ghép trong phòng này ở Cầu Giấy!
+      const mNameNorm = (m.fullName || '').toLowerCase().trim();
+      const hasContractInOtherHouse = (contracts || []).some((c) => {
+        if (c.status !== 'ACTIVE') return false;
+        const cTenant = (c.tenantName || '').toLowerCase().trim();
+        const isThisTenant = (cTenant && (cTenant.includes(mNameNorm) || mNameNorm.includes(cTenant))) ||
+          (mNameNorm.includes('cường') && cTenant.includes('cường')) ||
+          (mNameNorm.includes('an') && cTenant.includes('an')) ||
+          (m.phone && c.tenantPhone && m.phone === c.tenantPhone);
+        return isThisTenant && c.houseCode && !isSameHouse(c.houseCode, targetHouse);
+      });
+      if (hasContractInOtherHouse) return false;
 
       return true;
     });
@@ -752,7 +770,8 @@ export default function UserDashboard() {
     (roomRequests || []).forEach((req) => {
       const isRoommate = req.type === 'ROOMMATE' || req.type === 'JOIN_ROOM';
       const matchRoom = isSameRoom(req.targetRoom || req.roomNumber, myRoomNumber);
-      if (isRoommate && matchRoom && req.status === 'APPROVED' && req.tenant && req.status !== 'SETTLED') {
+      const matchHouse = !req.houseCode || isSameHouse(req.houseCode, targetHouse);
+      if (isRoommate && matchRoom && matchHouse && req.status === 'APPROVED' && req.tenant && req.status !== 'SETTLED') {
         // TUYỆT ĐỐI KHÔNG BỔ SUNG NẾU NGƯỜI NÀY ĐÃ RỜI PHÒNG!
         if (hasLeftRoom(req.tenant, req.phone)) return;
 
@@ -810,6 +829,7 @@ export default function UserDashboard() {
           r.status === 'APPROVED' &&
           (r.type === 'ROOMMATE' || r.type === 'JOIN_ROOM') &&
           isSameRoom(r.targetRoom || r.roomNumber, 'P.102') &&
+          isSameHouse(r.houseCode || targetHouse, targetHouse) &&
           (r.tenant || '').toLowerCase().includes('cường')
         ) ||
         (tenantRooms?.tenant2 && Array.isArray(tenantRooms.tenant2) && tenantRooms.tenant2.some(r => isSameRoom(r, 'P.102'))) ||
@@ -839,7 +859,8 @@ export default function UserDashboard() {
 
     // 4. Nếu user đang đăng nhập chính là cư dân phòng này mà chưa có trong danh sách -> Bổ sung vào
     const curUName = (user?.fullName || '').toLowerCase().trim();
-    if (curUName && (isSameRoom(resolvedActiveRoom, myRoomNumber) || user?.rooms?.some(r => isSameRoom(r, myRoomNumber)))) {
+    const userMatchHouse = !user?.houseCode || isSameHouse(user.houseCode, targetHouse);
+    if (curUName && userMatchHouse && (isSameRoom(resolvedActiveRoom, myRoomNumber) || user?.rooms?.some(r => isSameRoom(r, myRoomNumber)))) {
       if (!hasLeftRoom(user?.fullName, user?.phone)) {
         const isAlreadyIn = mems.some((m) =>
           (m.fullName || '').toLowerCase().includes(curUName) ||
