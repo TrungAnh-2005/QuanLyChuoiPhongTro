@@ -785,6 +785,21 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
   };
 
   const getTenantRoomDisplay = (username, fullName, defaultRoom) => {
+    // 0. BẢO VỆ: Nếu khách đang có hợp đồng chờ nộp cọc hoặc chờ ký điện tử (PENDING_DEPOSIT, PENDING_SIGN, hoặc chưa ký điện tử)
+    // thì TUYỆT ĐỐI CHƯA CÓ PHÒNG cho đến khi hoàn tất ký HĐ!
+    const hasPending = (dataContext.contracts || []).some(
+      (c) =>
+        (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN' || (c.depositPaid && !c.signedElectronically && c.status !== 'ACTIVE')) &&
+        (
+          (username && (c.tenantUsername === username || c.username === username)) ||
+          (fullName && c.tenantName && (c.tenantName.toLowerCase().includes(fullName.toLowerCase()) || fullName.toLowerCase().includes(c.tenantName.toLowerCase()))) ||
+          (username === 'tenant1' && c.tenantName?.toLowerCase().includes('an')) ||
+          (username === 'tenant2' && c.tenantName?.toLowerCase().includes('cường')) ||
+          (username === 'tenant_new' && c.tenantName?.toLowerCase().includes('nam'))
+        )
+    );
+    if (hasPending) return '';
+
     // 1. Kiểm tra trực tiếp trong contracts xem có hợp đồng ACTIVE không
     const activeContract = (dataContext.contracts || []).find((c) => {
       if (c.status !== 'ACTIVE') return false;

@@ -837,6 +837,23 @@ export default function UserRoomsPage() {
     const uPhone = (user?.phone || '').trim();
     const myUname = (user?.username || '').toLowerCase().trim();
 
+    // 0. BẢO VỆ TỐI THƯỢNG: Nếu khách đang có hợp đồng chờ nộp cọc hoặc chờ ký điện tử (PENDING_DEPOSIT hoặc PENDING_SIGN)
+    // thì TUYỆT ĐỐI CHƯA PHẢI LÀ PHÒNG ĐANG Ở CHO ĐẾN KHI KÝ HỢP ĐỒNG XONG!
+    const hasPendingContract = (contracts || []).some(
+      c => (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN' || (c.depositPaid && !c.signedElectronically && c.status !== 'ACTIVE')) &&
+      (
+        (myUname && (c.tenantUsername === myUname || c.username === myUname)) ||
+        (uName && c.tenantName && (c.tenantName.toLowerCase().includes(uName) || uName.includes(c.tenantName.toLowerCase()))) ||
+        (uPhone && c.tenantPhone === uPhone) ||
+        (myUname === 'tenant1' && c.tenantName?.toLowerCase().includes('an')) ||
+        (myUname === 'tenant2' && c.tenantName?.toLowerCase().includes('cường')) ||
+        (myUname === 'tenant_new' && c.tenantName?.toLowerCase().includes('nam'))
+      )
+    );
+    if (hasPendingContract) {
+      return null;
+    }
+
     // 1. NGUỒN SỰ THẬT TỐI CAO: Hợp đồng ACTIVE của chính khách này
     const activeContract = (contracts || []).find((c) => {
       if (c.status !== 'ACTIVE' || hasCurrentUserLeftRoom(c.roomNumber)) return false;

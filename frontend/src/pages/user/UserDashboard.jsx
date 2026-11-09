@@ -184,14 +184,31 @@ export default function UserDashboard() {
     const uPhone = (user?.phone || '').trim();
     const myUname = (user?.username || '').toLowerCase().trim();
 
+    // 0. BẢO VỆ TỐI THƯỢNG: Nếu khách đang có hợp đồng chờ nộp cọc hoặc chờ ký điện tử (PENDING_DEPOSIT hoặc PENDING_SIGN)
+    // thì TUYỆT ĐỐI CHƯA PHẢI LÀ PHÒNG ĐANG Ở CHO ĐẾN KHI KÝ HỢP ĐỒNG XONG!
+    const hasPendingContract = (contracts || []).some(
+      c => (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN' || (c.depositPaid && !c.signedElectronically && c.status !== 'ACTIVE')) &&
+      (
+        (myUname && (c.tenantUsername === myUname || c.username === myUname)) ||
+        (uName && c.tenantName && (c.tenantName.toLowerCase().includes(uName) || uName.includes(c.tenantName.toLowerCase()))) ||
+        (uPhone && c.tenantPhone === uPhone) ||
+        (myUname === 'tenant1' && c.tenantName?.toLowerCase().includes('an')) ||
+        (myUname === 'tenant2' && c.tenantName?.toLowerCase().includes('cường')) ||
+        (myUname === 'tenant_new' && c.tenantName?.toLowerCase().includes('nam'))
+      )
+    );
+    if (hasPendingContract) {
+      return null;
+    }
+
     // Helper: kiểm tra người dùng này đã rời/trả phòng này chưa
     const hasLeftThisRoom = (targetRoom) => {
       if (!targetRoom) return false;
 
-      // 0. Nếu khách này vừa có đơn ROOMMATE hoặc RENT đã được duyệt APPROVED đối với chính phòng này -> KHÔNG PHẢI RỜI PHÒNG!
+      // 0. Nếu khách này vừa có đơn ROOMMATE đã được duyệt APPROVED đối với chính phòng này -> KHÔNG PHẢI RỜI PHÒNG!
       const hasRejoined = (roomRequests || []).some((rejoin) => {
         if (rejoin.status !== 'APPROVED') return false;
-        if (rejoin.type !== 'ROOMMATE' && rejoin.type !== 'JOIN_ROOM' && rejoin.type !== 'RENT' && rejoin.type !== 'NEW_RENT') return false;
+        if (rejoin.type !== 'ROOMMATE' && rejoin.type !== 'JOIN_ROOM') return false;
         if (!isSameRoom(rejoin.targetRoom || rejoin.roomNumber, targetRoom)) return false;
         const reTenant = (rejoin.tenant || rejoin.tenantName || '').toLowerCase().trim();
         const reUser = (rejoin.username || '').toLowerCase().trim();
@@ -367,72 +384,75 @@ export default function UserDashboard() {
       );
     };
 
-    // 1. Nếu khách đã có phòng đang ở thực tế (resolvedActiveRoom)
+    // 1. ƯU TIÊN SỐ 1 TUYỆT ĐỐI: Hợp đồng đang chờ nộp cọc hoặc chờ ký HĐ điện tử của chính khách này
+    // (PENDING_DEPOSIT hoặc PENDING_SIGN hoặc chưa ký điện tử)
+    const pendingContract = list.find((c) =>
+      (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN' || (c.depositPaid && !c.signedElectronically && c.status !== 'ACTIVE')) &&
+      matchesUser(c)
+    );
+    if (pendingContract) {
+      return pendingContract;
+    }
+
+    // 2. Nếu khách có đơn thuê phòng đã được Staff APPROVED mà chưa có hợp đồng Onboarding
+    if (hasApprovedRentalRequest) {
+      const matchApproved = list.find((c) =>
+        isSameRoom(c.roomNumber, hasApprovedRentalRequest.targetRoom) && matchesUser(c)
+      );
+      if (matchApproved && matchApproved.status !== 'ACTIVE') {
+        return matchApproved;
+      }
+      if (!matchApproved) {
+        const targetRoomObj = (rooms || []).find(r => isSameRoom(r.number, hasApprovedRentalRequest.targetRoom));
+        const price = targetRoomObj?.price || 2800000;
+        const defaultHouseCode = targetRoomObj?.houseCode || 'CS-01';
+        const defaultHouseName = targetRoomObj?.house || 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
+        return {
+          id: Date.now(),
+          contractCode: `HD-2026-${String(Date.now()).slice(-4)}`,
+          roomNumber: hasApprovedRentalRequest.targetRoom || 'P.101',
+          houseCode: hasApprovedRentalRequest.houseCode || defaultHouseCode,
+          houseName: hasApprovedRentalRequest.house || defaultHouseName,
+          tenantName: user?.fullName || hasApprovedRentalRequest.tenant || 'Khách thuê',
+          tenantPhone: user?.phone || hasApprovedRentalRequest.phone || '0987.654.321',
+          startDate: new Date().toLocaleDateString('vi-VN'),
+          endDate: '31/12/2026',
+          rentalPrice: price,
+          depositAmount: price,
+          status: 'PENDING_DEPOSIT',
+          depositPaid: false,
+          signedElectronically: false,
+          holdingUntil: Date.now() + 15 * 60 * 1000
+        };
+      }
+    }
+
+    // 3. Nếu khách có phòng đang ở thực tế và hợp đồng ACTIVE thực sự
     if (resolvedActiveRoom) {
       const activeMatch = list.find((c) =>
-        isSameRoom(c.roomNumber, resolvedActiveRoom) && (c.status === 'ACTIVE' || matchesUser(c))
+        isSameRoom(c.roomNumber, resolvedActiveRoom) && c.status === 'ACTIVE' && matchesUser(c)
       );
-      if (activeMatch && activeMatch.status === 'ACTIVE') {
+      if (activeMatch) {
         return activeMatch;
       }
 
+      // Chỉ fallback nếu khách thực sự không có hợp đồng pending nào
       const targetRoomObj = (rooms || []).find(r => isSameRoom(r.number, resolvedActiveRoom));
       return {
-        id: activeMatch?.id || `HD-ACTIVE-${resolvedActiveRoom}`,
-        contractCode: activeMatch?.contractCode || `HD-2026-${String(resolvedActiveRoom).replace(/[^0-9]/g, '') || '102'}`,
+        id: `HD-ACTIVE-${resolvedActiveRoom}`,
+        contractCode: `HD-2026-${String(resolvedActiveRoom).replace(/[^0-9]/g, '') || '102'}`,
         roomNumber: resolvedActiveRoom,
         houseCode: targetRoomObj?.houseCode || user?.houseCode || 'CS-01',
         houseName: targetRoomObj?.house || user?.houseName || 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
         tenantName: user?.fullName || 'Nguyễn Văn An',
         tenantPhone: user?.phone || '0987.654.321',
-        startDate: activeMatch?.startDate || '01/01/2026',
-        endDate: activeMatch?.endDate || '31/12/2026',
+        startDate: '01/01/2026',
+        endDate: '31/12/2026',
         rentalPrice: targetRoomObj?.price || 3500000,
         depositAmount: targetRoomObj?.price || 3500000,
         status: 'ACTIVE',
         depositPaid: true,
         signedElectronically: true
-      };
-    }
-
-    // 2. Ưu tiên số 1: Hợp đồng PENDING_DEPOSIT hoặc PENDING_SIGN của chính khách này
-    const pendingContract = list.find((c) =>
-      (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN') && matchesUser(c)
-    );
-    if (pendingContract) return pendingContract;
-
-    // 3. Nếu khách có đơn thuê phòng đã được Staff APPROVED, tự động sinh hợp đồng Onboarding nếu chưa có
-    if (hasApprovedRentalRequest) {
-      const matchApproved = list.find((c) =>
-        isSameRoom(c.roomNumber, hasApprovedRentalRequest.targetRoom) && matchesUser(c)
-      );
-      if (matchApproved) {
-        return {
-          ...matchApproved,
-          status: matchApproved.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING_DEPOSIT'
-        };
-      }
-
-      const targetRoomObj = (rooms || []).find(r => isSameRoom(r.number, hasApprovedRentalRequest.targetRoom));
-      const price = targetRoomObj?.price || 2800000;
-      const defaultHouseCode = targetRoomObj?.houseCode || 'CS-01';
-      const defaultHouseName = targetRoomObj?.house || 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
-      return {
-        id: Date.now(),
-        contractCode: `HD-2026-${String(Date.now()).slice(-4)}`,
-        roomNumber: hasApprovedRentalRequest.targetRoom || 'P.101',
-        houseCode: hasApprovedRentalRequest.houseCode || defaultHouseCode,
-        houseName: hasApprovedRentalRequest.house || defaultHouseName,
-        tenantName: user?.fullName || hasApprovedRentalRequest.tenant || 'Khách thuê',
-        tenantPhone: user?.phone || hasApprovedRentalRequest.phone || '0987.654.321',
-        startDate: new Date().toLocaleDateString('vi-VN'),
-        endDate: '31/12/2026',
-        rentalPrice: price,
-        depositAmount: price,
-        status: 'PENDING_DEPOSIT',
-        depositPaid: false,
-        signedElectronically: false,
-        holdingUntil: Date.now() + 15 * 60 * 1000
       };
     }
 
@@ -442,15 +462,16 @@ export default function UserDashboard() {
 
   // Kiểm tra hợp đồng đang chờ nộp cọc hoặc chờ ký:
   const isContractPending = Boolean(
-    !resolvedActiveRoom &&
     myContract &&
     myContract.status !== 'ACTIVE' &&
-    myContract.status !== 'CANCELLED' && (
+    myContract.status !== 'CANCELLED' &&
+    myContract.status !== 'TERMINATED' &&
+    myContract.status !== 'COMPLETED' && (
       myContract.status === 'PENDING_DEPOSIT' ||
       myContract.status === 'PENDING_SIGN' ||
+      !myContract.signedElectronically ||
       Boolean(hasApprovedRentalRequest)
-    ) &&
-    (!myContract.depositPaid || !myContract.signedElectronically)
+    )
   );
 
   // Đơn đăng ký thuê phòng đang chờ Quản lý duyệt hồ sơ

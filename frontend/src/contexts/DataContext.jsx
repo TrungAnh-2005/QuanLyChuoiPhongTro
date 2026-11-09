@@ -5300,7 +5300,7 @@ export const DataProvider = ({ children }) => {
     const nowStr = new Date().toLocaleString('vi-VN');
 
     // Kiểm tra hết hạn 15 phút nộp tiền cọc
-    const existingTarget = (contracts || []).find(c => c.id === contractId || c.contractCode === contractId);
+    const existingTarget = (contracts || []).find(c => c.id === contractId || String(c.id) === String(contractId) || c.contractCode === contractId);
     if (existingTarget) {
       if (existingTarget.status === 'EXPIRED' || (existingTarget.holdingUntil && existingTarget.holdingUntil < Date.now())) {
         return { success: false, error: 'Đã hết hạn 15 phút nộp tiền cọc. Lệnh giữ phòng đã bị hủy!' };
@@ -5311,7 +5311,7 @@ export const DataProvider = ({ children }) => {
     setContracts((prev) => {
       let found = false;
       const updated = prev.map((c) => {
-        if (c.id === contractId || c.contractCode === contractId) {
+        if (c.id === contractId || String(c.id) === String(contractId) || c.contractCode === contractId) {
           found = true;
           targetContract = { ...c };
           return {
@@ -5413,6 +5413,20 @@ export const DataProvider = ({ children }) => {
           houseCode: targetContract.houseCode,
           house: targetContract.houseName
         });
+        if (targetContract.tenantUsername) {
+          updateTenantRoom(targetContract.tenantUsername, targetContract.roomNumber, 'SET', {
+            houseCode: targetContract.houseCode,
+            house: targetContract.houseName
+          });
+        }
+        const tLower = (targetContract.tenantName || '').toLowerCase();
+        if (tLower.includes('an')) {
+          updateTenantRoom('tenant1', targetContract.roomNumber, 'SET', { houseCode: targetContract.houseCode, house: targetContract.houseName });
+        } else if (tLower.includes('cường')) {
+          updateTenantRoom('tenant2', targetContract.roomNumber, 'SET', { houseCode: targetContract.houseCode, house: targetContract.houseName });
+        } else if (tLower.includes('nam')) {
+          updateTenantRoom('tenant_new', targetContract.roomNumber, 'SET', { houseCode: targetContract.houseCode, house: targetContract.houseName });
+        }
       }
 
       // 4. roomMembers
@@ -5695,6 +5709,20 @@ export const DataProvider = ({ children }) => {
           houseCode: targetContract.houseCode,
           house: targetContract.houseName
         });
+        if (targetContract.tenantUsername) {
+          updateTenantRoom(targetContract.tenantUsername, targetContract.roomNumber, 'SET', {
+            houseCode: targetContract.houseCode,
+            house: targetContract.houseName
+          });
+        }
+        const tLower = (targetContract.tenantName || '').toLowerCase();
+        if (tLower.includes('an')) {
+          updateTenantRoom('tenant1', targetContract.roomNumber, 'SET', { houseCode: targetContract.houseCode, house: targetContract.houseName });
+        } else if (tLower.includes('cường')) {
+          updateTenantRoom('tenant2', targetContract.roomNumber, 'SET', { houseCode: targetContract.houseCode, house: targetContract.houseName });
+        } else if (tLower.includes('nam')) {
+          updateTenantRoom('tenant_new', targetContract.roomNumber, 'SET', { houseCode: targetContract.houseCode, house: targetContract.houseName });
+        }
       }
 
       // 4. roomMembers (Đại diện phòng)
