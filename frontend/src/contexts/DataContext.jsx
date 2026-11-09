@@ -19,18 +19,16 @@ import {
 
 export function normalizeHouseCode(code) {
   if (!code) return '';
-  const c = String(code).trim().toUpperCase();
-  if (c === 'CS-01' || c === 'CS1' || c === 'S1-CS-01' || c === 'S1-CS-02' || c.startsWith('S1-')) return 'CS-01';
-  if (c === 'CS-02' || c === 'CS2' || c === 'S2-CS-01' || c === 'S2-CS-02' || c.startsWith('S2-')) return 'CS-02';
-  if (c === 'CS-03' || c === 'CS3' || c === 'S3-CS-01' || c === 'S3-CS-02' || c.startsWith('S3-')) return 'CS-03';
-  return c;
+  return String(code).trim().toUpperCase();
 }
 
 export function isSameHouse(codeA, codeB) {
   if (!codeA || !codeB) return false;
   const a = normalizeHouseCode(codeA);
   const b = normalizeHouseCode(codeB);
-  if (a && b && a === b) return true;
+  if (a === b) return true;
+  if ((a === 'CS-01' && b === 'S1-CS-01') || (a === 'S1-CS-01' && b === 'CS-01')) return true;
+  if ((a === 'CS-02' && b === 'S2-CS-01') || (a === 'S2-CS-01' && b === 'CS-02')) return true;
   return false;
 }
 
@@ -4895,7 +4893,7 @@ export const DataProvider = ({ children }) => {
           // CHỈ ĐƠN Ở GHÉP HOẶC THUÊ MỚI ĐÃ DUYỆT MỚI ĐƯỢC THÊM VÀO PHÒNG!
           if (req.status === 'APPROVED' && req.targetRoom && req.tenant && (req.type === 'ROOMMATE' || req.type === 'JOIN_ROOM' || req.type === 'RENT' || req.type === 'NEW_RENT')) {
             const isCuong = req.tenant.toLowerCase().includes('cường');
-            const reqHouse = normalizeHouseCode(req.houseCode || (isCuong ? 'CS-02' : 'CS-01'));
+            const reqHouse = normalizeHouseCode(req.houseCode || 'CS-01');
             const hasLeftAfter = pReqs.some((other) =>
               (other.type === 'LEAVE_ROOM' || other.type === 'CHECKOUT' || other.type === 'RETURN') &&
               (other.status === 'APPROVED' || other.status === 'CHECKOUT_SETTLED' || other.settledAt) &&
@@ -4991,10 +4989,6 @@ export const DataProvider = ({ children }) => {
     });
     const seenMem = new Set();
     list = sortedForDedup.filter((m) => {
-      // Dọn dẹp dữ liệu rác nếu Cường bị gán nhầm vào CS-01:
-      if (m.fullName && m.fullName.toLowerCase().includes('cường') && isSameHouse(m.houseCode, 'CS-01')) {
-        return false;
-      }
       const hCode = normalizeHouseCode(m.houseCode || 'CS-01');
       const cleanR = normalizeRoomNumber(m.roomNumber);
       const raw = (m.fullName || '').toLowerCase().trim();

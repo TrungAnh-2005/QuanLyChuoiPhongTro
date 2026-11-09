@@ -23,7 +23,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { useData } from '../../contexts/DataContext';
+import { useData, normalizeHouseCode, isSameHouse, normalizeRoomNumber } from '../../contexts/DataContext';
 import Modal from '../../components/common/Modal';
 import MoveOutSettlementModal from '../../components/settlement/MoveOutSettlementModal';
 import TrialExpiryBanner from '../../components/common/TrialExpiryBanner';
@@ -52,35 +52,6 @@ export function parseFloorNum(floorVal) {
   if (!floorVal) return 0;
   const match = String(floorVal).match(/\d+/);
   return match ? parseInt(match[0], 10) : 0;
-}
-
-export function normalizeHouseCode(code) {
-  if (!code) return '';
-  const c = String(code).trim().toUpperCase();
-  if (c === 'CS-01' || c === 'CS1') return 'CS-01';
-  if (c === 'CS-02' || c === 'CS2') return 'CS-02';
-  if (c === 'CS-03' || c === 'CS3') return 'CS-03';
-  return c;
-}
-
-export function isSameHouse(codeA, codeB) {
-  if (!codeA || !codeB) return false;
-  const a = normalizeHouseCode(codeA);
-  const b = normalizeHouseCode(codeB);
-  if (a === b) return true;
-  if ((a === 'CS-01' && b === 'S1-CS-01') || (a === 'S1-CS-01' && b === 'CS-01')) return true;
-  if ((a === 'CS-02' && b === 'S2-CS-02') || (a === 'S2-CS-02' && b === 'CS-02')) return true;
-  return false;
-}
-
-export function normalizeRoomNumber(number) {
-  if (!number) return '';
-  return String(number)
-    .trim()
-    .toLowerCase()
-    .replace(/^phòng\s*/i, '')
-    .replace(/^p[\.\s_-]*/i, '')
-    .trim();
 }
 
 export function isDuplicateRoom(existingRooms, targetNumber, targetHouseCode, excludeRoomId = null) {

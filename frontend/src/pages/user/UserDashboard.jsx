@@ -745,11 +745,6 @@ export default function UserDashboard() {
       const matchHouse = isSameHouse(m.houseCode || 'CS-01', targetHouse);
       if (!matchRoom || !matchHouse || m.status === 'MOVED_OUT' || m.status === 'INACTIVE') return false;
 
-      // CÁCH LY CƯ DÂN KHÁCH 1 & KHÁCH 2 GIỮA CÁC CƠ SỞ:
-      // Phòng P.101 ở CS-01 (Cầu Giấy) là của Nguyễn Văn An. Phạm Minh Cường ở CS-02 (Đống Đa), TUYỆT ĐỐI không thể ở phòng này!
-      if (isSameHouse(targetHouse, 'CS-01') && (m.fullName || '').toLowerCase().includes('cường')) return false;
-      if (isSameHouse(targetHouse, 'CS-02') && (m.fullName || '').toLowerCase().includes('an')) return false;
-
       // Loại bỏ nếu thành viên có đơn CHECKOUT / LEAVE_ROOM đã được duyệt của ĐÚNG phòng này
       if (hasLeftRoom(m.fullName, m.phone)) return false;
 
@@ -777,10 +772,6 @@ export default function UserDashboard() {
       const matchRoom = isSameRoom(req.targetRoom || req.roomNumber, myRoomNumber);
       const matchHouse = Boolean(req.houseCode) && isSameHouse(req.houseCode, targetHouse);
       if (isRoommate && matchRoom && matchHouse && req.status === 'APPROVED' && req.tenant && req.status !== 'SETTLED') {
-        // CÁCH LY CƯ DÂN GIỮA CÁC CƠ SỞ:
-        if (isSameHouse(targetHouse, 'CS-01') && req.tenant.toLowerCase().includes('cường')) return;
-        if (isSameHouse(targetHouse, 'CS-02') && req.tenant.toLowerCase().includes('an')) return;
-
         // TUYỆT ĐỐI KHÔNG BỔ SUNG NẾU NGƯỜI NÀY ĐÃ RỜI PHÒNG!
         if (hasLeftRoom(req.tenant, req.phone)) return;
 
