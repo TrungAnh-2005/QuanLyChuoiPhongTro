@@ -45,7 +45,7 @@ import { useData, isSameHouse, isSameRoom } from '../../contexts/DataContext';
 
 function getRoomImage(room) {
   if (room?.image) return room.image;
-  const floor = parseInt(room?.floor?.replace(/\D/g, '') || '1', 10);
+  const floor = parseInt(String(room?.floor || '').replace(/\D/g, '') || '1', 10);
   const amenities = Array.isArray(room?.amenities) ? room.amenities : [];
   if (floor >= 5 || amenities.some(a => typeof a === 'string' && (a.toLowerCase().includes('ban công') || a.toLowerCase().includes('penthouse') || a.toLowerCase().includes('sân phơi')))) {
     return '/assets/images/room_suite_3.jpg';
@@ -437,7 +437,7 @@ export default function UserDashboard() {
       }
 
       // Chỉ fallback nếu khách thực sự không có hợp đồng pending nào
-      const targetRoomObj = (rooms || []).find(r => isSameRoom(r.number, resolvedActiveRoom));
+      const targetRoomObj = (rooms || []).find(r => isSameRoom(r.number, resolvedActiveRoom) && (!user?.houseCode || isSameHouse(r.houseCode, user.houseCode)));
       return {
         id: `HD-ACTIVE-${resolvedActiveRoom}`,
         contractCode: `HD-2026-${String(resolvedActiveRoom).replace(/[^0-9]/g, '') || '102'}`,
