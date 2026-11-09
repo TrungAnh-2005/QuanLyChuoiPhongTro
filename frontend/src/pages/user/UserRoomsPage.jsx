@@ -292,7 +292,26 @@ export default function UserRoomsPage() {
     if (!rNum) return false;
     const clean = normalizeRoomNumber(rNum);
 
-    // 0. ƯU TIÊN HÀNG ĐẦU: Nếu khách vừa được duyệt vào ở ghép (ROOMMATE / JOIN_ROOM) sau này
+    // 0A. BẢO VỆ TỐI THƯỢNG: Nếu khách đang có HỢP ĐỒNG ACTIVE thực sự đối với phòng này
+    // -> TUYỆT ĐỐI KHÔNG PHẢI ĐÃ RỜI PHÒNG! Hợp đồng Active là chứng cứ pháp lý cao nhất!
+    const hasActiveContract = (contracts || []).some((c) => {
+      if (c.status !== 'ACTIVE' && c.status !== 'CHECKOUT_REQUESTED' && c.status !== 'PENDING_TERMINATION') return false;
+      if (normalizeRoomNumber(c.roomNumber) !== clean) return false;
+      const cName = (c.tenantName || '').toLowerCase().trim();
+      const cPhone = (c.tenantPhone || '').trim();
+      const cUser = (c.tenantUsername || c.username || '').toLowerCase().trim();
+      return (
+        (uUsername && cUser === uUsername) ||
+        (uPhone && cPhone === uPhone) ||
+        (uName && cName && (cName === uName || cName.includes(uName) || uName.includes(cName))) ||
+        (uUsername === 'tenant1' && cName.includes('an')) ||
+        (uUsername === 'tenant2' && cName.includes('cường')) ||
+        (uUsername === 'tenant_new' && cName.includes('nam'))
+      );
+    });
+    if (hasActiveContract) return false;
+
+    // 0B. ƯU TIÊN HÀNG ĐẦU: Nếu khách vừa được duyệt vào ở ghép (ROOMMATE / JOIN_ROOM) sau này
     const hasApprovedRejoin = (roomRequests || []).some((r) => {
       if (r.status !== 'APPROVED') return false;
       if (r.type !== 'ROOMMATE' && r.type !== 'JOIN_ROOM') return false;
@@ -1202,7 +1221,13 @@ export default function UserRoomsPage() {
     };
 
     // 0. XÁC ĐỊNH TRẠNG THÁI KHÁCH CÓ ĐANG THỰC SỰ THUÊ / Ở PHÒNG NÀO KHÔNG
+    const activeContract = (contracts || []).find((c) => {
+      if (c.status !== 'ACTIVE' && c.status !== 'CHECKOUT_REQUESTED' && c.status !== 'PENDING_TERMINATION') return false;
+      return matchesCurrentTenant(c.tenantName, c.tenantPhone, c.tenantUsername || c.username, c.tenantCccd);
+    });
+
     const isActivelyRenting = Boolean(
+      activeContract ||
       (myCurrentRoom && !hasCurrentUserLeftRoom(myCurrentRoom)) ||
       (Array.isArray(myRentedRooms) && myRentedRooms.some(r => !hasCurrentUserLeftRoom(r)))
     );
@@ -1211,7 +1236,14 @@ export default function UserRoomsPage() {
     // TRƯỜNG HỢP 1: KHÁCH ĐANG TRONG PHÒNG THUÊ (ACTIVE RENTAL HOẶC ĐANG TRẢ PHÒNG CHƯA XONG)
     // =========================================================================
     if (isActivelyRenting) {
-      // 1.1 Kiểm tra xem có đơn báo trả phòng ĐANG TRONG QUÁ TRÌNH XỬ LÝ (PENDING hoặc WAITING_ROOMMATES)
+      // 1.1 HỢP ĐỒNG ACTIVE CỦA CHÍNH KHÁCH NÀY (ƯU TIÊN SỐ 1 - CHÍNH XÁC TUYỆT ĐỐI VÌ CÓ HOUSECODE VÀ CHỦ TRỌ)
+      if (activeContract) {
+        const lKey = findLandlordKeyForHouse(activeContract.houseCode, activeContract.houseName || activeContract.house) ||
+                     findLandlordKeyForRoom(activeContract.roomNumber, activeContract.houseCode);
+        if (lKey) return lKey;
+      }
+
+      // 1.2 Kiểm tra xem có đơn báo trả phòng ĐANG TRONG QUÁ TRÌNH XỬ LÝ (PENDING hoặc WAITING_ROOMMATES)
       const inProgressCheckoutReq = (roomRequests || []).find((r) => {
         const isCheckoutType = r.type === 'CHECKOUT' || r.type === 'RETURN' || r.type === 'LEAVE_ROOM' || r.type === 'LEAVE';
         if (!isCheckoutType) return false;
@@ -1224,18 +1256,6 @@ export default function UserRoomsPage() {
       if (inProgressCheckoutReq) {
         const lKey = findLandlordKeyForHouse(inProgressCheckoutReq.houseCode, inProgressCheckoutReq.house) ||
                      findLandlordKeyForRoom(inProgressCheckoutReq.targetRoom || inProgressCheckoutReq.roomNumber || inProgressCheckoutReq.currentRoom, inProgressCheckoutReq.houseCode);
-        if (lKey) return lKey;
-      }
-
-      // 1.2 HỢP ĐỒNG ACTIVE CỦA CHÍNH KHÁCH NÀY (ƯU TIÊN SỐ 1 - CHÍNH XÁC NHẤT VÌ CÓ HOUSECODE)
-      const activeContract = (contracts || []).find((c) => {
-        if (c.status !== 'ACTIVE' && c.status !== 'CHECKOUT_REQUESTED' && c.status !== 'PENDING_TERMINATION') return false;
-        if (hasCurrentUserLeftRoom(c.roomNumber)) return false;
-        return matchesCurrentTenant(c.tenantName, c.tenantPhone, c.tenantUsername || c.username, c.tenantCccd);
-      });
-      if (activeContract) {
-        const lKey = findLandlordKeyForHouse(activeContract.houseCode, activeContract.houseName || activeContract.house) ||
-                     findLandlordKeyForRoom(activeContract.roomNumber, activeContract.houseCode);
         if (lKey) return lKey;
       }
 

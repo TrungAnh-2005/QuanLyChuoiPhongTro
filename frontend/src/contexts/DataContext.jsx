@@ -5027,14 +5027,12 @@ export const DataProvider = ({ children }) => {
         } catch {}
 
         return filtered.map(c => {
-          if (c.contractCode === 'HD-2026-001' || String(c.roomNumber).replace(/^P\.?/i, '').trim() === '101') {
-            if (isP101CheckedOut || c.status === 'COMPLETED') {
-              return {
-                ...c,
-                status: 'COMPLETED',
-                endDate: c.endDate || new Date().toLocaleDateString('vi-VN')
-              };
-            }
+          if (c.contractCode === 'HD-2026-001' && isP101CheckedOut) {
+            return {
+              ...c,
+              status: 'COMPLETED',
+              endDate: c.endDate || new Date().toLocaleDateString('vi-VN')
+            };
           }
           // Khách 1 (An) và Khách 2 (Cường): Hợp đồng ACTIVE đã nộp cọc và ký điện tử
           if (c.contractCode === 'HD-2026-001' || c.contractCode === 'HD-2026-003' || c.status === 'ACTIVE') {

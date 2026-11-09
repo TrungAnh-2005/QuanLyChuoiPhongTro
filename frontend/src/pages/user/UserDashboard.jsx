@@ -205,7 +205,25 @@ export default function UserDashboard() {
     const hasLeftThisRoom = (targetRoom) => {
       if (!targetRoom) return false;
 
-      // 0. Nếu khách này vừa có đơn ROOMMATE đã được duyệt APPROVED đối với chính phòng này -> KHÔNG PHẢI RỜI PHÒNG!
+      // 0A. Nếu khách đang có HỢP ĐỒNG ACTIVE thực sự đối với phòng này -> Không tính là đã rời phòng
+      const hasActiveContract = (contracts || []).some((c) => {
+        if (c.status !== 'ACTIVE' && c.status !== 'CHECKOUT_REQUESTED' && c.status !== 'PENDING_TERMINATION') return false;
+        if (!isSameRoom(c.roomNumber, targetRoom)) return false;
+        const cTenant = (c.tenantName || '').toLowerCase().trim();
+        const cPhone = (c.tenantPhone || '').trim();
+        const cUser = (c.tenantUsername || c.username || '').toLowerCase().trim();
+        return (
+          (myUname && cUser === myUname) ||
+          (uName && (cTenant.includes(uName) || uName.includes(cTenant))) ||
+          (uPhone && cPhone === uPhone) ||
+          (myUname === 'tenant1' && cTenant.includes('an')) ||
+          (myUname === 'tenant2' && cTenant.includes('cường')) ||
+          (myUname === 'tenant_new' && cTenant.includes('nam'))
+        );
+      });
+      if (hasActiveContract) return false;
+
+      // 0B. Nếu khách này vừa có đơn ROOMMATE đã được duyệt APPROVED đối với chính phòng này -> KHÔNG PHẢI RỜI PHÒNG!
       const hasRejoined = (roomRequests || []).some((rejoin) => {
         if (rejoin.status !== 'APPROVED') return false;
         if (rejoin.type !== 'ROOMMATE' && rejoin.type !== 'JOIN_ROOM') return false;
