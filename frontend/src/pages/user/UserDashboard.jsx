@@ -167,12 +167,12 @@ export default function UserDashboard() {
       if (hasCheckedOutThisRoom) return false;
 
       // 2. Nếu khách đã có hợp đồng ACTIVE tại phòng này -> Đã hoàn tất, không phải đang chờ cọc
-      const activeContract = (contracts || []).find(c => c.roomNumber === targetRoom && c.status === 'ACTIVE');
+      const activeContract = (contracts || []).find(c => isSameRoom(c.roomNumber, targetRoom) && c.status === 'ACTIVE');
       if (activeContract) return false;
 
       // 3. Nếu hợp đồng đã kết thúc (COMPLETED / TERMINATED) mà không có hợp đồng mới PENDING_DEPOSIT -> Bỏ qua
-      const finishedContract = (contracts || []).find(c => c.roomNumber === targetRoom && (c.status === 'COMPLETED' || c.status === 'TERMINATED'));
-      const hasNewHoldingContract = (contracts || []).some(c => c.roomNumber === targetRoom && (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN'));
+      const finishedContract = (contracts || []).find(c => isSameRoom(c.roomNumber, targetRoom) && (c.status === 'COMPLETED' || c.status === 'TERMINATED'));
+      const hasNewHoldingContract = (contracts || []).some(c => isSameRoom(c.roomNumber, targetRoom) && (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN'));
       if (finishedContract && !hasNewHoldingContract) return false;
 
       return true;
@@ -187,9 +187,9 @@ export default function UserDashboard() {
 
     // 0. BẢO VỆ TỐI THƯỢNG: Nếu khách đang có hợp đồng chờ nộp cọc hoặc chờ ký điện tử (PENDING_DEPOSIT hoặc PENDING_SIGN)
     // thì TUYỆT ĐỐI CHƯA PHẢI LÀ PHÒNG ĐANG Ở CHO ĐẾN KHI KÝ HỢP ĐỒNG XONG!
-    const hasPendingContract = (contracts || []).some(
-      c => (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN' || (c.depositPaid && !c.signedElectronically && c.status !== 'ACTIVE')) &&
-      (
+    // TUY NHIÊN: Nếu khách ĐÃ CÓ một hợp đồng ACTIVE đã ký điện tử chính chủ cho phòng này -> Đã hoàn tất ký kết, không chặn!
+    const myActiveContractExists = (contracts || []).some(
+      c => c.status === 'ACTIVE' && Boolean(c.signedElectronically) && (
         (myUname && (c.tenantUsername === myUname || c.username === myUname)) ||
         (uName && c.tenantName && (c.tenantName.toLowerCase().includes(uName) || uName.includes(c.tenantName.toLowerCase()))) ||
         (uPhone && c.tenantPhone === uPhone) ||
@@ -198,8 +198,22 @@ export default function UserDashboard() {
         (myUname === 'tenant_new' && c.tenantName?.toLowerCase().includes('nam'))
       )
     );
-    if (hasPendingContract) {
-      return null;
+
+    if (!myActiveContractExists) {
+      const hasPendingContract = (contracts || []).some(
+        c => (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN' || (c.depositPaid && !c.signedElectronically && c.status !== 'ACTIVE')) &&
+        (
+          (myUname && (c.tenantUsername === myUname || c.username === myUname)) ||
+          (uName && c.tenantName && (c.tenantName.toLowerCase().includes(uName) || uName.includes(c.tenantName.toLowerCase()))) ||
+          (uPhone && c.tenantPhone === uPhone) ||
+          (myUname === 'tenant1' && c.tenantName?.toLowerCase().includes('an')) ||
+          (myUname === 'tenant2' && c.tenantName?.toLowerCase().includes('cường')) ||
+          (myUname === 'tenant_new' && c.tenantName?.toLowerCase().includes('nam'))
+        )
+      );
+      if (hasPendingContract) {
+        return null;
+      }
     }
 
     // Helper: kiểm tra người dùng này đã rời/trả phòng này chưa
@@ -1619,8 +1633,16 @@ export default function UserDashboard() {
     const handleConfirmDepositAndSign = (cccdData = null) => {
       if (payDepositAndSignContract) {
         payDepositAndSignContract(myContract.id, { cccdData, contractData: myContract });
+        if (updateTenantRoom && targetRoomNum) {
+          updateTenantRoom(user?.fullName || 'tenant1', targetRoomNum, 'SET', {
+            houseCode: myContract.houseCode,
+            house: myContract.houseName
+          });
+        }
+        setIsDepositPaid(true);
+        setShowContractModal(false);
         setPaySuccessToast(
-          `🎉 Ký HĐ thành công! Dữ liệu CCCD đã được gửi đến Quản lý cơ sở để làm thủ tục Tạm Trú (VNeID) phòng ${targetRoomNum}.`
+          `🎉 Ký HĐ thành công! Hợp đồng phòng ${targetRoomNum} đã chính thức có hiệu lực. Chào mừng bạn vào giao diện quản lý phòng thuê!`
         );
         setTimeout(() => setPaySuccessToast(null), 7000);
       }
@@ -2316,7 +2338,6 @@ export default function UserDashboard() {
             depositPaid: Boolean(isDepositPaid || myContract.depositPaid)
           }}
           onSignSuccess={(contractId, cccdData) => {
-            setShowContractModal(false);
             handleConfirmDepositAndSign(cccdData);
           }}
         />
