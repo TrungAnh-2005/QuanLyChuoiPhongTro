@@ -1304,6 +1304,15 @@ export default function UserDashboard() {
   const rejectedTransferProposal = useMemo(() => {
     if (!myRoomNumber) return null;
     const uName = (user?.fullName || '').toLowerCase().trim();
+
+    // Nếu phòng ĐÃ CÓ đơn CHECKOUT đang chờ BQL nghiệm thu (PENDING hoặc ROOMMATES_APPROVED) -> đã nộp thành công rồi, ẩn banner bế tắc!
+    const hasActiveCheckout = (roomRequests || []).some(req =>
+      (req.type === 'CHECKOUT' || req.type === 'RETURN') &&
+      isSameRoom(req.targetRoom || req.currentRoom || req.roomNumber, myRoomNumber) &&
+      (req.status === 'PENDING' || req.status === 'ROOMMATES_APPROVED')
+    );
+    if (hasActiveCheckout) return null;
+
     return (roomRequests || []).find((req) => {
       const isTarget = req.targetRoom === myRoomNumber || req.currentRoom === myRoomNumber;
       const isFromMe = (req.fromTenant || '').toLowerCase().trim().includes(uName) || uName.includes((req.fromTenant || '').toLowerCase().trim());
@@ -1401,6 +1410,10 @@ export default function UserDashboard() {
     e.preventDefault();
     if (!checkoutModal || (!isContractExpired && !agreedForfeitDeposit)) return;
     const roomNumber = typeof checkoutModal === 'string' ? checkoutModal : checkoutModal.number;
+    const isDeadlock = Boolean(
+      rejectedTransferProposal ||
+      (checkoutReason && (checkoutReason.includes('từ chối tiếp quản') || checkoutReason.includes('Deadlock') || checkoutReason.includes('bế tắc')))
+    );
     const res = submitCheckoutRequest({
       room: roomNumber,
       houseCode: myContract?.houseCode || user?.houseCode || currentRoomObj?.houseCode || 'CS-01',
@@ -1413,7 +1426,7 @@ export default function UserDashboard() {
       refundAccountNumber,
       refundAccountName: refundAccountName || user?.fullName || 'Khách thuê',
       isContractExpired,
-      bypassRoommateVoting: false
+      bypassRoommateVoting: isDeadlock
     });
     if (res?.error) {
       alert(res.message);
@@ -3789,7 +3802,7 @@ export default function UserDashboard() {
                     </div>
                     <div>
                       <h3 className="font-bold text-base text-slate-900">
-                        {isCheckoutRoomMulti ? 'Yêu Cầu Biểu Quyết Trả Toàn Bộ Phòng' : 'Yêu Cầu Trả Toàn Bộ Phòng'}
+                        {isCheckoutRoomMulti && !rejectedTransferProposal ? 'Yêu Cầu Biểu Quyết Trả Toàn Bộ Phòng' : 'Yêu Cầu Trả Toàn Bộ Phòng'}
                       </h3>
                       <p className="text-[11px] text-slate-500">
                         Phòng {typeof checkoutModal === 'string' ? checkoutModal : checkoutModal?.number} (Hiện có {checkoutOccupantsCount} người đang ở)
@@ -3950,7 +3963,7 @@ export default function UserDashboard() {
                         }`}
                     >
                       <span>
-                        {isCheckoutRoomMulti
+                        {isCheckoutRoomMulti && !rejectedTransferProposal
                           ? 'Gửi Lấy Ý Kiến Bạn Cùng Phòng'
                           : 'Xác Nhận Trả Phòng (Mất Cọc)'}
                       </span>

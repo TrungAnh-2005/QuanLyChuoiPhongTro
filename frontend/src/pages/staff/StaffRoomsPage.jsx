@@ -1607,6 +1607,11 @@ export default function StaffRoomsPage() {
                               ✨ Đơn Vừa Chọn
                             </span>
                           )}
+                          {req.isDeadlockBypass && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-rose-600 text-white shadow-2xs">
+                              ⚡ Deadlock-Breaker
+                            </span>
+                          )}
                         </div>
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                           req.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' :

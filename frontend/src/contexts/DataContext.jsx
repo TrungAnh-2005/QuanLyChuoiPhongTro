@@ -1163,6 +1163,28 @@ export const DataProvider = ({ children }) => {
                 resolvedReqHouseName = 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
               }
 
+              // 0. Kiểm tra cơ chế Deadlock-Breaker (Bạn cùng phòng từ chối tiếp quản HĐ)
+              const isDeadlock = Boolean(
+                req.isDeadlockBypass ||
+                (req.note && (req.note.includes('từ chối tiếp quản') || req.note.includes('Deadlock') || req.note.includes('bế tắc'))) ||
+                parsed.some(other =>
+                  (other.type === 'TRANSFER_CONTRACT' || other.type === 'HANDOVER_CONTRACT') &&
+                  other.status === 'REJECTED_BY_TRANSFEREE' &&
+                  isSameRoom(other.targetRoom || other.currentRoom || other.roomNumber, reqRoomClean)
+                )
+              );
+
+              if (isDeadlock) {
+                return {
+                  ...req,
+                  houseCode: resolvedReqHouseCode,
+                  house: resolvedReqHouseName,
+                  status: (req.status === 'APPROVED' || req.status === 'SETTLED' || req.status === 'REJECTED') ? req.status : 'PENDING',
+                  isDeadlockBypass: true,
+                  hasMultiplePeople: false
+                };
+              }
+
               // 1. Nếu phòng chỉ có 1 người (hoặc không ở ghép): Tuyệt đối KHÔNG BẮT BIỂU QUYẾT!
               // Chuyển thẳng về PENDING để Staff duyệt & nghiệm thu hoàn cọc.
               if (!isSharedRoom) {
@@ -2727,8 +2749,18 @@ export const DataProvider = ({ children }) => {
     const hasMultiplePeople = actualOccupantsCount > 1;
 
     // Kiểm tra cơ chế Phá vỡ bế tắc (Deadlock-Breaker):
-    // Chỉ kích hoạt khi Người đại diện bấm nút Trả phòng khẩn cấp đặc biệt (bypassRoommateVoting === true)
-    const isDeadlockBypassActive = Boolean(bypassRoommateVoting);
+    // Kích hoạt khi có cờ bypassRoommateVoting HOẶC bạn cùng phòng đã từ chối nhận chuyển giao HĐ (REJECTED_BY_TRANSFEREE)
+    const hasRejectedTransfer = (roomRequests || []).some((r) =>
+      (r.type === 'TRANSFER_CONTRACT' || r.type === 'HANDOVER_CONTRACT') &&
+      r.status === 'REJECTED_BY_TRANSFEREE' &&
+      isSameRoom(r.targetRoom || r.currentRoom || r.roomNumber, cleanRoom) &&
+      (!targetHouse || isSameHouse(r.houseCode, targetHouse))
+    );
+    const isDeadlockBypassActive = Boolean(
+      bypassRoommateVoting ||
+      hasRejectedTransfer ||
+      (reason && (reason.includes('từ chối tiếp quản') || reason.includes('Deadlock') || reason.includes('bế tắc')))
+    );
 
     // Phân loại trạng thái ban đầu:
     // - Phòng chỉ có 1 người HOẶC kích hoạt Deadlock-Breaker: Gửi thẳng BQL để nghiệm thu (PENDING), KHÔNG biểu quyết!
