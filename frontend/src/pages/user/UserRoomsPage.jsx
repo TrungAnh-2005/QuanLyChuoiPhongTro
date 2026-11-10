@@ -431,6 +431,21 @@ export default function UserRoomsPage() {
           }
         }
       });
+
+      // Bổ sung từ tenantRooms nếu khách đang được gán phòng này
+      if (!uniqueNames.has('cuong')) {
+        const cuongRooms = tenantRooms?.tenant2 || tenantRooms?.['Phạm Minh Cường'];
+        if (Array.isArray(cuongRooms) && cuongRooms.some(rn => normalizeRoomNumber(rn) === cleanNum)) {
+          uniqueNames.add('cuong');
+        }
+      }
+      if (!uniqueNames.has('an')) {
+        const anRooms = tenantRooms?.tenant1 || tenantRooms?.['Nguyễn Văn An'];
+        if (Array.isArray(anRooms) && anRooms.some(rn => normalizeRoomNumber(rn) === cleanNum)) {
+          uniqueNames.add('an');
+        }
+      }
+
       return Math.min(uniqueNames.size, room.maxOccupants || 3);
     }
 
@@ -447,6 +462,10 @@ export default function UserRoomsPage() {
           count += 1;
         }
       });
+      const cuongRooms = tenantRooms?.tenant2 || tenantRooms?.['Phạm Minh Cường'];
+      if (Array.isArray(cuongRooms) && cuongRooms.some(rn => normalizeRoomNumber(rn) === cleanNum)) {
+        count = Math.max(count, 2);
+      }
       return Math.min(count, room.maxOccupants || 3);
     }
 
@@ -465,7 +484,7 @@ export default function UserRoomsPage() {
       return Math.min(room.occupants, room.maxOccupants || 3);
     }
     return 0;
-  }, [contracts, roomMembers, tenants, isRoomCheckedOut]);
+  }, [contracts, roomMembers, tenants, roomRequests, tenantRooms, isRoomCheckedOut]);
 
   // Kiểm tra chi tiết trạng thái Giữ cọc / Đặt chỗ của phòng:
   // Trả về { isHeld, isDepositPaid, isPending, isMine, contract, request, text }
@@ -1189,7 +1208,7 @@ export default function UserRoomsPage() {
     }
 
     return false;
-  }, [contracts, roomMembers, currentTenant, user, isTenantNew, hasCurrentUserLeftRoom, matchesCurrentTenant]);
+  }, [contracts, roomMembers, currentTenant, user, isTenantNew, hasCurrentUserLeftRoom, matchesCurrentTenant, roomRequests]);
 
   const tenantAssociatedLandlordKey = useMemo(() => {
     // Chỉ áp dụng logic khóa theo chủ trọ cho tài khoản TENANT / Khách thuê

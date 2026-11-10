@@ -78,8 +78,8 @@ const DEMO_USERS = {
     hometown: 'Hải Phòng',
     room: isZeroSandbox ? null : 'P.101',
     rooms: isZeroSandbox ? [] : ['P.101'],
-    houseCode: isZeroSandbox ? null : 'CS-02',
-    houseName: isZeroSandbox ? null : 'Nhà Trọ Bách Khoa - Cơ Sở 2',
+    houseCode: isZeroSandbox ? null : 'CS-01',
+    houseName: isZeroSandbox ? null : 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
     role: 'TENANT',
     token: 'demo-tenant2-token'
   },
@@ -442,6 +442,23 @@ export const AuthProvider = ({ children }) => {
         } catch {}
       }
 
+      if (!resolvedHouseCode) {
+        try {
+          const sR = localStorage.getItem('rental_rooms');
+          if (sR) {
+            const pR = JSON.parse(sR);
+            const foundRoom = Array.isArray(pR) ? pR.find(r => (
+              (u.room && isSameRoom(u.room, r.number)) ||
+              (Array.isArray(u.rooms) && u.rooms.some(ur => isSameRoom(ur, r.number)))
+            )) : null;
+            if (foundRoom?.houseCode) {
+              resolvedHouseCode = foundRoom.houseCode;
+              resolvedHouseName = foundRoom.house;
+            }
+          }
+        } catch {}
+      }
+
       if (resolvedHouseCode && !resolvedHouseName) {
         try {
           const sBH = localStorage.getItem('rental_boarding_houses');
@@ -656,28 +673,32 @@ export const AuthProvider = ({ children }) => {
     let userHouseName = baseUser.houseName;
 
     if (baseUser.role === 'STAFF') {
-      if (isZeroSandbox) {
+      try {
+        const sHouses = localStorage.getItem('rental_boarding_houses');
+        if (sHouses) {
+          const pHouses = JSON.parse(sHouses);
+          if (Array.isArray(pHouses) && pHouses.length > 0) {
+            const myHouse = pHouses.find(h =>
+              h.createdBy === baseUser.username ||
+              h.managerUsername === baseUser.username ||
+              (baseUser.username === 'staff' && (h.code?.startsWith('S1-') || h.code === 'CS-01')) ||
+              (baseUser.username === 'staff2' && (h.code?.startsWith('S2-') || h.code === 'CS-02'))
+            );
+            if (myHouse) {
+              userHouseCode = myHouse.code;
+              userHouseName = myHouse.name;
+            }
+          } else {
+            userHouseCode = null;
+            userHouseName = null;
+          }
+        } else {
+          userHouseCode = null;
+          userHouseName = null;
+        }
+      } catch {
         userHouseCode = null;
         userHouseName = null;
-      } else {
-        try {
-          const sHouses = localStorage.getItem('rental_boarding_houses');
-          if (sHouses) {
-            const pHouses = JSON.parse(sHouses);
-            if (Array.isArray(pHouses)) {
-              if (pHouses.length === 0) {
-                userHouseCode = null;
-                userHouseName = null;
-              } else {
-                const myHouse = pHouses.find(h => h.createdBy === baseUser.username || h.managerUsername === baseUser.username);
-                if (myHouse) {
-                  userHouseCode = myHouse.code;
-                  userHouseName = myHouse.name;
-                }
-              }
-            }
-          }
-        } catch {}
       }
     } else if (baseUser.role === 'TENANT') {
       const latestRooms = getStoredTenantRooms();
@@ -686,7 +707,7 @@ export const AuthProvider = ({ children }) => {
         : (latestRooms[baseUser.fullName] !== undefined ? latestRooms[baseUser.fullName] : currentRooms);
       currentRooms = normalizeRoomList(val);
 
-      if (currentRooms.length === 0 || isZeroSandbox) {
+      if (currentRooms.length === 0) {
         userHouseCode = null;
         userHouseName = null;
       } else {
@@ -695,22 +716,38 @@ export const AuthProvider = ({ children }) => {
         try {
           const sM = localStorage.getItem('rental_room_members');
           const pM = sM ? JSON.parse(sM) : [];
-          const mem = pM.find(m => currentRooms.includes(m.roomNumber) && m.status !== 'MOVED_OUT' && (
+          const mem = pM.find(m => currentRooms.some(r => isSameRoom(r, m.roomNumber)) && m.status !== 'MOVED_OUT' && (
             (baseUser.fullName && m.fullName && (m.fullName.includes(baseUser.fullName) || baseUser.fullName.includes(m.fullName))) ||
-            (baseUser.phone && m.phone === baseUser.phone)
+            (baseUser.phone && m.phone === baseUser.phone) ||
+            (baseUser.username === 'tenant2' && m.fullName?.toLowerCase().includes('cường')) ||
+            (baseUser.username === 'tenant1' && m.fullName?.toLowerCase().includes('an'))
           ));
           if (mem?.houseCode) {
             matchedHouse = { code: mem.houseCode, name: mem.house };
           } else {
             const sC = localStorage.getItem('rental_contracts');
             const pC = sC ? JSON.parse(sC) : [];
-            const contract = pC.find(c => currentRooms.includes(c.roomNumber) && c.status === 'ACTIVE' && (
+            const contract = pC.find(c => currentRooms.some(r => isSameRoom(r, c.roomNumber)) && c.status === 'ACTIVE' && (
               (baseUser.fullName && c.tenantName && (c.tenantName.includes(baseUser.fullName) || baseUser.fullName.includes(c.tenantName))) ||
               (baseUser.phone && c.tenantPhone === baseUser.phone) ||
-              c.tenantUsername === baseUser.username
+              c.tenantUsername === baseUser.username ||
+              (baseUser.username === 'tenant2' && c.tenantName?.toLowerCase().includes('cường')) ||
+              (baseUser.username === 'tenant1' && c.tenantName?.toLowerCase().includes('an'))
             ));
             if (contract?.houseCode) {
               matchedHouse = { code: contract.houseCode, name: contract.houseName };
+            } else {
+              const sR = localStorage.getItem('rental_room_requests');
+              const pR = sR ? JSON.parse(sR) : [];
+              const req = pR.find(r => r.status === 'APPROVED' && (r.type === 'ROOMMATE' || r.type === 'JOIN_ROOM') && (
+                (baseUser.fullName && r.tenant && (r.tenant.includes(baseUser.fullName) || baseUser.fullName.includes(r.tenant))) ||
+                (baseUser.phone && r.phone === baseUser.phone) ||
+                (baseUser.username === 'tenant2' && r.tenant?.toLowerCase().includes('cường')) ||
+                (baseUser.username === 'tenant1' && r.tenant?.toLowerCase().includes('an'))
+              ));
+              if (req?.houseCode) {
+                matchedHouse = { code: req.houseCode, name: req.house };
+              }
             }
           }
         } catch {}

@@ -2120,6 +2120,8 @@ export const DataProvider = ({ children }) => {
             ...t,
             rooms: [targetReq.targetRoom],
             room: targetReq.targetRoom,
+            houseCode: targetReq.houseCode || 'CS-01',
+            houseName: targetReq.house || (targetReq.houseCode === 'CS-02' ? 'Nhà Trọ Bách Khoa - Cơ Sở 2' : 'Nhà Trọ Cầu Giấy - Cơ Sở 1'),
             status: 'ACTIVE',
             daysSinceLeave: 0
           };
@@ -2180,23 +2182,24 @@ export const DataProvider = ({ children }) => {
       });
 
       // CẬP NHẬT CỔNG KHÁCH THUÊ: Gán phòng mới cho khách kèm đúng cơ sở
+      const housePayload = {
+        houseCode: targetReq.houseCode || 'CS-01',
+        house: targetReq.house || (targetReq.houseCode === 'CS-02' ? 'Nhà Trọ Bách Khoa - Cơ Sở 2' : 'Nhà Trọ Cầu Giấy - Cơ Sở 1')
+      };
       if (updateTenantRoom) {
-        updateTenantRoom(targetReq.tenant, targetReq.targetRoom, 'SET', {
-          houseCode: targetReq.houseCode || 'CS-01',
-          house: targetReq.house || (targetReq.houseCode === 'CS-02' ? 'Nhà Trọ Bách Khoa - Cơ Sở 2' : 'Nhà Trọ Cầu Giấy - Cơ Sở 1')
-        });
+        updateTenantRoom(targetReq.tenant, targetReq.targetRoom, 'SET', housePayload);
         if (targetReq.username) {
-          updateTenantRoom(targetReq.username, targetReq.targetRoom, 'SET');
+          updateTenantRoom(targetReq.username, targetReq.targetRoom, 'SET', housePayload);
         }
         if ((targetReq.tenant || '').toLowerCase().includes('cường')) {
-          updateTenantRoom('tenant2', targetReq.targetRoom, 'SET');
-          updateTenantRoom('Phạm Minh Cường', targetReq.targetRoom, 'SET');
+          updateTenantRoom('tenant2', targetReq.targetRoom, 'SET', housePayload);
+          updateTenantRoom('Phạm Minh Cường', targetReq.targetRoom, 'SET', housePayload);
         } else if ((targetReq.tenant || '').toLowerCase().includes('nam')) {
-          updateTenantRoom('tenant_new', targetReq.targetRoom, 'SET');
-          updateTenantRoom('Hoàng Văn Nam', targetReq.targetRoom, 'SET');
+          updateTenantRoom('tenant_new', targetReq.targetRoom, 'SET', housePayload);
+          updateTenantRoom('Hoàng Văn Nam', targetReq.targetRoom, 'SET', housePayload);
         } else if ((targetReq.tenant || '').toLowerCase().includes('an')) {
-          updateTenantRoom('tenant1', targetReq.targetRoom, 'SET');
-          updateTenantRoom('Nguyễn Văn An', targetReq.targetRoom, 'SET');
+          updateTenantRoom('tenant1', targetReq.targetRoom, 'SET', housePayload);
+          updateTenantRoom('Nguyễn Văn An', targetReq.targetRoom, 'SET', housePayload);
         }
       }
 
@@ -4664,7 +4667,7 @@ export const DataProvider = ({ children }) => {
             (r.type === 'ROOMMATE' || r.type === 'JOIN_ROOM') &&
             r.status === 'APPROVED' &&
             isSameRoom(r.targetRoom || r.roomNumber, 'P.101') &&
-            isSameHouse(r.houseCode || 'CS-01', 'CS-01') &&
+            (isSameHouse(r.houseCode || 'CS-01', 'CS-01') || r.houseCode?.startsWith('S1-') || (r.house || '').toLowerCase().includes('cầu giấy')) &&
             (r.tenant || '').toLowerCase().includes('cường')
           );
         }
@@ -4710,55 +4713,68 @@ export const DataProvider = ({ children }) => {
           }
         }
 
-        // 2. Quản lý cư dân Phạm Minh Cường: TUYỆT ĐỐI KHÔNG để Cường xuất hiện trong CS-01 trừ khi có đơn ở ghép được duyệt
-        if (!hasApprovedCuongInCS01) {
-          list = list.filter(m => !(
+        // 2. Quản lý cư dân Phạm Minh Cường
+        if (hasApprovedCuongInCS01) {
+          // Cường đã được duyệt vào ở ghép P.101 Cầu Giấy (CS-01) -> Đảm bảo có mặt trong CS-01 với vai trò MEMBER
+          const hasCuongInCS01 = list.some(m =>
             isSameRoom(m.roomNumber, 'P.101') &&
-            isSameHouse(m.houseCode || 'CS-01', 'CS-01') &&
-            (m.fullName || '').toLowerCase().includes('cường')
-          ));
-        }
-
-        // Nếu Cường thuê P.101, Cường là REPRESENTATIVE tại cơ sở của Staff 2 (cuongHouse)
-        if (cuongRoomList.includes('P.101')) {
-          const hasCuongInHisHouse = list.some(m =>
-            isSameRoom(m.roomNumber, 'P.101') &&
-            isSameHouse(m.houseCode || cuongHouse, cuongHouse) &&
+            (isSameHouse(m.houseCode || 'CS-01', 'CS-01') || m.houseCode?.startsWith('S1-')) &&
             (m.fullName || '').toLowerCase().includes('cường') &&
             m.status !== 'MOVED_OUT'
           );
-          if (!hasCuongInHisHouse) {
+          if (!hasCuongInCS01) {
             list.push({
               id: 2,
-              roomId: 201,
+              roomId: 101,
               roomNumber: 'P.101',
-              houseCode: cuongHouse,
+              houseCode: 'CS-01',
               tenantId: 2,
               fullName: 'Phạm Minh Cường',
               phone: '0912.888.999',
               cccd: '034203034567',
               maskedCccd: '03420303****',
-              roleInRoom: 'REPRESENTATIVE',
+              roleInRoom: 'MEMBER',
               hometown: 'Hải Phòng',
               joinDate: '01/01/2026',
               temporaryResidenceStatus: 'REGISTERED',
               status: 'ACTIVE'
             });
-          } else {
-            list = list.map(m => {
-              if (isSameRoom(m.roomNumber, 'P.101') && (m.fullName || '').toLowerCase().includes('cường')) {
-                return { ...m, houseCode: cuongHouse, status: 'ACTIVE', roleInRoom: 'REPRESENTATIVE' };
-              }
-              return m;
-            });
           }
         } else {
-          list = list.map((m) => {
-            if (isSameRoom(m.roomNumber, 'P.101') && (m.fullName || '').toLowerCase().includes('cường')) {
-              return { ...m, status: 'MOVED_OUT' };
+          // Nếu Cường không có đơn ở ghép được duyệt tại CS-01, không để Cường ở CS-01
+          list = list.filter(m => !(
+            isSameRoom(m.roomNumber, 'P.101') &&
+            isSameHouse(m.houseCode || 'CS-01', 'CS-01') &&
+            (m.fullName || '').toLowerCase().includes('cường')
+          ));
+
+          // Chỉ khi Cường thực sự thuê phòng riêng tại cơ sở của Staff 2 (cuongHouse) và không ở CS-01:
+          if (cuongRoomList.includes('P.101') && !isZeroSandbox) {
+            const hasCuongInHisHouse = list.some(m =>
+              isSameRoom(m.roomNumber, 'P.101') &&
+              isSameHouse(m.houseCode || cuongHouse, cuongHouse) &&
+              (m.fullName || '').toLowerCase().includes('cường') &&
+              m.status !== 'MOVED_OUT'
+            );
+            if (!hasCuongInHisHouse) {
+              list.push({
+                id: 2,
+                roomId: 201,
+                roomNumber: 'P.101',
+                houseCode: cuongHouse,
+                tenantId: 2,
+                fullName: 'Phạm Minh Cường',
+                phone: '0912.888.999',
+                cccd: '034203034567',
+                maskedCccd: '03420303****',
+                roleInRoom: 'REPRESENTATIVE',
+                hometown: 'Hải Phòng',
+                joinDate: '01/01/2026',
+                temporaryResidenceStatus: 'REGISTERED',
+                status: 'ACTIVE'
+              });
             }
-            return m;
-          });
+          }
         }
       }
 
