@@ -78,8 +78,8 @@ const DEMO_USERS = {
     hometown: 'Hải Phòng',
     room: isZeroSandbox ? null : 'P.101',
     rooms: isZeroSandbox ? [] : ['P.101'],
-    houseCode: isZeroSandbox ? null : 'CS-01',
-    houseName: isZeroSandbox ? null : 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
+    houseCode: null,
+    houseName: null,
     role: 'TENANT',
     token: 'demo-tenant2-token'
   },
@@ -183,25 +183,37 @@ const getStoredTenantRooms = () => {
 
           // NẾU LÀ ĐƠN CÁ NHÂN RỜI PHÒNG (LEAVE_ROOM)
           if (req.type === 'LEAVE_ROOM') {
-            if (tNorm.includes('an')) {
-              res.tenant1 = [];
-              res['Nguyễn Văn An'] = [];
-            } else if (tNorm.includes('cường')) {
-              res.tenant2 = [];
-              res['Phạm Minh Cường'] = [];
-            } else if (tNorm.includes('nam')) {
-              res.tenant_new = [];
-              res['Hoàng Văn Nam'] = [];
-            } else {
-              res[req.tenant] = [];
+            const hasRejoinAfter = pReqs.some((other) =>
+              (other.status === 'APPROVED' || other.status === 'ROOMMATES_APPROVED') &&
+              (other.type === 'ROOMMATE' || other.type === 'JOIN_ROOM' || other.type === 'RENT' || other.type === 'NEW_RENT') &&
+              String(other.targetRoom || other.roomNumber || '').replace(/^P\.?/i, '').trim().toLowerCase() === targetNum &&
+              (
+                (tNorm.includes('cường') && (other.tenant || '').toLowerCase().includes('cường')) ||
+                (tNorm.includes('an') && (other.tenant || '').toLowerCase().includes('an')) ||
+                (tNorm.includes('nam') && (other.tenant || '').toLowerCase().includes('nam'))
+              )
+            );
+            if (!hasRejoinAfter) {
+              if (tNorm.includes('an')) {
+                res.tenant1 = [];
+                res['Nguyễn Văn An'] = [];
+              } else if (tNorm.includes('cường')) {
+                res.tenant2 = [];
+                res['Phạm Minh Cường'] = [];
+              } else if (tNorm.includes('nam')) {
+                res.tenant_new = [];
+                res['Hoàng Văn Nam'] = [];
+              } else {
+                res[req.tenant] = [];
+              }
             }
             return;
           }
 
-          // Chỉ gán phòng khi là đơn thuê mới hoặc chuyển phòng
-          if (req.type === 'RENT' || req.type === 'NEW_RENT' || req.type === 'TRANSFER') {
+          // Gán phòng khi là đơn thuê mới, chuyển phòng hoặc ở ghép đã được duyệt
+          if (req.type === 'RENT' || req.type === 'NEW_RENT' || req.type === 'TRANSFER' || req.type === 'ROOMMATE' || req.type === 'JOIN_ROOM') {
             if (tNorm.includes('nam')) {
-              if (!req.depositPaid && req.type !== 'TRANSFER') return;
+              if (!req.depositPaid && req.type !== 'TRANSFER' && req.type !== 'ROOMMATE' && req.type !== 'JOIN_ROOM') return;
               res.tenant_new = [req.targetRoom];
               res['Hoàng Văn Nam'] = [req.targetRoom];
             } else if (tNorm.includes('an')) {
@@ -350,6 +362,114 @@ export const AuthProvider = ({ children }) => {
         return false;
       })();
 
+      // Tra cứu cơ sở thực tế từ roomMembers, contracts, hoặc roomRequests đã duyệt
+      let resolvedHouseCode = null;
+      let resolvedHouseName = null;
+
+      try {
+        const sMem = localStorage.getItem('rental_room_members');
+        if (sMem) {
+          const pMem = JSON.parse(sMem);
+          if (Array.isArray(pMem)) {
+            const myMem = pMem.find(m => m.status !== 'MOVED_OUT' && m.status !== 'INACTIVE' && (
+              (u.fullName && m.fullName && (m.fullName.toLowerCase().includes(u.fullName.toLowerCase()) || u.fullName.toLowerCase().includes(m.fullName.toLowerCase()))) ||
+              (u.phone && m.phone === u.phone) ||
+              (u.username === 'tenant2' && m.fullName?.toLowerCase().includes('cường')) ||
+              (u.username === 'tenant1' && m.fullName?.toLowerCase().includes('an')) ||
+              (u.username === 'tenant_new' && m.fullName?.toLowerCase().includes('nam'))
+            ));
+            if (myMem?.houseCode) {
+              resolvedHouseCode = myMem.houseCode;
+              resolvedHouseName = myMem.house;
+            }
+          }
+        }
+      } catch {}
+
+      if (!resolvedHouseCode) {
+        try {
+          const sContracts = localStorage.getItem('rental_contracts');
+          if (sContracts) {
+            const pContracts = JSON.parse(sContracts);
+            if (Array.isArray(pContracts)) {
+              const myContract = pContracts.find(c => c.status === 'ACTIVE' && (
+                (u.fullName && c.tenantName && (c.tenantName.toLowerCase().includes(u.fullName.toLowerCase()) || u.fullName.toLowerCase().includes(c.tenantName.toLowerCase()))) ||
+                (u.phone && c.tenantPhone === u.phone) ||
+                (u.username === 'tenant2' && c.tenantName?.toLowerCase().includes('cường')) ||
+                (u.username === 'tenant1' && c.tenantName?.toLowerCase().includes('an')) ||
+                (u.username === 'tenant_new' && c.tenantName?.toLowerCase().includes('nam'))
+              ));
+              if (myContract?.houseCode) {
+                resolvedHouseCode = myContract.houseCode;
+                resolvedHouseName = myContract.houseName || myContract.house;
+              }
+            }
+          }
+        } catch {}
+      }
+
+      if (!resolvedHouseCode) {
+        try {
+          const sReq = localStorage.getItem('rental_room_requests');
+          if (sReq) {
+            const pReq = JSON.parse(sReq);
+            if (Array.isArray(pReq)) {
+              const myReq = pReq.find(r => r.status === 'APPROVED' && (
+                (u.fullName && r.tenant && (r.tenant.toLowerCase().includes(u.fullName.toLowerCase()) || u.fullName.toLowerCase().includes(r.tenant.toLowerCase()))) ||
+                (u.phone && r.phone === u.phone) ||
+                (u.username === 'tenant2' && r.tenant?.toLowerCase().includes('cường')) ||
+                (u.username === 'tenant1' && r.tenant?.toLowerCase().includes('an')) ||
+                (u.username === 'tenant_new' && r.tenant?.toLowerCase().includes('nam'))
+              ));
+              if (myReq?.houseCode) {
+                resolvedHouseCode = myReq.houseCode;
+                resolvedHouseName = myReq.house;
+              } else if (myReq?.targetRoom) {
+                try {
+                  const sRooms = localStorage.getItem('rental_rooms');
+                  if (sRooms) {
+                    const pRooms = JSON.parse(sRooms);
+                    const foundR = Array.isArray(pRooms) ? pRooms.find(r => r.number === myReq.targetRoom) : null;
+                    if (foundR?.houseCode) {
+                      resolvedHouseCode = foundR.houseCode;
+                      resolvedHouseName = foundR.house;
+                    }
+                  }
+                } catch {}
+              }
+            }
+          }
+        } catch {}
+      }
+
+      if (!resolvedHouseCode) {
+        try {
+          const sC = localStorage.getItem('rental_contracts');
+          if (sC) {
+            const pC = JSON.parse(sC);
+            if (Array.isArray(pC)) {
+              const myRoom = u.room || (Array.isArray(u.rooms) && u.rooms[0]);
+              const activeRoomContract = pC.find(c => c.status === 'ACTIVE' && myRoom && isSameRoom(c.roomNumber, myRoom));
+              if (activeRoomContract?.houseCode) {
+                resolvedHouseCode = activeRoomContract.houseCode;
+                resolvedHouseName = activeRoomContract.houseName || activeRoomContract.house;
+              }
+            }
+          }
+        } catch {}
+      }
+
+      if (resolvedHouseCode && !resolvedHouseName) {
+        try {
+          const sBH = localStorage.getItem('rental_boarding_houses');
+          if (sBH) {
+            const pBH = JSON.parse(sBH);
+            const foundBH = Array.isArray(pBH) ? pBH.find(h => isSameHouse(h.code, resolvedHouseCode) || h.code === resolvedHouseCode) : null;
+            if (foundBH?.name) resolvedHouseName = foundBH.name;
+          }
+        } catch {}
+      }
+
       if (u.username === 'tenant2' || u.fullName?.includes('Cường')) {
         const defaultRooms = isP101CheckedOut ? [] : ['P.101'];
         const matched = currentRoomsMap.tenant2 !== undefined ? currentRoomsMap.tenant2 : (currentRoomsMap['Phạm Minh Cường'] !== undefined ? currentRoomsMap['Phạm Minh Cường'] : defaultRooms);
@@ -359,8 +479,8 @@ export const AuthProvider = ({ children }) => {
           ...u,
           rooms: roomsList,
           room: hasRooms ? roomsList[0] : null,
-          houseCode: hasRooms ? 'CS-01' : null,
-          houseName: hasRooms ? 'Nhà Trọ Cầu Giấy - Cơ Sở 1' : null
+          houseCode: hasRooms ? (resolvedHouseCode || u.houseCode || null) : null,
+          houseName: hasRooms ? (resolvedHouseName || u.houseName || null) : null
         };
       }
       if (u.username === 'tenant' || u.username === 'tenant1' || u.fullName?.includes('An')) {
@@ -372,8 +492,8 @@ export const AuthProvider = ({ children }) => {
           ...u,
           rooms: roomsList,
           room: hasRooms ? roomsList[0] : null,
-          houseCode: hasRooms ? 'CS-01' : null,
-          houseName: hasRooms ? 'Nhà Trọ Cầu Giấy - Cơ Sở 1' : null
+          houseCode: hasRooms ? (resolvedHouseCode || 'CS-01') : null,
+          houseName: hasRooms ? (resolvedHouseName || 'Nhà Trọ Cầu Giấy - Cơ Sở 1') : null
         };
       }
       if (u.username === 'tenant_new' || u.fullName?.includes('Nam')) {
@@ -553,28 +673,32 @@ export const AuthProvider = ({ children }) => {
     let userHouseName = baseUser.houseName;
 
     if (baseUser.role === 'STAFF') {
-      if (isZeroSandbox) {
+      try {
+        const sHouses = localStorage.getItem('rental_boarding_houses');
+        if (sHouses) {
+          const pHouses = JSON.parse(sHouses);
+          if (Array.isArray(pHouses) && pHouses.length > 0) {
+            const myHouse = pHouses.find(h =>
+              h.createdBy === baseUser.username ||
+              h.managerUsername === baseUser.username ||
+              (baseUser.username === 'staff' && (h.code?.startsWith('S1-') || h.code === 'CS-01')) ||
+              (baseUser.username === 'staff2' && (h.code?.startsWith('S2-') || h.code === 'CS-02'))
+            );
+            if (myHouse) {
+              userHouseCode = myHouse.code;
+              userHouseName = myHouse.name;
+            }
+          } else {
+            userHouseCode = null;
+            userHouseName = null;
+          }
+        } else {
+          userHouseCode = null;
+          userHouseName = null;
+        }
+      } catch {
         userHouseCode = null;
         userHouseName = null;
-      } else {
-        try {
-          const sHouses = localStorage.getItem('rental_boarding_houses');
-          if (sHouses) {
-            const pHouses = JSON.parse(sHouses);
-            if (Array.isArray(pHouses)) {
-              if (pHouses.length === 0) {
-                userHouseCode = null;
-                userHouseName = null;
-              } else {
-                const myHouse = pHouses.find(h => h.createdBy === baseUser.username || h.managerUsername === baseUser.username);
-                if (myHouse) {
-                  userHouseCode = myHouse.code;
-                  userHouseName = myHouse.name;
-                }
-              }
-            }
-          }
-        } catch {}
       }
     } else if (baseUser.role === 'TENANT') {
       const latestRooms = getStoredTenantRooms();
@@ -583,30 +707,71 @@ export const AuthProvider = ({ children }) => {
         : (latestRooms[baseUser.fullName] !== undefined ? latestRooms[baseUser.fullName] : currentRooms);
       currentRooms = normalizeRoomList(val);
 
-      if (currentRooms.length === 0 || isZeroSandbox) {
+      if (currentRooms.length === 0) {
         userHouseCode = null;
         userHouseName = null;
       } else {
-        // Tự động đồng bộ cơ sở thực tế từ roomMembers hoặc contracts của phòng đang thuê
+        // Tự động đồng bộ cơ sở thực tế từ roomMembers hoặc contracts của phòng đang thuê (khớp đúng người dùng)
         let matchedHouse = null;
         try {
           const sM = localStorage.getItem('rental_room_members');
           const pM = sM ? JSON.parse(sM) : [];
-          const mem = pM.find(m => currentRooms.includes(m.roomNumber) && m.status !== 'MOVED_OUT');
+          const mem = pM.find(m => currentRooms.some(r => isSameRoom(r, m.roomNumber)) && m.status !== 'MOVED_OUT' && (
+            (baseUser.fullName && m.fullName && (m.fullName.includes(baseUser.fullName) || baseUser.fullName.includes(m.fullName))) ||
+            (baseUser.phone && m.phone === baseUser.phone) ||
+            (baseUser.username === 'tenant2' && m.fullName?.toLowerCase().includes('cường')) ||
+            (baseUser.username === 'tenant1' && m.fullName?.toLowerCase().includes('an'))
+          ));
           if (mem?.houseCode) {
             matchedHouse = { code: mem.houseCode, name: mem.house };
           } else {
             const sC = localStorage.getItem('rental_contracts');
             const pC = sC ? JSON.parse(sC) : [];
-            const contract = pC.find(c => currentRooms.includes(c.roomNumber) && c.status === 'ACTIVE');
+            const contract = pC.find(c => currentRooms.some(r => isSameRoom(r, c.roomNumber)) && c.status === 'ACTIVE' && (
+              (baseUser.fullName && c.tenantName && (c.tenantName.includes(baseUser.fullName) || baseUser.fullName.includes(c.tenantName))) ||
+              (baseUser.phone && c.tenantPhone === baseUser.phone) ||
+              c.tenantUsername === baseUser.username ||
+              (baseUser.username === 'tenant2' && c.tenantName?.toLowerCase().includes('cường')) ||
+              (baseUser.username === 'tenant1' && c.tenantName?.toLowerCase().includes('an'))
+            ));
             if (contract?.houseCode) {
               matchedHouse = { code: contract.houseCode, name: contract.houseName };
+            } else {
+              const sR = localStorage.getItem('rental_room_requests');
+              const pR = sR ? JSON.parse(sR) : [];
+              const req = pR.find(r => r.status === 'APPROVED' && (r.type === 'ROOMMATE' || r.type === 'JOIN_ROOM') && (
+                (baseUser.fullName && r.tenant && (r.tenant.includes(baseUser.fullName) || baseUser.fullName.includes(r.tenant))) ||
+                (baseUser.phone && r.phone === baseUser.phone) ||
+                (baseUser.username === 'tenant2' && r.tenant?.toLowerCase().includes('cường')) ||
+                (baseUser.username === 'tenant1' && r.tenant?.toLowerCase().includes('an'))
+              ));
+              if (req?.houseCode) {
+                matchedHouse = { code: req.houseCode, name: req.house };
+              }
+            }
+          }
+
+          if (!matchedHouse) {
+            const sC = localStorage.getItem('rental_contracts');
+            const pC = sC ? JSON.parse(sC) : [];
+            const roomContract = Array.isArray(pC) ? pC.find(c => currentRooms.some(r => isSameRoom(r, c.roomNumber)) && c.status === 'ACTIVE') : null;
+            if (roomContract?.houseCode) {
+              matchedHouse = { code: roomContract.houseCode, name: roomContract.houseName || roomContract.house };
+            }
+          }
+
+          if (matchedHouse?.code && !matchedHouse?.name) {
+            const sBH = localStorage.getItem('rental_boarding_houses');
+            if (sBH) {
+              const pBH = JSON.parse(sBH);
+              const foundBH = Array.isArray(pBH) ? pBH.find(h => isSameHouse(h.code, matchedHouse.code) || h.code === matchedHouse.code) : null;
+              if (foundBH?.name) matchedHouse.name = foundBH.name;
             }
           }
         } catch {}
 
         userHouseCode = matchedHouse?.code || baseUser.houseCode || 'CS-01';
-        userHouseName = matchedHouse?.name || baseUser.houseName || 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
+        userHouseName = matchedHouse?.name || (matchedHouse?.code ? matchedHouse.code : (baseUser.houseName || 'Nhà Trọ Cầu Giấy - Cơ Sở 1'));
       }
     }
 

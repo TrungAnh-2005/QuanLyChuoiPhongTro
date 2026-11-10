@@ -23,7 +23,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { useData } from '../../contexts/DataContext';
+import { useData, normalizeHouseCode, isSameHouse, normalizeRoomNumber } from '../../contexts/DataContext';
 import Modal from '../../components/common/Modal';
 import MoveOutSettlementModal from '../../components/settlement/MoveOutSettlementModal';
 import TrialExpiryBanner from '../../components/common/TrialExpiryBanner';
@@ -37,7 +37,7 @@ export const ROOM_IMAGE_PRESETS = [
 
 export function getRoomImage(room) {
   if (room?.image) return room.image;
-  const floor = parseInt(room?.floor?.replace(/\D/g, '') || '1', 10);
+  const floor = parseInt(String(room?.floor || '').replace(/\D/g, '') || '1', 10);
   const amenities = Array.isArray(room?.amenities) ? room.amenities : [];
   if (floor >= 5 || amenities.some(a => typeof a === 'string' && (a.toLowerCase().includes('ban công') || a.toLowerCase().includes('penthouse') || a.toLowerCase().includes('sân phơi')))) {
     return '/assets/images/room_suite_3.jpg';
@@ -52,30 +52,6 @@ export function parseFloorNum(floorVal) {
   if (!floorVal) return 0;
   const match = String(floorVal).match(/\d+/);
   return match ? parseInt(match[0], 10) : 0;
-}
-
-export function normalizeHouseCode(code) {
-  if (!code) return '';
-  const c = String(code).trim().toUpperCase();
-  if (c === 'CS-01' || c === 'CS1') return 'CS-01';
-  if (c === 'CS-02' || c === 'CS2') return 'CS-02';
-  if (c === 'CS-03' || c === 'CS3') return 'CS-03';
-  return c;
-}
-
-export function isSameHouse(codeA, codeB) {
-  if (!codeA || !codeB) return false;
-  return normalizeHouseCode(codeA) === normalizeHouseCode(codeB);
-}
-
-export function normalizeRoomNumber(number) {
-  if (!number) return '';
-  return String(number)
-    .trim()
-    .toLowerCase()
-    .replace(/^phòng\s*/i, '')
-    .replace(/^p[\.\s_-]*/i, '')
-    .trim();
 }
 
 export function isDuplicateRoom(existingRooms, targetNumber, targetHouseCode, excludeRoomId = null) {
@@ -228,37 +204,64 @@ export default function StaffRoomsPage() {
   const landlordPackage = currentLandlord?.packageCode || 'BASIC';
   const maxRoomsAllowed = landlordPackage === 'ENTERPRISE' ? 9999 : landlordPackage === 'PRO' ? 100 : 30;
 
-  // Lọc cơ sở mà Staff có thẩm quyền
+  // Lọc cơ sở mà Staff có thẩm quyền (Cách ly 100% giữa Staff 1 và Staff 2)
   const staffManageableHouses = useMemo(() => {
     if (user?.role === 'ADMIN') return storedBoardingHouses;
     const u = (user?.username || '').toLowerCase();
+
     return storedBoardingHouses.filter((h) => {
+      if (!h) return false;
       const created = (h.createdBy || '').toLowerCase();
       const manager = (h.managerUsername || '').toLowerCase();
+      const code = (h.code || '').toUpperCase();
+
+      // NẾU LÀ STAFF 2 (Đàm Văn Táo): Tuyệt đối KHÔNG thấy CS-01 hay bất kỳ cơ sở nào của Staff 1
+      if (u === 'staff2') {
+        if (created === 'staff' || created === 'staff1' || manager === 'staff' || manager === 'staff1' || code.startsWith('S1-') || code === 'CS-01') {
+          return false;
+        }
+        if (created === 'staff2' || manager === 'staff2' || code.startsWith('S2-')) return true;
+        if (!isZeroSandbox && code === 'CS-02') return true;
+        return false;
+      }
+
+      // NẾU LÀ STAFF 1 (Lê Thị Thu Ngân): Tuyệt đối KHÔNG thấy CS-02 hay bất kỳ cơ sở nào của Staff 2
+      if (u === 'staff' || u === 'staff1') {
+        if (created === 'staff2' || manager === 'staff2' || code.startsWith('S2-') || code === 'CS-02') {
+          return false;
+        }
+        if (created === 'staff' || created === 'staff1' || manager === 'staff' || manager === 'staff1' || code.startsWith('S1-')) return true;
+        if (!isZeroSandbox && (code === 'CS-01' || !h.createdBy)) return true;
+        return false;
+      }
+
       if (created && created === u) return true;
       if (manager && manager === u) return true;
-      if (user?.houseCode && h.code === user.houseCode) return true;
-      if (!isZeroSandbox) {
-        if (u === 'staff' && (h.code === 'CS-01' || !h.createdBy)) return true;
-        if (u === 'staff2' && h.code === 'CS-02') return true;
-      }
+      if (user?.houseCode && isSameHouse(h.code, user.houseCode)) return true;
       return false;
     });
   }, [storedBoardingHouses, user]);
 
   const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
 
-  // Chỉ các cơ sở đã được Admin duyệt / đang hoạt động mới được phép thêm phòng mới
+  // Các cơ sở mà Staff có thể quản lý và thêm phòng (chỉ loại trừ cơ sở bị LOCKED)
   const activeManageableHouses = useMemo(() => {
     return staffManageableHouses.filter(
-      (h) => !h.status || h.status === 'ACTIVE' || h.status === 'APPROVED'
+      (h) => h.status !== 'LOCKED'
     );
   }, [staffManageableHouses]);
 
   const [selectedHouse, setSelectedHouse] = useState(() => {
-    if (rawParam !== 'ALL' && staffHouseCodes.includes(rawParam)) return rawParam;
+    if (rawParam !== 'ALL' && staffHouseCodes.some((c) => isSameHouse(c, rawParam) || c === rawParam)) return rawParam;
     return 'ALL';
   });
+
+  // Tự động giải phóng selectedHouse nếu cơ sở đã chọn không thuộc quyền quản lý của Staff hiện tại
+  useEffect(() => {
+    if (selectedHouse !== 'ALL' && !staffHouseCodes.some((c) => isSameHouse(c, selectedHouse) || c === selectedHouse)) {
+      setSelectedHouse('ALL');
+    }
+  }, [user, staffHouseCodes, selectedHouse]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('ALL');
@@ -335,12 +338,15 @@ export default function StaffRoomsPage() {
   // Lọc phòng thuộc quyền quản lý
   const staffRooms = useMemo(() => {
     if (user?.role === 'ADMIN') return rooms;
-    return rooms.filter((r) => staffHouseCodes.includes(r.houseCode));
+    return rooms.filter((r) =>
+      staffHouseCodes.some((code) => isSameHouse(code, r.houseCode) || code === r.houseCode) ||
+      (staffHouseCodes.some((c) => isSameHouse(c, 'CS-01')) && !r.houseCode)
+    );
   }, [rooms, staffHouseCodes, user?.role]);
 
   const filteredRooms = useMemo(() => {
     return staffRooms.filter((r) => {
-      if (selectedHouse !== 'ALL' && r.houseCode !== selectedHouse) return false;
+      if (selectedHouse !== 'ALL' && !isSameHouse(r.houseCode, selectedHouse) && r.houseCode !== selectedHouse) return false;
       if (filterStatus !== 'ALL' && r.status !== filterStatus) return false;
       if (searchTerm) {
         const q = searchTerm.toLowerCase();
@@ -574,7 +580,7 @@ export default function StaffRoomsPage() {
     const targetHouses =
       selectedHouse === 'ALL'
         ? staffManageableHouses
-        : staffManageableHouses.filter((h) => h.code === selectedHouse);
+        : staffManageableHouses.filter((h) => isSameHouse(h.code, selectedHouse) || h.code === selectedHouse);
 
     targetHouses.forEach((h) => {
       houseMap.set(h.code, {
@@ -588,7 +594,16 @@ export default function StaffRoomsPage() {
 
     filteredRooms.forEach((r) => {
       const code = r.houseCode || 'CS-01';
-      if (!houseMap.has(code)) {
+      let foundEntry = null;
+      for (const [hCode, grp] of houseMap.entries()) {
+        if (isSameHouse(hCode, code) || hCode === code) {
+          foundEntry = grp;
+          break;
+        }
+      }
+      if (foundEntry) {
+        foundEntry.rooms.push(r);
+      } else {
         const matchedHouse = staffManageableHouses.find((h) => isSameHouse(h.code, code));
         const resolvedCode = matchedHouse ? matchedHouse.code : code;
         if (!houseMap.has(resolvedCode)) {
@@ -601,8 +616,6 @@ export default function StaffRoomsPage() {
           });
         }
         houseMap.get(resolvedCode).rooms.push(r);
-      } else {
-        houseMap.get(code).rooms.push(r);
       }
     });
 
@@ -640,11 +653,15 @@ export default function StaffRoomsPage() {
     return result;
   }, [filteredRooms, staffManageableHouses, selectedHouse, searchTerm, filterStatus, getHouseTheme]);
 
-  // Dedup danh sách đơn yêu cầu (tránh hiển thị trùng lặp đơn trả phòng)
+  // Dedup danh sách đơn yêu cầu (tránh hiển thị trùng lặp đơn trả phòng & chỉ hiển thị đơn thuộc cơ sở của Staff)
   const dedupedRoomRequests = useMemo(() => {
     const list = roomRequests || [];
     const seen = new Set();
     return list.filter((r) => {
+      if (user?.role !== 'ADMIN' && staffHouseCodes.length > 0) {
+        const isMyHouse = staffHouseCodes.some((code) => isSameHouse(code, r.houseCode) || code === r.houseCode);
+        if (!isMyHouse) return false;
+      }
       const key = [
         r.type,
         String(r.targetRoom || r.roomNumber || r.currentRoom || '').replace(/^P\.?/i, '').trim().toLowerCase(),
@@ -655,7 +672,7 @@ export default function StaffRoomsPage() {
       seen.add(key);
       return true;
     });
-  }, [roomRequests]);
+  }, [roomRequests, staffHouseCodes, user?.role]);
 
   const sortedDedupedRequests = useMemo(() => {
     return [...dedupedRoomRequests].sort((a, b) => {
@@ -700,8 +717,9 @@ export default function StaffRoomsPage() {
   };
 
   const handleOpenAddModal = () => {
-    // 1. Nếu chưa có cơ sở nào hoặc cơ sở chưa hoạt động: CHUYỂN SANG TRANG CƠ SỞ TRỌ LUÔN
-    if (activeManageableHouses.length === 0 || staffManageableHouses.length === 0) {
+    // 1. Nếu chưa có cơ sở nào
+    if (staffManageableHouses.length === 0) {
+      alert('Bạn chưa có cơ sở/tòa nhà nào! Vui lòng khởi tạo cơ sở nhà trọ trước.');
       navigate('/houses');
       return;
     }
@@ -711,19 +729,22 @@ export default function StaffRoomsPage() {
       return;
     }
 
+    const u = (user?.username || '').toLowerCase();
+    const isStaff2 = u === 'staff2';
+    const availableList = activeManageableHouses.length > 0 ? activeManageableHouses : staffManageableHouses;
     const defaultHouseCode =
-      selectedHouse && selectedHouse !== 'ALL' && activeManageableHouses.some((h) => h.code === selectedHouse)
+      selectedHouse && selectedHouse !== 'ALL' && availableList.some((h) => isSameHouse(h.code, selectedHouse) || h.code === selectedHouse)
         ? selectedHouse
-        : activeManageableHouses[0].code;
+        : (availableList[0]?.code || (isStaff2 ? 'CS-02' : 'CS-01'));
 
     setRoomFormError('');
     setRoomFormData({
-      number: '1',
+      number: '101',
       houseCode: defaultHouseCode,
       floor: 'Tầng 1',
-      price: 3500000,
-      area: 25,
-      maxOccupants: 2,
+      price: isStaff2 ? 2800000 : 3500000,
+      area: isStaff2 ? 20 : 25,
+      maxOccupants: isStaff2 ? 2 : 3,
       status: 'AVAILABLE',
       amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'],
       image: '/assets/images/room_studio_1.jpg'
@@ -742,19 +763,19 @@ export default function StaffRoomsPage() {
     }
 
     // Kiểm tra cơ sở tồn tại và hợp lệ
-    const selectableHouses = editingRoom ? staffManageableHouses : activeManageableHouses;
-    const targetHouse = selectableHouses.find((h) => h.code === roomFormData.houseCode);
+    const selectableHouses = editingRoom ? staffManageableHouses : (activeManageableHouses.length > 0 ? activeManageableHouses : staffManageableHouses);
+    const targetHouse = selectableHouses.find((h) => isSameHouse(h.code, roomFormData.houseCode) || h.code === roomFormData.houseCode);
     if (!targetHouse) {
       setRoomFormError(
         staffManageableHouses.length === 0
           ? 'Bạn chưa tạo cơ sở/tòa nhà nào! Vui lòng khởi tạo cơ sở trước khi tạo phòng.'
-          : 'Vui lòng chọn một cơ sở/tòa nhà đang hoạt động hợp lệ!'
+          : 'Vui lòng chọn một cơ sở/tòa nhà hợp lệ!'
       );
       return;
     }
 
     // Kiểm tra số tầng hợp lệ theo quy mô của cơ sở
-    const floorNum = parseFloorNum(roomFormData.floor);
+    const floorNum = parseFloorNum(roomFormData.floor) || 1;
     const maxFloors = Number(targetHouse.floors || targetHouse.totalFloors || 30);
     if (!floorNum || floorNum < 1 || floorNum > maxFloors) {
       setRoomFormError(
@@ -763,13 +784,10 @@ export default function StaffRoomsPage() {
       return;
     }
 
-    // Kiểm tra quy tắc bắt buộc: Khi chọn Tầng X thì số phòng phải bắt đầu bằng X và có dạng Xxx (ví dụ Tầng 5 -> 501, 502)
+    // Lấy số phòng chuẩn hóa
     const onlyDigits = rawNumber.replace(/^P\.?/i, '').trim();
-    const expectedFloorPrefixRegex = new RegExp(`^${floorNum}\\d{2}$`);
-    if (!expectedFloorPrefixRegex.test(onlyDigits)) {
-      setRoomFormError(
-        `Bạn đang chọn Tầng ${floorNum}, số phòng bắt buộc phải bắt đầu bằng số ${floorNum} theo định dạng ${floorNum}xx (ví dụ: ${floorNum}01, ${floorNum}02)!`
-      );
+    if (!onlyDigits) {
+      setRoomFormError('Vui lòng nhập số phòng hợp lệ (ví dụ: 101, 102)!');
       return;
     }
 
@@ -823,7 +841,13 @@ export default function StaffRoomsPage() {
         id: `room-${Date.now()}`,
         occupants: 0
       };
-      if (addRoom) addRoom(newRoomObj);
+      if (addRoom) {
+        const res = addRoom(newRoomObj);
+        if (res && res.success === false) {
+          setRoomFormError(res.message);
+          return;
+        }
+      }
       setShowAddModal(false);
       setActionToast(`Đã thêm mới phòng ${formattedRoomNumber} vào cơ sở ${targetHouse.name}!`);
     }
@@ -967,8 +991,8 @@ export default function StaffRoomsPage() {
 
         {staffManageableHouses.map((h) => {
           const theme = getHouseTheme(h.code);
-          const count = rooms.filter((r) => r.houseCode === h.code).length;
-          const isSelected = selectedHouse === h.code;
+          const count = rooms.filter((r) => isSameHouse(r.houseCode, h.code) || r.houseCode === h.code).length;
+          const isSelected = selectedHouse === h.code || isSameHouse(selectedHouse, h.code);
           return (
             <button
               key={h.code}
@@ -1583,6 +1607,11 @@ export default function StaffRoomsPage() {
                               ✨ Đơn Vừa Chọn
                             </span>
                           )}
+                          {req.isDeadlockBypass && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-rose-600 text-white shadow-2xs">
+                              ⚡ Deadlock-Breaker
+                            </span>
+                          )}
                         </div>
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                           req.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' :
@@ -1638,8 +1667,8 @@ export default function StaffRoomsPage() {
                       </div>
                     )}
 
-                    {/* Có thể phê duyệt khi PENDING hoặc ROOMMATES_APPROVED */}
-                    {(req.status === 'PENDING' || req.status === 'ROOMMATES_APPROVED') && (
+                    {/* Có thể phê duyệt: với đơn ROOMMATE/JOIN_ROOM BẮT BUỘC phải là ROOMMATES_APPROVED (đã đạt 100% cư dân duyệt), không cho duyệt khi đang WAITING_ROOMMATES hoặc PENDING */}
+                    {((req.type === 'ROOMMATE' || req.type === 'JOIN_ROOM') ? req.status === 'ROOMMATES_APPROVED' : (req.status === 'PENDING' || req.status === 'ROOMMATES_APPROVED')) && (
                       <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200 flex-wrap">
                         {req.status === 'ROOMMATES_APPROVED' && (
                           <span className="text-[11px] font-bold text-emerald-700 flex items-center gap-1">

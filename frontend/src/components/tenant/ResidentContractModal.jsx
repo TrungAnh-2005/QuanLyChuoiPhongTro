@@ -341,10 +341,18 @@ export default function ResidentContractModal({
               </div>
             </div>
 
-            <div className="flex justify-center gap-3">
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button
+                onClick={onClose}
+                className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-emerald-600/30 transition flex items-center gap-2 cursor-pointer btn-press btn-shimmer"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>🚀 Vào Giao Diện Thuê Phòng Ngay</span>
+              </button>
+
               <button
                 onClick={handleDownloadPdf}
-                className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer btn-press"
+                className="px-4 py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs rounded-xl border border-purple-200 transition flex items-center gap-2 cursor-pointer btn-press"
               >
                 <Download className="w-4 h-4" />
                 <span>Tải File PDF (Bản Có Chữ Ký Số)</span>
@@ -352,7 +360,7 @@ export default function ResidentContractModal({
 
               <button
                 onClick={onClose}
-                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
               >
                 Đóng Cửa Sổ
               </button>

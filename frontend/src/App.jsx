@@ -64,6 +64,11 @@ class ErrorBoundary extends React.Component {
             <p className="text-xs text-slate-500 leading-relaxed">
               Hệ thống đã tự động bảo vệ phiên làm việc của bạn. Bạn có thể thử tải lại trang hoặc khôi phục dữ liệu ban đầu.
             </p>
+            {this.state.error?.message && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-mono text-left rounded-xl overflow-x-auto max-h-32">
+                {this.state.error.message}
+              </div>
+            )}
             <div className="flex gap-2 justify-center pt-2">
               <button
                 onClick={() => window.location.reload()}

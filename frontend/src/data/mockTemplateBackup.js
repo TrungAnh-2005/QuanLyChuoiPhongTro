@@ -19,7 +19,7 @@ export const BACKUP_ALL_ROOMS = [
   { id: 112, number: 'P.403', houseCode: 'CS-01', house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', floor: 'Tầng 4', price: 3800000, area: 28, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh', 'Ban công'] },
 
   // CS-02: Nhà Trọ Bách Khoa (8 phòng)
-  { id: 201, number: 'P.101', houseCode: 'CS-02', house: 'Nhà Trọ Bách Khoa - Cơ Sở 2', floor: 'Tầng 1', price: 2800000, area: 20, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Nóng lạnh', 'Gần ĐH Bách Khoa'] },
+  { id: 201, number: 'P.101', houseCode: 'CS-02', house: 'Nhà Trọ Bách Khoa - Cơ Sở 2', floor: 'Tầng 1', price: 2800000, area: 20, occupants: 1, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Nóng lạnh', 'Gần ĐH Bách Khoa'] },
   { id: 202, number: 'P.102', houseCode: 'CS-02', house: 'Nhà Trọ Bách Khoa - Cơ Sở 2', floor: 'Tầng 1', price: 3000000, area: 22, occupants: 0, maxOccupants: 2, status: 'AVAILABLE', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
   { id: 203, number: 'P.201', houseCode: 'CS-02', house: 'Nhà Trọ Bách Khoa - Cơ Sở 2', floor: 'Tầng 2', price: 3200000, area: 24, occupants: 2, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
   { id: 204, number: 'P.202', houseCode: 'CS-02', house: 'Nhà Trọ Bách Khoa - Cơ Sở 2', floor: 'Tầng 2', price: 3200000, area: 24, occupants: 1, maxOccupants: 2, status: 'OCCUPIED', amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'] },
@@ -87,7 +87,7 @@ export const BACKUP_BOARDING_HOUSES = [
 export const BACKUP_INVOICES = [
   { id: 1, code: 'HD-202609-01', room: 'P.101', house: 'Cơ Sở 1 - Cầu Giấy', tenant: 'Nguyễn Văn An', roomFee: 2000, elec: 0, water: 0, service: 0, total: 2000, status: 'UNPAID', paidAt: null },
   { id: 2, code: 'HD-202609-02', room: 'P.102', house: 'Cơ Sở 1 - Cầu Giấy', tenant: 'Trần Thị Bình', roomFee: 3800000, elec: 266000, water: 175000, service: 100000, total: 4341000, status: 'UNPAID', paidAt: null },
-  { id: 3, code: 'HD-202609-03', room: 'P.101', house: 'Cơ Sở 1 - Cầu Giấy', tenant: 'Phạm Minh Cường', roomFee: 3200000, elec: 294000, water: 200000, service: 100000, total: 3794000, status: 'PAID', paidAt: '07/09/2026' },
+  { id: 3, code: 'HD-202609-03', room: 'P.101', house: 'Nhà Trọ Bách Khoa - Cơ Sở 2', tenant: 'Phạm Minh Cường', roomFee: 3200000, elec: 294000, water: 200000, service: 100000, total: 3794000, status: 'PAID', paidAt: '07/09/2026' },
   { id: 4, code: 'HD-202609-04', room: 'P.201', house: 'Cơ Sở 1 - Cầu Giấy', tenant: 'Vũ Hoàng Dũng', roomFee: 3600000, elec: 0, water: 0, service: 100000, total: 3700000, status: 'PENDING_METER', paidAt: null },
   { id: 6, code: 'HD-202609-06', room: 'P.101', house: 'Cơ Sở 3 - Đống Đa', tenant: 'Trịnh Thanh Tùng', roomFee: 4200000, elec: 350000, water: 200000, service: 120000, total: 4870000, status: 'UNPAID', paidAt: null }
 ];
@@ -97,7 +97,7 @@ export const BACKUP_TICKETS = [
   { id: 2, room: 'P.202', houseCode: 'CS-02', category: 'ELECTRICITY', issue: 'Điều hòa không lạnh, có tiếng kêu to', tenant: 'Vũ Hoàng Dũng', date: '21/09/2026', priority: 'HIGH', status: 'PENDING' },
   { id: 3, room: 'P.301', houseCode: 'CS-01', category: 'ELECTRICITY', issue: 'Bóng đèn tuýp ban công bị cháy', tenant: 'Đỗ Thị Mai', date: '18/09/2026', priority: 'LOW', status: 'RESOLVED' },
   { id: 4, room: 'P.101', houseCode: 'CS-01', category: 'FURNITURE', issue: 'Cửa sổ ban công bị kẹt khóa', tenant: 'Nguyễn Văn An', date: '15/09/2026', priority: 'MEDIUM', status: 'RESOLVED' },
-  { id: 5, room: 'P.101', houseCode: 'CS-01', category: 'WATER', issue: 'Áp lực nước vòi sen yếu vào giờ cao điểm', tenant: 'Phạm Minh Cường', date: '22/09/2026', priority: 'LOW', status: 'IN_PROGRESS' }
+  { id: 5, room: 'P.101', houseCode: 'CS-02', category: 'WATER', issue: 'Áp lực nước vòi sen yếu vào giờ cao điểm', tenant: 'Phạm Minh Cường', date: '22/09/2026', priority: 'LOW', status: 'IN_PROGRESS' }
 ];
 
 export const BACKUP_TENANTS = [
@@ -161,11 +161,11 @@ export const BACKUP_TENANTS = [
     hometown: 'Hải Phòng',
     room: 'P.101',
     rooms: ['P.101'],
-    houseCode: 'CS-01',
-    house: 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
+    houseCode: 'CS-02',
+    house: 'Nhà Trọ Bách Khoa - Cơ Sở 2',
     contractStart: '01/01/2026',
     contractEnd: '31/12/2026',
-    deposit: 3500000,
+    deposit: 2800000,
     status: 'ACTIVE',
     daysSinceLeave: 0
   },
@@ -306,16 +306,16 @@ export const BACKUP_ROOM_MEMBERS = [
   },
   {
     id: 2,
-    roomId: 101,
+    roomId: 201,
     roomNumber: 'P.101',
-    houseCode: 'CS-01',
+    houseCode: 'CS-02',
     tenantId: 2,
     fullName: 'Phạm Minh Cường',
     phone: '0912.888.999',
     cccd: '034203034567',
     maskedCccd: '03420303****',
     hometown: 'Hải Phòng',
-    roleInRoom: 'MEMBER',
+    roleInRoom: 'REPRESENTATIVE',
     joinDate: '01/01/2026',
     temporaryResidenceStatus: 'REGISTERED',
     status: 'ACTIVE'
@@ -413,6 +413,29 @@ export const BACKUP_CONTRACTS = [
     depositPaymentMethod: 'VIETQR',
     signedElectronically: true,
     signedAt: '10/03/2026 14:00'
+  },
+  {
+    id: 3,
+    contractCode: 'HD-2026-201',
+    roomNumber: 'P.101',
+    houseCode: 'CS-02',
+    houseName: 'Nhà Trọ Bách Khoa - Cơ Sở 2',
+    tenantName: 'Phạm Minh Cường',
+    tenantPhone: '0912.888.999',
+    tenantUsername: 'tenant2',
+    startDate: '01/01/2026',
+    endDate: '31/12/2026',
+    rentalPrice: 2800000,
+    depositAmount: 2800000,
+    paymentCycle: 1,
+    paymentDay: 5,
+    terms: 'Bên thuê có trách nhiệm thanh toán tiền nhà đúng hạn từ ngày 01 đến ngày 05 hàng tháng. Giữ gìn an ninh trật tự, tiết kiệm điện nước và tuân thủ tuyệt đối quy định PCCC.',
+    status: 'ACTIVE',
+    depositPaid: true,
+    depositPaidAt: '01/01/2026 09:30',
+    depositPaymentMethod: 'VIETQR',
+    signedElectronically: true,
+    signedAt: '01/01/2026 09:30'
   }
 ];
 
