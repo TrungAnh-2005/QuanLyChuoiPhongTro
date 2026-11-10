@@ -880,20 +880,22 @@ export default function UserDashboard() {
       }
     }
 
-    // 3.1 Đảm bảo Cường có mặt trong danh sách cư dân nếu có đơn ở ghép được duyệt cho phòng này
-    const isCuongInThisRoom = Boolean(
-      (roomRequests || []).some(r =>
-        r.status === 'APPROVED' &&
-        (r.type === 'ROOMMATE' || r.type === 'JOIN_ROOM') &&
-        isSameRoom(r.targetRoom || r.roomNumber, myRoomNumber) &&
-        (!r.houseCode || isSameHouse(r.houseCode, targetHouse)) &&
-        (r.tenant || '').toLowerCase().includes('cường')
-      ) ||
-      (tenantRooms?.tenant2 && Array.isArray(tenantRooms.tenant2) && tenantRooms.tenant2.some(r => isSameRoom(r, myRoomNumber))) ||
-      (tenantRooms?.['Phạm Minh Cường'] && Array.isArray(tenantRooms['Phạm Minh Cường']) && tenantRooms['Phạm Minh Cường'].some(r => isSameRoom(r, myRoomNumber)))
+    // 3.1 Đảm bảo Cường có mặt trong danh sách cư dân nếu có đơn ở ghép được duyệt cho phòng này tại cơ sở này
+    const cuongHasOtherHouseContract = (contracts || []).some((c) =>
+      c.status === 'ACTIVE' &&
+      (c.tenantUsername === 'tenant2' || (c.tenantName || '').toLowerCase().includes('cường')) &&
+      c.houseCode && !isSameHouse(c.houseCode, targetHouse)
     );
 
-    if (isCuongInThisRoom && !hasLeftRoom('Phạm Minh Cường', '0912.888.999')) {
+    const isCuongApprovedInThisRoom = (roomRequests || []).some(r =>
+      r.status === 'APPROVED' &&
+      (r.type === 'ROOMMATE' || r.type === 'JOIN_ROOM') &&
+      isSameRoom(r.targetRoom || r.roomNumber, myRoomNumber) &&
+      (!r.houseCode || isSameHouse(r.houseCode, targetHouse)) &&
+      (r.tenant || '').toLowerCase().includes('cường')
+    );
+
+    if (!cuongHasOtherHouseContract && isCuongApprovedInThisRoom && !hasLeftRoom('Phạm Minh Cường', '0912.888.999')) {
       const hasCuong = mems.some(m => (m.fullName || '').toLowerCase().includes('cường'));
       if (!hasCuong) {
         mems.push({
