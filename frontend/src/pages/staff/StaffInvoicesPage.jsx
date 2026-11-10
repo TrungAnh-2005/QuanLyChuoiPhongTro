@@ -33,6 +33,8 @@ export default function StaffInvoicesPage({ forcedTab }) {
   const {
     invoices = [],
     payInvoice,
+    payDepositInvoice,
+    contracts = [],
     saasInvoices = [],
     createSaasInvoice,
     paySaasInvoice,
@@ -52,6 +54,7 @@ export default function StaffInvoicesPage({ forcedTab }) {
   const [showBuyPackageModal, setShowBuyPackageModal] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
 
+  const [tenantInvoiceType, setTenantInvoiceType] = useState('ALL'); // 'ALL' | 'MONTHLY' | 'DEPOSIT'
   const [filter, setFilter] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFacility, setSelectedFacility] = useState('ALL');
@@ -219,40 +222,110 @@ export default function StaffInvoicesPage({ forcedTab }) {
     }, 1200);
   };
 
-  const handleManualConfirmPay = (invoiceId) => {
-    payInvoice(invoiceId, 'CASH');
-    setBatchSentToast({
-      success: true,
-      message: 'Đã xác nhận thu tiền mặt và gạch nợ hóa đơn thành công!'
-    });
+  const handleManualConfirmPay = (inv) => {
+    const invId = inv?.id || inv?.code || inv;
+    if (inv?.invoiceType === 'DEPOSIT') {
+      payDepositInvoice(inv.contractId || inv.contractCode || invId, 'CASH');
+      setBatchSentToast({
+        success: true,
+        message: `Đã xác nhận thu tiền mặt phiếu cọc ${inv.code || invId} (${Number(inv.total).toLocaleString('vi-VN')} đ) thành công!`
+      });
+    } else {
+      payInvoice(invId, 'CASH');
+      setBatchSentToast({
+        success: true,
+        message: 'Đã xác nhận thu tiền mặt và gạch nợ hóa đơn thành công!'
+      });
+    }
     setTimeout(() => setBatchSentToast(null), 3000);
   };
 
-  // Lọc hóa đơn phòng của khách
-  const displayedTenantInvoices = useMemo(() => {
+  // Tổng hợp hóa đơn tháng + hóa đơn cọc của các cơ sở Staff phụ trách
+  const combinedStaffInvoices = useMemo(() => {
     if (user?.role !== 'ADMIN' && staffHouseCodes.length === 0) {
       return [];
     }
-    return (invoices || []).filter((inv) => {
+
+    const list = (invoices || [])
+      .filter((inv) => {
+        if (user?.role !== 'ADMIN' && staffHouseCodes.length > 0) {
+          const matchesHouse =
+            (inv.houseCode && staffHouseCodes.includes(inv.houseCode)) ||
+            (inv.house && staffHouseCodes.some((code) => inv.house.includes(code))) ||
+            (!inv.houseCode && !inv.house && staffHouseCodes.includes('CS-01'));
+          if (!matchesHouse) return false;
+        }
+        if (selectedFacility !== 'ALL') {
+          const matchesSelected =
+            inv.houseCode === selectedFacility ||
+            (inv.house && inv.house.includes(selectedFacility));
+          if (!matchesSelected) return false;
+        }
+        return true;
+      })
+      .map((inv) => ({
+        ...inv,
+        invoiceType: 'MONTHLY'
+      }));
+
+    // Bổ sung Hóa đơn cọc từ contracts
+    (contracts || []).forEach((c) => {
       if (user?.role !== 'ADMIN' && staffHouseCodes.length > 0) {
         const matchesHouse =
-          (inv.houseCode && staffHouseCodes.includes(inv.houseCode)) ||
-          (inv.house && staffHouseCodes.some((code) => inv.house.includes(code))) ||
-          (!inv.houseCode && !inv.house && staffHouseCodes.includes('CS-01'));
-        if (!matchesHouse) return false;
+          (c.houseCode && staffHouseCodes.includes(c.houseCode)) ||
+          (c.houseName && staffHouseCodes.some((code) => c.houseName.includes(code))) ||
+          (!c.houseCode && !c.houseName && staffHouseCodes.includes('CS-01'));
+        if (!matchesHouse) return;
       }
       if (selectedFacility !== 'ALL') {
         const matchesSelected =
-          inv.houseCode === selectedFacility ||
-          (inv.house && inv.house.includes(selectedFacility));
-        if (!matchesSelected) return false;
+          c.houseCode === selectedFacility ||
+          (c.houseName && c.houseName.includes(selectedFacility));
+        if (!matchesSelected) return;
       }
-      return true;
+
+      const depCode = c.depositInvoiceCode || `HD-COC-${String(c.roomNumber || 'P101').replace(/^P\.?/i, '')}`;
+      const isPaid = !!c.depositPaid;
+      list.push({
+        id: `deposit-${c.id || c.contractCode}`,
+        code: depCode,
+        room: c.roomNumber || 'P.101',
+        house: c.houseName || 'Cơ sở quản lý',
+        houseCode: c.houseCode,
+        tenant: c.tenantName || 'Khách thuê',
+        phone: c.tenantPhone,
+        month: 'Ký quỹ HĐ',
+        roomFee: 0,
+        electricFee: 0,
+        elec: 0,
+        waterFee: 0,
+        water: 0,
+        serviceFee: 0,
+        service: 0,
+        depositAmount: c.depositAmount || c.deposit || 3500000,
+        total: c.depositAmount || c.deposit || 3500000,
+        status: isPaid ? 'PAID' : 'UNPAID',
+        paidAt: c.depositPaidAt || (isPaid ? 'Đã thu khi ký HĐ' : null),
+        paidMethod: c.depositPaymentMethod || 'VIETQR',
+        invoiceType: 'DEPOSIT',
+        contractCode: c.contractCode,
+        contractId: c.id
+      });
     });
-  }, [invoices, staffHouseCodes, selectedFacility, user?.role]);
+
+    return list;
+  }, [invoices, contracts, staffHouseCodes, selectedFacility, user?.role]);
+
+  // Lọc hóa đơn phòng của khách
+  const displayedTenantInvoices = useMemo(() => {
+    return combinedStaffInvoices;
+  }, [combinedStaffInvoices]);
 
   const filteredTenantInvoices = useMemo(() => {
     return displayedTenantInvoices.filter((inv) => {
+      if (tenantInvoiceType === 'MONTHLY' && inv.invoiceType !== 'MONTHLY') return false;
+      if (tenantInvoiceType === 'DEPOSIT' && inv.invoiceType !== 'DEPOSIT') return false;
+
       if (filter === 'UNPAID' && inv.status !== 'UNPAID' && inv.status !== 'OVERDUE') return false;
       if (filter === 'PAID' && inv.status !== 'PAID') return false;
       if (filter === 'UNSENT' && inv.status !== 'PENDING_METER') return false;
@@ -262,13 +335,13 @@ export default function StaffInvoicesPage({ forcedTab }) {
         return (
           (inv.room && inv.room.toLowerCase().includes(q)) ||
           (inv.tenant && inv.tenant.toLowerCase().includes(q)) ||
-          (inv.id && inv.id.toLowerCase().includes(q)) ||
-          (inv.code && inv.code.toLowerCase().includes(q))
+          (inv.id && String(inv.id).toLowerCase().includes(q)) ||
+          (inv.code && String(inv.code).toLowerCase().includes(q))
         );
       }
       return true;
     });
-  }, [displayedTenantInvoices, filter, searchTerm]);
+  }, [displayedTenantInvoices, tenantInvoiceType, filter, searchTerm]);
 
   return (
     <div className="space-y-6">
@@ -565,6 +638,43 @@ export default function StaffInvoicesPage({ forcedTab }) {
 
           {/* Filter Bar & Search */}
           <div className="bento-card overflow-hidden">
+            {/* Phân loại loại chứng từ thu tiền: Hàng tháng / Tiền cọc */}
+            <div className="px-4 py-3 bg-slate-100/70 border-b border-slate-200/80 flex items-center gap-2 overflow-x-auto">
+              <button
+                onClick={() => setTenantInvoiceType('ALL')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                  tenantInvoiceType === 'ALL'
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+                }`}
+              >
+                <Receipt className="w-3.5 h-3.5" />
+                <span>Tất Cả Khoản Thu ({displayedTenantInvoices.length})</span>
+              </button>
+              <button
+                onClick={() => setTenantInvoiceType('MONTHLY')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                  tenantInvoiceType === 'MONTHLY'
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Cước Hàng Tháng ({displayedTenantInvoices.filter(i => i.invoiceType === 'MONTHLY').length})</span>
+              </button>
+              <button
+                onClick={() => setTenantInvoiceType('DEPOSIT')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                  tenantInvoiceType === 'DEPOSIT'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+                }`}
+              >
+                <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Hóa Đơn / Phiếu Thu Cọc ({displayedTenantInvoices.filter(i => i.invoiceType === 'DEPOSIT').length})</span>
+              </button>
+            </div>
+
             <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50/50">
               <div className="relative w-full sm:w-80">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -606,9 +716,8 @@ export default function StaffInvoicesPage({ forcedTab }) {
                 <thead className="bg-slate-50/90 text-slate-500 uppercase font-black tracking-wider text-[11px] border-b border-slate-100">
                   <tr>
                     <th className="py-3.5 px-5">Phòng & Khách Thuê</th>
-                    <th className="py-3.5 px-4">Tiền Phòng</th>
-                    <th className="py-3.5 px-4">Điện + Nước</th>
-                    <th className="py-3.5 px-4">Phí Dịch Vụ</th>
+                    <th className="py-3.5 px-4">Loại Chứng Từ</th>
+                    <th className="py-3.5 px-4">Khoản Mục Chi Tiết</th>
                     <th className="py-3.5 px-4">Tổng Cộng</th>
                     <th className="py-3.5 px-4">Trạng Thái</th>
                     <th className="py-3.5 px-5 text-right">Thao Tác</th>
@@ -617,37 +726,55 @@ export default function StaffInvoicesPage({ forcedTab }) {
                 <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                   {filteredTenantInvoices.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-12 text-center text-slate-400">
-                        Chưa có hóa đơn phù hợp với bộ lọc
+                      <td colSpan={6} className="py-12 text-center text-slate-400">
+                        Chưa có chứng từ phù hợp với bộ lọc
                       </td>
                     </tr>
                   ) : (
                     filteredTenantInvoices.map((inv) => (
-                      <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors">
+                      <tr key={inv.id} className={`hover:bg-slate-50/80 transition-colors ${inv.invoiceType === 'DEPOSIT' ? 'bg-emerald-50/20' : ''}`}>
                         <td className="py-4 px-5">
-                          <div className="font-bold text-slate-900 text-sm">{inv.room}</div>
-                          <div className="text-slate-500 text-[11px]">{inv.tenant}</div>
+                          <div className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                            <span>{inv.room}</span>
+                            {inv.invoiceType === 'DEPOSIT' && (
+                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded">
+                                Tiền Cọc
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-slate-600 text-[11px]">{inv.tenant}</div>
                           <div className="text-slate-400 font-mono text-[10px]">{inv.code || inv.id}</div>
                         </td>
 
-                        <td className="py-4 px-4 font-semibold text-slate-800">
-                          {(inv.roomFee || inv.rent || 0).toLocaleString('vi-VN')} đ
-                        </td>
-
-                        <td className="py-4 px-4 font-semibold text-slate-800">
-                          {inv.status === 'PENDING_METER' ? (
-                            <span className="text-amber-600 font-bold">Chờ chốt số</span>
+                        <td className="py-4 px-4">
+                          {inv.invoiceType === 'DEPOSIT' ? (
+                            <span className="inline-flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[11px]">
+                              <span>Ký Quỹ HĐ</span>
+                            </span>
                           ) : (
-                            `${((inv.electricFee || inv.elec || 0) + (inv.waterFee || inv.water || 0)).toLocaleString('vi-VN')} đ`
+                            <span className="text-slate-600 font-medium text-[11px]">
+                              Kỳ {inv.month || 'Tháng 09/2026'}
+                            </span>
                           )}
                         </td>
 
                         <td className="py-4 px-4 text-slate-600">
-                          {(inv.serviceFee || inv.service || 0).toLocaleString('vi-VN')} đ
+                          {inv.invoiceType === 'DEPOSIT' ? (
+                            <span className="text-slate-700 font-medium">Bảo lãnh HĐ (Hoàn trả khi thanh lý phòng)</span>
+                          ) : inv.status === 'PENDING_METER' ? (
+                            <span className="text-amber-600 font-bold">Chờ chốt số điện nước</span>
+                          ) : (
+                            <div className="space-y-0.5 text-[11px]">
+                              <div>Phòng: <strong>{(inv.roomFee || inv.rent || 0).toLocaleString('vi-VN')} đ</strong></div>
+                              <div>Điện nước: <strong>{((inv.electricFee || inv.elec || 0) + (inv.waterFee || inv.water || 0)).toLocaleString('vi-VN')} đ</strong></div>
+                            </div>
+                          )}
                         </td>
 
-                        <td className="py-4 px-4 font-black text-slate-900 text-sm">
-                          {(inv.total || 0).toLocaleString('vi-VN')} đ
+                        <td className="py-4 px-4 font-black text-sm">
+                          <span className={inv.invoiceType === 'DEPOSIT' ? 'text-emerald-700' : 'text-slate-900'}>
+                            {(inv.total || 0).toLocaleString('vi-VN')} đ
+                          </span>
                         </td>
 
                         <td className="py-4 px-4">
@@ -673,7 +800,7 @@ export default function StaffInvoicesPage({ forcedTab }) {
                           {inv.status !== 'PAID' && inv.status !== 'PENDING_METER' && (
                             <button
                               type="button"
-                              onClick={() => handleManualConfirmPay(inv.id)}
+                              onClick={() => handleManualConfirmPay(inv)}
                               className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition shadow-xs cursor-pointer"
                               title="Thu tiền mặt trực tiếp từ khách thuê"
                             >
@@ -706,7 +833,9 @@ export default function StaffInvoicesPage({ forcedTab }) {
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Receipt className="w-5 h-5 text-purple-600" />
-                <h3 className="font-bold text-slate-900 text-sm">Phiếu Thu Tiền Phòng Trọ</h3>
+                <h3 className="font-bold text-slate-900 text-sm">
+                  {selectedInvoice.invoiceType === 'DEPOSIT' ? 'Phiếu Thu Tiền Cọc Ký Quỹ' : 'Phiếu Thu Tiền Phòng Trọ'}
+                </h3>
               </div>
               <button onClick={() => setSelectedInvoice(null)} className="p-1 text-slate-400 hover:text-slate-700">
                 <X className="w-4 h-4" />
@@ -715,7 +844,7 @@ export default function StaffInvoicesPage({ forcedTab }) {
 
             <div className="space-y-2">
               <div className="flex justify-between">
-                <span className="text-slate-500">Mã hóa đơn:</span>
+                <span className="text-slate-500">Mã hóa đơn / Phiếu thu:</span>
                 <span className="font-mono font-bold text-purple-700">{selectedInvoice.code || selectedInvoice.id}</span>
               </div>
               <div className="flex justify-between">
@@ -726,23 +855,48 @@ export default function StaffInvoicesPage({ forcedTab }) {
                 <span className="text-slate-500">Khách thuê:</span>
                 <span className="font-bold text-slate-800">{selectedInvoice.tenant}</span>
               </div>
-              <div className="border-t border-slate-100 pt-2 space-y-1 text-slate-600">
-                <div className="flex justify-between">
-                  <span>Tiền thuê phòng:</span>
-                  <span>{(selectedInvoice.roomFee || selectedInvoice.rent || 0).toLocaleString('vi-VN')} đ</span>
+
+              {selectedInvoice.invoiceType === 'DEPOSIT' ? (
+                <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-100 text-slate-700 space-y-1">
+                  <div className="flex justify-between">
+                    <span>Khoản mục:</span>
+                    <strong className="text-emerald-800">Tiền cọc giữ chỗ & bảo lãnh HĐ</strong>
+                  </div>
+                  {selectedInvoice.contractCode && (
+                    <div className="flex justify-between">
+                      <span>Theo hợp đồng:</span>
+                      <strong>{selectedInvoice.contractCode}</strong>
+                    </div>
+                  )}
+                  {selectedInvoice.paidAt && (
+                    <div className="flex justify-between">
+                      <span>Thời điểm nộp:</span>
+                      <strong className="text-emerald-700">{selectedInvoice.paidAt}</strong>
+                    </div>
+                  )}
                 </div>
-                <div className="flex justify-between">
-                  <span>Điện & Nước:</span>
-                  <span>{((selectedInvoice.electricFee || selectedInvoice.elec || 0) + (selectedInvoice.waterFee || selectedInvoice.water || 0)).toLocaleString('vi-VN')} đ</span>
+              ) : (
+                <div className="border-t border-slate-100 pt-2 space-y-1 text-slate-600">
+                  <div className="flex justify-between">
+                    <span>Tiền thuê phòng:</span>
+                    <span>{(selectedInvoice.roomFee || selectedInvoice.rent || 0).toLocaleString('vi-VN')} đ</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Điện & Nước:</span>
+                    <span>{((selectedInvoice.electricFee || selectedInvoice.elec || 0) + (selectedInvoice.waterFee || selectedInvoice.water || 0)).toLocaleString('vi-VN')} đ</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Phí dịch vụ:</span>
+                    <span>{(selectedInvoice.serviceFee || selectedInvoice.service || 0).toLocaleString('vi-VN')} đ</span>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span>Phí dịch vụ:</span>
-                  <span>{(selectedInvoice.serviceFee || selectedInvoice.service || 0).toLocaleString('vi-VN')} đ</span>
-                </div>
-              </div>
+              )}
+
               <div className="flex justify-between py-2 border-t border-b border-slate-200 font-bold text-sm text-slate-900">
                 <span>TỔNG TIỀN:</span>
-                <span className="text-purple-700">{(selectedInvoice.total || 0).toLocaleString('vi-VN')} đ</span>
+                <span className={selectedInvoice.invoiceType === 'DEPOSIT' ? 'text-emerald-700' : 'text-purple-700'}>
+                  {(selectedInvoice.total || 0).toLocaleString('vi-VN')} đ
+                </span>
               </div>
             </div>
 

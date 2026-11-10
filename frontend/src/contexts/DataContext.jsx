@@ -5492,6 +5492,51 @@ export const DataProvider = ({ children }) => {
     return { success: true };
   };
 
+  // 5C. Thu tiền cọc cho Hợp đồng / Xác nhận thu cọc qua Hóa đơn
+  const payDepositInvoice = (contractIdOrCode, paymentMethod = 'VIETQR', payerName = null) => {
+    const nowStr = new Date().toLocaleString('vi-VN');
+    const actualPayer = payerName || auth?.user?.fullName || 'Khách thuê';
+
+    let affectedContract = null;
+    setContracts((prev) => {
+      const updated = prev.map((c) => {
+        const isMatch =
+          c.id === contractIdOrCode ||
+          String(c.id) === String(contractIdOrCode) ||
+          c.contractCode === contractIdOrCode ||
+          (c.depositInvoiceCode && c.depositInvoiceCode === contractIdOrCode);
+        if (!isMatch) return c;
+        affectedContract = { ...c };
+        return {
+          ...c,
+          depositPaid: true,
+          depositPaidAt: nowStr,
+          depositPaymentMethod: paymentMethod,
+          depositPaidBy: actualPayer
+        };
+      });
+      try {
+        localStorage.setItem('rental_contracts', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    if (affectedContract?.roomNumber) {
+      const cRoom = affectedContract.roomNumber;
+      try {
+        localStorage.setItem(`rental_deposit_paid_${cRoom}`, 'true');
+        const cleanNorm = String(cRoom).replace(/^p\.?/i, '').trim();
+        localStorage.setItem(`rental_deposit_paid_${cleanNorm}`, 'true');
+      } catch {}
+    }
+
+    try {
+      window.dispatchEvent(new Event('storage'));
+    } catch {}
+
+    return { success: true, contract: affectedContract };
+  };
+
   const payDepositAndSignContract = (contractId, options = {}) => {
     const { paymentMethod = 'VIETQR' } = options;
     const nowStr = new Date().toLocaleString('vi-VN');
@@ -6738,6 +6783,7 @@ export const DataProvider = ({ children }) => {
         contracts,
         signContractElectronically,
         confirmDepositPaid,
+        payDepositInvoice,
         payDepositAndSignContract,
         transferRoom,
         meterDisputes,

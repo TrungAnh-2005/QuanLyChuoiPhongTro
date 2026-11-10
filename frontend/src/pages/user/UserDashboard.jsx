@@ -3251,8 +3251,18 @@ export default function UserDashboard() {
           </div>
 
           <div className="text-xs space-y-2.5 text-slate-600">
-            <div className="flex justify-between py-2 border-b border-slate-100">
-              <span>Tiền cọc giữ chỗ:</span>
+            <div className="flex justify-between items-center py-2 border-b border-slate-100">
+              <span className="flex items-center gap-1">
+                <span>Tiền cọc giữ chỗ:</span>
+                <Link
+                  to="/invoices?type=DEPOSIT"
+                  className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-200 transition"
+                  title="Xem biên lai / hóa đơn thu tiền cọc"
+                >
+                  <Receipt className="w-3 h-3 text-emerald-600" />
+                  <span>Biên lai</span>
+                </Link>
+              </span>
               <strong className="text-slate-900 font-mono">{(myActiveContract.deposit || 3500000).toLocaleString('vi-VN')} ₫</strong>
             </div>
             <div className="flex justify-between py-2 border-b border-slate-100">
