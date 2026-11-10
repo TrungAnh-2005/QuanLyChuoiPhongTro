@@ -4598,30 +4598,41 @@ export const DataProvider = ({ children }) => {
             );
           }
         }
+        let hasActiveP101Contract = false;
         if (!isP101CheckedOut) {
           const sC = localStorage.getItem('rental_contracts');
           if (sC) {
-            const contractsList = JSON.parse(sC);
-            if (Array.isArray(contractsList)) {
-              const p101Contracts = contractsList.filter(c => String(c.roomNumber || '').replace(/^P\.?/i, '').trim() === '101');
-              const hasActive = p101Contracts.some(c => c.status === 'ACTIVE');
-              const hasEnded = p101Contracts.some(c => c.status === 'TERMINATED' || c.status === 'COMPLETED' || c.status === 'CANCELLED');
-              if (hasEnded && !hasActive) {
-                isP101CheckedOut = true;
+            try {
+              const contractsList = JSON.parse(sC);
+              if (Array.isArray(contractsList)) {
+                const p101Contracts = contractsList.filter(c => isSameRoom(c.roomNumber, 'P.101'));
+                hasActiveP101Contract = p101Contracts.some(c => c.status === 'ACTIVE');
+                const hasEnded = p101Contracts.some(c => c.status === 'TERMINATED' || c.status === 'COMPLETED' || c.status === 'CANCELLED');
+                if (hasActiveP101Contract) {
+                  isP101CheckedOut = false;
+                } else if (hasEnded) {
+                  isP101CheckedOut = true;
+                }
               }
-            }
+            } catch {}
           }
         }
-        if (!isP101CheckedOut) {
+        if (!isP101CheckedOut && !hasActiveP101Contract) {
           const sRms = localStorage.getItem('rental_rooms');
           if (sRms) {
-            const rms = JSON.parse(sRms);
-            if (Array.isArray(rms)) {
-              const r101 = rms.find(r => String(r.number || '').replace(/^P\.?/i, '').trim() === '101');
-              if (r101 && (r101.status === 'AVAILABLE' || r101.occupants === 0)) {
-                isP101CheckedOut = true;
+            try {
+              const rms = JSON.parse(sRms);
+              if (Array.isArray(rms)) {
+                const r101 = rms.find(r => isSameRoom(r.number, 'P.101') && (r.status === 'OCCUPIED' || (r.occupants && r.occupants > 0)));
+                if (!r101) {
+                  // Chỉ khi KHÔNG CÓ bất kỳ phòng P.101 nào đang có người ở mới coi là checked out
+                  const any101 = rms.find(r => isSameRoom(r.number, 'P.101'));
+                  if (any101 && (any101.status === 'AVAILABLE' || any101.occupants === 0)) {
+                    isP101CheckedOut = true;
+                  }
+                }
               }
-            }
+            } catch {}
           }
         }
       } catch {}
@@ -4634,15 +4645,47 @@ export const DataProvider = ({ children }) => {
       const cuongRooms = pRooms ? (pRooms.tenant2 !== undefined ? pRooms.tenant2 : (pRooms['Phạm Minh Cường'] || [])) : ['P.101'];
       const cuongRoomList = Array.isArray(cuongRooms) ? cuongRooms : [cuongRooms];
 
-      // Xác định cơ sở chính xác của Cường (Staff 2 - Đống Đa / Bách Khoa)
+      // 1. Xác định cơ sở chính xác của phòng P.101 dựa vào Hợp đồng ACTIVE hoặc Đơn được duyệt
+      let p101House = 'CS-01';
+      let p101HouseName = 'Cơ Sở 1 - Cầu Giấy';
+      try {
+        const sC = localStorage.getItem('rental_contracts');
+        if (sC) {
+          const contractsList = JSON.parse(sC);
+          const p101Contract = Array.isArray(contractsList)
+            ? contractsList.find(c => c.status === 'ACTIVE' && isSameRoom(c.roomNumber, 'P.101'))
+            : null;
+          if (p101Contract?.houseCode) {
+            p101House = p101Contract.houseCode;
+            p101HouseName = p101Contract.houseName || p101Contract.house;
+          }
+        }
+      } catch {}
+
+      // Nếu hợp đồng chưa có hoặc chưa tìm thấy cơ sở, kiểm tra phòng trong rental_rooms
+      if (p101House === 'CS-01') {
+        try {
+          const sRms = localStorage.getItem('rental_rooms');
+          if (sRms) {
+            const pRms = JSON.parse(sRms);
+            const found101 = Array.isArray(pRms) ? pRms.find(r => isSameRoom(r.number, 'P.101') && r.houseCode && !isSameHouse(r.houseCode, 'CS-02')) : null;
+            if (found101?.houseCode) {
+              p101House = found101.houseCode;
+              p101HouseName = found101.house;
+            }
+          }
+        } catch {}
+      }
+
+      // Xác định cơ sở riêng của Cường (nếu Cường ở riêng tại CS-02 / Bách Khoa)
       let cuongHouse = 'S2-CS-01';
       try {
         const sC = localStorage.getItem('rental_contracts');
         if (sC) {
           const contractsList = JSON.parse(sC);
-          const cContract = contractsList.find(c => (c.status === 'ACTIVE' || c.depositPaid) && (
+          const cContract = Array.isArray(contractsList) ? contractsList.find(c => (c.status === 'ACTIVE' || c.depositPaid) && (
             c.tenantUsername === 'tenant2' || (c.tenantName || '').toLowerCase().includes('cường')
-          ));
+          )) : null;
           if (cContract?.houseCode) cuongHouse = cContract.houseCode;
         }
       } catch {}
@@ -4651,47 +4694,58 @@ export const DataProvider = ({ children }) => {
           const sHouses = localStorage.getItem('rental_boarding_houses');
           if (sHouses) {
             const housesList = JSON.parse(sHouses);
-            const staff2House = housesList.find(h => h.createdBy === 'staff2' || h.managerUsername === 'staff2' || h.id === 2);
+            const staff2House = Array.isArray(housesList) ? housesList.find(h => h.createdBy === 'staff2' || h.managerUsername === 'staff2' || h.id === 2) : null;
             if (staff2House?.code) cuongHouse = staff2House.code;
           }
         } catch {}
       }
 
-      // Kiểm tra xem Cường có đơn ROOMMATE được duyệt vào CS-01 không
-      let hasApprovedCuongInCS01 = false;
+      // Kiểm tra xem Cường có đơn ROOMMATE / JOIN_ROOM được duyệt vào P.101 không
+      let approvedCuongReq = null;
       try {
         const sReq = localStorage.getItem('rental_room_requests');
         if (sReq) {
           const reqs = JSON.parse(sReq);
-          hasApprovedCuongInCS01 = Array.isArray(reqs) && reqs.some(r =>
+          approvedCuongReq = Array.isArray(reqs) ? reqs.find(r =>
             (r.type === 'ROOMMATE' || r.type === 'JOIN_ROOM') &&
             r.status === 'APPROVED' &&
             isSameRoom(r.targetRoom || r.roomNumber, 'P.101') &&
-            (isSameHouse(r.houseCode || 'CS-01', 'CS-01') || r.houseCode?.startsWith('S1-') || (r.house || '').toLowerCase().includes('cầu giấy')) &&
             (r.tenant || '').toLowerCase().includes('cường')
-          );
+          ) : null;
         }
       } catch {}
+
+      if (approvedCuongReq?.houseCode) {
+        p101House = approvedCuongReq.houseCode;
+        if (approvedCuongReq.house) p101HouseName = approvedCuongReq.house;
+      }
 
       if (isP101CheckedOut) {
         list = list.map((m) => String(m.roomNumber).replace(/^P\.?/i, '').trim() === '101' ? { ...m, status: 'MOVED_OUT' } : m);
       } else {
-        // 1. Quản lý cư dân Nguyễn Văn An tại P.101 Cầu Giấy (CS-01 / Staff 1)
+        // 1. Quản lý cư dân Nguyễn Văn An tại P.101 ở đúng cơ sở thực tế (p101House)
         if (!anRoomList.includes('P.101')) {
           list = list.map((m) => {
-            if (isSameRoom(m.roomNumber, 'P.101') && isSameHouse(m.houseCode || 'CS-01', 'CS-01') && (m.fullName || '').toLowerCase().includes('an')) {
+            if (isSameRoom(m.roomNumber, 'P.101') && (m.fullName || '').toLowerCase().includes('an')) {
               return { ...m, status: 'MOVED_OUT' };
             }
             return m;
           });
         } else {
-          const hasAn = list.some(m => isSameRoom(m.roomNumber, 'P.101') && isSameHouse(m.houseCode || 'CS-01', 'CS-01') && (m.fullName || '').toLowerCase().includes('an') && m.status !== 'MOVED_OUT');
+          // Lọc bỏ các bản ghi An ở cơ sở sai lệch
+          list = list.filter(m => !(
+            isSameRoom(m.roomNumber, 'P.101') &&
+            (m.fullName || '').toLowerCase().includes('an') &&
+            m.houseCode && !isSameHouse(m.houseCode, p101House)
+          ));
+
+          const hasAn = list.some(m => isSameRoom(m.roomNumber, 'P.101') && isSameHouse(m.houseCode || p101House, p101House) && (m.fullName || '').toLowerCase().includes('an') && m.status !== 'MOVED_OUT');
           if (!hasAn) {
             list.unshift({
               id: 1,
               roomId: 101,
               roomNumber: 'P.101',
-              houseCode: 'CS-01',
+              houseCode: p101House,
               tenantId: 1,
               fullName: 'Nguyễn Văn An',
               phone: '0987.654.321',
@@ -4705,8 +4759,8 @@ export const DataProvider = ({ children }) => {
             });
           } else {
             list = list.map((m) => {
-              if (isSameRoom(m.roomNumber, 'P.101') && isSameHouse(m.houseCode || 'CS-01', 'CS-01') && (m.fullName || '').toLowerCase().includes('an')) {
-                return { ...m, status: 'ACTIVE', roleInRoom: 'REPRESENTATIVE' };
+              if (isSameRoom(m.roomNumber, 'P.101') && (m.fullName || '').toLowerCase().includes('an')) {
+                return { ...m, houseCode: p101House, status: 'ACTIVE', roleInRoom: 'REPRESENTATIVE' };
               }
               return m;
             });
@@ -4714,20 +4768,31 @@ export const DataProvider = ({ children }) => {
         }
 
         // 2. Quản lý cư dân Phạm Minh Cường
-        if (hasApprovedCuongInCS01) {
-          // Cường đã được duyệt vào ở ghép P.101 Cầu Giấy (CS-01) -> Đảm bảo có mặt trong CS-01 với vai trò MEMBER
-          const hasCuongInCS01 = list.some(m =>
+        const isCuongRoommateInP101 = Boolean(
+          approvedCuongReq ||
+          list.some(m => isSameRoom(m.roomNumber, 'P.101') && m.roleInRoom === 'MEMBER' && (m.fullName || '').toLowerCase().includes('cường') && m.status !== 'MOVED_OUT')
+        );
+
+        if (isCuongRoommateInP101) {
+          // Cường đã được duyệt vào ở ghép P.101 -> Đảm bảo có mặt tại đúng p101House với vai trò MEMBER
+          // Loại bỏ Cường ở các cơ sở khác để tránh phân mảnh/sai lệch
+          list = list.filter(m => !(
+            (m.fullName || '').toLowerCase().includes('cường') &&
+            (!isSameRoom(m.roomNumber, 'P.101') || (m.houseCode && !isSameHouse(m.houseCode, p101House)))
+          ));
+
+          const hasCuongInP101 = list.some(m =>
             isSameRoom(m.roomNumber, 'P.101') &&
-            (isSameHouse(m.houseCode || 'CS-01', 'CS-01') || m.houseCode?.startsWith('S1-')) &&
+            isSameHouse(m.houseCode || p101House, p101House) &&
             (m.fullName || '').toLowerCase().includes('cường') &&
             m.status !== 'MOVED_OUT'
           );
-          if (!hasCuongInCS01) {
+          if (!hasCuongInP101) {
             list.push({
               id: 2,
               roomId: 101,
               roomNumber: 'P.101',
-              houseCode: 'CS-01',
+              houseCode: p101House,
               tenantId: 2,
               fullName: 'Phạm Minh Cường',
               phone: '0912.888.999',
@@ -4739,12 +4804,19 @@ export const DataProvider = ({ children }) => {
               temporaryResidenceStatus: 'REGISTERED',
               status: 'ACTIVE'
             });
+          } else {
+            list = list.map(m => {
+              if (isSameRoom(m.roomNumber, 'P.101') && (m.fullName || '').toLowerCase().includes('cường')) {
+                return { ...m, houseCode: p101House, status: 'ACTIVE', roleInRoom: 'MEMBER' };
+              }
+              return m;
+            });
           }
         } else {
-          // Nếu Cường không có đơn ở ghép được duyệt tại CS-01, không để Cường ở CS-01
+          // Nếu Cường không có đơn ở ghép được duyệt tại P.101, không để Cường ở p101House
           list = list.filter(m => !(
             isSameRoom(m.roomNumber, 'P.101') &&
-            isSameHouse(m.houseCode || 'CS-01', 'CS-01') &&
+            isSameHouse(m.houseCode || p101House, p101House) &&
             (m.fullName || '').toLowerCase().includes('cường')
           ));
 

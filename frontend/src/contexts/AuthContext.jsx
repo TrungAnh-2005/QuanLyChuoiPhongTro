@@ -78,8 +78,8 @@ const DEMO_USERS = {
     hometown: 'Hải Phòng',
     room: isZeroSandbox ? null : 'P.101',
     rooms: isZeroSandbox ? [] : ['P.101'],
-    houseCode: isZeroSandbox ? null : 'CS-01',
-    houseName: isZeroSandbox ? null : 'Nhà Trọ Cầu Giấy - Cơ Sở 1',
+    houseCode: null,
+    houseName: null,
     role: 'TENANT',
     token: 'demo-tenant2-token'
   },
@@ -444,16 +444,16 @@ export const AuthProvider = ({ children }) => {
 
       if (!resolvedHouseCode) {
         try {
-          const sR = localStorage.getItem('rental_rooms');
-          if (sR) {
-            const pR = JSON.parse(sR);
-            const foundRoom = Array.isArray(pR) ? pR.find(r => (
-              (u.room && isSameRoom(u.room, r.number)) ||
-              (Array.isArray(u.rooms) && u.rooms.some(ur => isSameRoom(ur, r.number)))
-            )) : null;
-            if (foundRoom?.houseCode) {
-              resolvedHouseCode = foundRoom.houseCode;
-              resolvedHouseName = foundRoom.house;
+          const sC = localStorage.getItem('rental_contracts');
+          if (sC) {
+            const pC = JSON.parse(sC);
+            if (Array.isArray(pC)) {
+              const myRoom = u.room || (Array.isArray(u.rooms) && u.rooms[0]);
+              const activeRoomContract = pC.find(c => c.status === 'ACTIVE' && myRoom && isSameRoom(c.roomNumber, myRoom));
+              if (activeRoomContract?.houseCode) {
+                resolvedHouseCode = activeRoomContract.houseCode;
+                resolvedHouseName = activeRoomContract.houseName || activeRoomContract.house;
+              }
             }
           }
         } catch {}
@@ -464,7 +464,7 @@ export const AuthProvider = ({ children }) => {
           const sBH = localStorage.getItem('rental_boarding_houses');
           if (sBH) {
             const pBH = JSON.parse(sBH);
-            const foundBH = Array.isArray(pBH) ? pBH.find(h => h.code === resolvedHouseCode) : null;
+            const foundBH = Array.isArray(pBH) ? pBH.find(h => isSameHouse(h.code, resolvedHouseCode) || h.code === resolvedHouseCode) : null;
             if (foundBH?.name) resolvedHouseName = foundBH.name;
           }
         } catch {}
@@ -479,8 +479,8 @@ export const AuthProvider = ({ children }) => {
           ...u,
           rooms: roomsList,
           room: hasRooms ? roomsList[0] : null,
-          houseCode: hasRooms ? (resolvedHouseCode || u.houseCode || 'CS-02') : null,
-          houseName: hasRooms ? (resolvedHouseName || u.houseName || 'Nhà Trọ Bách Khoa - Cơ Sở 2') : null
+          houseCode: hasRooms ? (resolvedHouseCode || u.houseCode || null) : null,
+          houseName: hasRooms ? (resolvedHouseName || u.houseName || null) : null
         };
       }
       if (u.username === 'tenant' || u.username === 'tenant1' || u.fullName?.includes('An')) {
@@ -750,10 +750,28 @@ export const AuthProvider = ({ children }) => {
               }
             }
           }
+
+          if (!matchedHouse) {
+            const sC = localStorage.getItem('rental_contracts');
+            const pC = sC ? JSON.parse(sC) : [];
+            const roomContract = Array.isArray(pC) ? pC.find(c => currentRooms.some(r => isSameRoom(r, c.roomNumber)) && c.status === 'ACTIVE') : null;
+            if (roomContract?.houseCode) {
+              matchedHouse = { code: roomContract.houseCode, name: roomContract.houseName || roomContract.house };
+            }
+          }
+
+          if (matchedHouse?.code && !matchedHouse?.name) {
+            const sBH = localStorage.getItem('rental_boarding_houses');
+            if (sBH) {
+              const pBH = JSON.parse(sBH);
+              const foundBH = Array.isArray(pBH) ? pBH.find(h => isSameHouse(h.code, matchedHouse.code) || h.code === matchedHouse.code) : null;
+              if (foundBH?.name) matchedHouse.name = foundBH.name;
+            }
+          }
         } catch {}
 
         userHouseCode = matchedHouse?.code || baseUser.houseCode || 'CS-01';
-        userHouseName = matchedHouse?.name || baseUser.houseName || 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
+        userHouseName = matchedHouse?.name || (matchedHouse?.code ? matchedHouse.code : (baseUser.houseName || 'Nhà Trọ Cầu Giấy - Cơ Sở 1'));
       }
     }
 
