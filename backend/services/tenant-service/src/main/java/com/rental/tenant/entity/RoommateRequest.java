@@ -25,6 +25,8 @@ public class RoommateRequest {
     @Column(nullable = false)
     private Long roomId;
 
+    private Long requestedByTenantId;
+
     @Column(nullable = false, length = 100)
     private String fullName;
 
@@ -34,12 +36,31 @@ public class RoommateRequest {
     @Column(nullable = false, length = 20)
     private String phone;
 
+    private java.time.LocalDate birthDate;
+
+    @Column(length = 10)
+    private String gender;
+
+    @Column(length = 255)
+    private String hometown;
+
+    @Column(length = 500)
+    private String cccdFrontUrl;
+
+    @Column(length = 500)
+    private String cccdBackUrl;
+
     @Column(length = 255)
     private String note;
 
     @Column(length = 50)
     @Builder.Default
     private String status = "PENDING"; // PENDING, APPROVED, REJECTED
+
+    @Column(length = 255)
+    private String rejectionReason;
+
+    private LocalDateTime reviewedAt;
 
     @CreatedDate
     @Column(updatable = false)

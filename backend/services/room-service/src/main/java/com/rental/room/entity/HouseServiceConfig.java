@@ -35,6 +35,10 @@ public class HouseServiceConfig {
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal unitPrice;
 
+    @Builder.Default
+    @Column(name = "is_active", nullable = false)
+    private Boolean isActive = true;
+
     @CreatedDate
     @Column(updatable = false)
     private LocalDateTime createdAt;

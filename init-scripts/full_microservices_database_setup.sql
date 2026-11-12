@@ -49,6 +49,7 @@ FLUSH PRIVILEGES;
 -- ==============================================================================
 USE `auth_db`;
 
+DROP TABLE IF EXISTS `system_settings`;
 DROP TABLE IF EXISTS `audit_logs`;
 DROP TABLE IF EXISTS `refresh_tokens`;
 DROP TABLE IF EXISTS `landlord_profiles`;
@@ -133,6 +134,14 @@ CREATE TABLE `audit_logs` (
     INDEX `idx_audit_time` (`timestamp`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `system_settings` (
+    `setting_key` VARCHAR(100) PRIMARY KEY COMMENT 'Khóa cấu hình',
+    `value` TEXT NOT NULL COMMENT 'Giá trị cấu hình hệ thống',
+    `description` VARCHAR(255) NULL COMMENT 'Mô tả cấu hình',
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
 
 -- ==============================================================================
 -- 2. ROOM_DB (Microservice: room-service, Port: 8082)
@@ -159,7 +168,10 @@ CREATE TABLE `boarding_houses` (
     `district` VARCHAR(100) NULL COMMENT 'Quận / Huyện',
     `city` VARCHAR(100) NULL COMMENT 'Tỉnh / Thành phố',
     `manager_name` VARCHAR(100) NULL COMMENT 'Họ tên quản lý cơ sở',
+    `manager_username` VARCHAR(50) NULL COMMENT 'Tài khoản quản lý cơ sở',
     `manager_phone` VARCHAR(20) NOT NULL COMMENT 'Hotline hỗ trợ cư dân',
+    `created_by` VARCHAR(50) NULL COMMENT 'Người tạo cơ sở',
+    `image_url` VARCHAR(500) NULL COMMENT 'Ảnh đại diện cơ sở',
     `total_floors` INT NOT NULL DEFAULT 1 COMMENT 'Tổng số tầng',
     `total_rooms` INT NOT NULL DEFAULT 0 COMMENT 'Tổng số phòng',
     `description` TEXT NULL COMMENT 'Mô tả cơ sở',
@@ -266,6 +278,7 @@ CREATE TABLE `tenants` (
     `email` VARCHAR(100) NULL COMMENT 'Email nhận thông báo hóa đơn',
     `hometown` VARCHAR(255) NULL COMMENT 'Quê quán',
     `address` VARCHAR(255) NULL COMMENT 'Địa chỉ thường trú',
+    `start_date` DATE NULL COMMENT 'Ngày bắt đầu hợp đồng thuê',
     `status` VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' COMMENT 'Trạng thái: ACTIVE, INACTIVE, BLACKLIST',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -302,9 +315,11 @@ CREATE TABLE `roommate_requests` (
     `hometown` VARCHAR(255) NULL COMMENT 'Quê quán',
     `cccd_front_url` VARCHAR(500) NULL COMMENT 'Ảnh chụp mặt trước CCCD',
     `cccd_back_url` VARCHAR(500) NULL COMMENT 'Ảnh chụp mặt sau CCCD',
+    `note` VARCHAR(255) NULL COMMENT 'Ghi chú đề nghị',
     `status` VARCHAR(20) NOT NULL DEFAULT 'PENDING' COMMENT 'Trạng thái duyệt: PENDING, APPROVED, REJECTED',
     `rejection_reason` VARCHAR(255) NULL COMMENT 'Lý do từ chối nếu không duyệt',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `reviewed_at` DATETIME NULL COMMENT 'Thời điểm chủ trọ duyệt',
     INDEX `idx_rr_room` (`room_id`),
     INDEX `idx_rr_requester` (`requested_by_tenant_id`),
@@ -314,8 +329,11 @@ CREATE TABLE `roommate_requests` (
 CREATE TABLE `tenant_documents` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
     `tenant_id` BIGINT NOT NULL,
-    `document_type` VARCHAR(50) NOT NULL COMMENT 'Loại giấy tờ: CCCD_FRONT, CCCD_BACK, TEMPORARY_RESIDENCE',
-    `document_url` VARCHAR(500) NOT NULL,
+    `document_type` VARCHAR(50) NULL COMMENT 'Loại giấy tờ: CCCD_FRONT, CCCD_BACK, TEMPORARY_RESIDENCE',
+    `document_url` VARCHAR(500) NULL,
+    `doc_type` VARCHAR(50) NULL COMMENT 'Map JPA: CCCD_FRONT, CCCD_BACK, OTHER',
+    `file_url` VARCHAR(500) NULL COMMENT 'Map JPA: file URL',
+    `uploaded_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_td_tenant` (`tenant_id`),
     CONSTRAINT `fk_td_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
@@ -382,13 +400,16 @@ CREATE TABLE `move_out_settlements` (
     `unpaid_utilities_fee` DECIMAL(15,2) NOT NULL DEFAULT 0 COMMENT 'Tiền điện nước phát sinh ngày lẻ',
     `damage_fee` DECIMAL(15,2) NOT NULL DEFAULT 0 COMMENT 'Tiền bồi thường hỏng hóc thiết bị',
     `damage_description` VARCHAR(255) NULL COMMENT 'Biên bản ghi nhận hư hại tài sản',
+    `deduction_amount` DECIMAL(15,2) NOT NULL DEFAULT 0 COMMENT 'Tổng tiền khấu trừ',
     `refund_amount` DECIMAL(15,2) NOT NULL COMMENT 'Số tiền cọc thực trả lại cho khách',
     `bank_account` VARCHAR(50) NULL COMMENT 'Số tài khoản nhận hoàn cọc',
     `bank_name` VARCHAR(100) NULL COMMENT 'Tên ngân hàng',
     `account_holder` VARCHAR(100) NULL COMMENT 'Tên chủ tài khoản thụ hưởng',
     `refund_status` VARCHAR(20) NOT NULL DEFAULT 'PENDING' COMMENT 'Trạng thái: PENDING (Chờ chuyển), COMPLETED (Đã hoàn)',
+    `status` VARCHAR(50) NOT NULL DEFAULT 'PENDING' COMMENT 'Trạng thái quyết toán: PENDING, APPROVED, COMPLETED',
     `settled_at` DATETIME NULL COMMENT 'Thời điểm nghiệm thu hoàn tất',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX `idx_mos_contract` (`contract_id`),
     INDEX `idx_mos_room` (`room_id`),
     CONSTRAINT `fk_mos_contract` FOREIGN KEY (`contract_id`) REFERENCES `contracts` (`id`) ON DELETE CASCADE
@@ -436,23 +457,32 @@ CREATE TABLE `meters` (
 
 CREATE TABLE `meter_readings` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT 'Mã bản ghi đo',
+    `meter_id` BIGINT NULL COMMENT 'Mã đồng hồ (FK -> meters.id)',
     `room_id` BIGINT NOT NULL COMMENT 'Phòng đo (Logical FK -> room_db.rooms.id)',
+    `meter_type` VARCHAR(20) NULL COMMENT 'Loại: ELECTRICITY hoặc WATER',
     `reading_date` DATE NOT NULL COMMENT 'Ngày chốt số thực tế',
+    `old_reading` DOUBLE NULL COMMENT 'Chỉ số cũ',
+    `new_reading` DOUBLE NULL COMMENT 'Chỉ số mới',
+    `unit_price` DECIMAL(15,2) NOT NULL DEFAULT 0 COMMENT 'Đơn giá',
+    `usage_amount` DOUBLE NOT NULL DEFAULT 0 COMMENT 'Lượng tiêu thụ',
+    `fee` DECIMAL(15,2) NOT NULL DEFAULT 0 COMMENT 'Thành tiền phí',
+    `closed` BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'Đã kết chuyển hóa đơn chưa',
     `reading_type` VARCHAR(20) NOT NULL DEFAULT 'MONTHLY' COMMENT 'Loại chốt: MONTHLY (Định kỳ), MOVE_IN (Nhận phòng), MOVE_OUT (Trả phòng lẻ)',
-    `recorded_month` INT NOT NULL COMMENT 'Tháng chốt số (1 - 12)',
-    `recorded_year` INT NOT NULL COMMENT 'Năm chốt số (VD: 2026)',
-    `old_electricity` DOUBLE NOT NULL COMMENT 'Chỉ số điện cũ',
-    `new_electricity` DOUBLE NOT NULL COMMENT 'Chỉ số điện mới chốt',
-    `electricity_usage` DOUBLE GENERATED ALWAYS AS (`new_electricity` - `old_electricity`) STORED COMMENT 'Số kWh tiêu thụ tự tính',
-    `old_water` DOUBLE NOT NULL COMMENT 'Chỉ số nước cũ',
-    `new_water` DOUBLE NOT NULL COMMENT 'Chỉ số nước mới chốt',
-    `water_usage` DOUBLE GENERATED ALWAYS AS (`new_water` - `old_water`) STORED COMMENT 'Số m3 nước tiêu thụ tự tính',
+    `recorded_month` INT NULL COMMENT 'Tháng chốt số (1 - 12)',
+    `recorded_year` INT NULL COMMENT 'Năm chốt số (VD: 2026)',
+    `old_electricity` DOUBLE NULL DEFAULT 0 COMMENT 'Chỉ số điện cũ',
+    `new_electricity` DOUBLE NULL DEFAULT 0 COMMENT 'Chỉ số điện mới chốt',
+    `electricity_usage` DOUBLE NULL DEFAULT 0 COMMENT 'Số kWh tiêu thụ',
+    `old_water` DOUBLE NULL DEFAULT 0 COMMENT 'Chỉ số nước cũ',
+    `new_water` DOUBLE NULL DEFAULT 0 COMMENT 'Chỉ số nước mới chốt',
+    `water_usage` DOUBLE NULL DEFAULT 0 COMMENT 'Số m3 nước tiêu thụ',
     `image_evidence_url` VARCHAR(500) NULL COMMENT 'Ảnh chụp công tơ để đối soát chống gian lận',
     `recorded_by` VARCHAR(50) NOT NULL DEFAULT 'STAFF' COMMENT 'Người ghi nhận: Tên Staff hoặc AUTO_AI',
     `status` VARCHAR(20) NOT NULL DEFAULT 'CONFIRMED' COMMENT 'Trạng thái: CONFIRMED, DISPUTED, CANCELLED',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX `idx_mr_room_period` (`room_id`, `recorded_year`, `recorded_month`)
+    INDEX `idx_mr_room_period` (`room_id`, `recorded_year`, `recorded_month`),
+    INDEX `idx_mr_meter` (`meter_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `meter_disputes` (
@@ -495,7 +525,10 @@ CREATE TABLE `invoices` (
     `room_fee` DECIMAL(15,2) NOT NULL COMMENT 'Tiền thuê phòng',
     `electricity_fee` DECIMAL(15,2) NOT NULL DEFAULT 0 COMMENT 'Tiền điện tiêu thụ',
     `water_fee` DECIMAL(15,2) NOT NULL DEFAULT 0 COMMENT 'Tiền nước tiêu thụ',
-    `service_fee` DECIMAL(15,2) NOT NULL DEFAULT 0 COMMENT 'Phí dịch vụ cố định (rác, wifi, vệ sinh)',
+    `internet_fee` DECIMAL(15,2) NOT NULL DEFAULT 0 COMMENT 'Tiền internet/wifi',
+    `service_fee` DECIMAL(15,2) NOT NULL DEFAULT 0 COMMENT 'Phí dịch vụ cố định (rác, vệ sinh)',
+    `parking_fee` DECIMAL(15,2) NOT NULL DEFAULT 0 COMMENT 'Tiền gửi xe',
+    `other_fee` DECIMAL(15,2) NOT NULL DEFAULT 0 COMMENT 'Chi phí phát sinh khác',
     `discount` DECIMAL(15,2) NOT NULL DEFAULT 0 COMMENT 'Số tiền giảm giá khuyến mãi',
     `total_amount` DECIMAL(15,2) NOT NULL COMMENT 'Tổng số tiền phải nộp',
     `status` VARCHAR(20) NOT NULL DEFAULT 'UNPAID' COMMENT 'Trạng thái: PENDING_METER, UNPAID, PAID, OVERDUE, CANCELLED',
@@ -560,9 +593,13 @@ CREATE TABLE `payments` (
     `payment_code` VARCHAR(50) NOT NULL UNIQUE COMMENT 'Mã giao dịch duy nhất: PAY-202609-001...',
     `amount` DECIMAL(15,2) NOT NULL COMMENT 'Số tiền thực tế thanh toán',
     `payment_method` VARCHAR(30) NOT NULL COMMENT 'Hình thức: VIETQR, SEPAY, VNPAY, MOMO, CASH, BANK_TRANSFER',
+    `transaction_code` VARCHAR(100) NULL COMMENT 'Mã giao dịch đối soát',
     `transaction_ref` VARCHAR(100) NULL COMMENT 'Mã tham chiếu ngân hàng từ Webhook',
+    `payer_name` VARCHAR(100) NULL COMMENT 'Tên người nộp tiền',
+    `payer_phone` VARCHAR(20) NULL COMMENT 'SĐT người nộp tiền',
     `bank_code` VARCHAR(30) NULL COMMENT 'Ngân hàng thực hiện: VCB, MB, TCB...',
     `status` VARCHAR(20) NOT NULL DEFAULT 'SUCCESS' COMMENT 'Trạng thái: PENDING, SUCCESS, FAILED',
+    `payment_date` DATETIME NULL COMMENT 'Ngày thanh toán thực tế',
     `payment_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm hoàn tất',
     `note` VARCHAR(255) NULL COMMENT 'Nội dung chuyển khoản hoặc ghi chú thu tiền mặt',
     `webhook_payload` JSON NULL COMMENT 'Lưu trữ toàn văn payload trả về từ cổng thanh toán',
@@ -608,6 +645,7 @@ CREATE TABLE `maintenance_requests` (
     `status` VARCHAR(20) NOT NULL DEFAULT 'PENDING' COMMENT 'Trạng thái: PENDING (Chờ tiếp nhận), IN_PROGRESS (Đang sửa), RESOLVED (Đã sửa xong), CANCELLED',
     `cost` DECIMAL(15,2) NOT NULL DEFAULT 0 COMMENT 'Chi phí sửa chữa thực tế phát sinh',
     `assigned_to` VARCHAR(100) NULL COMMENT 'Thợ hoặc nhân sự kỹ thuật chịu trách nhiệm',
+    `requested_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm báo hỏng',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `resolved_at` DATETIME NULL COMMENT 'Thời điểm hoàn tất nghiệm thu',
@@ -634,6 +672,7 @@ CREATE TABLE `maintenance_logs` (
 -- ==============================================================================
 USE `report_db`;
 
+DROP TABLE IF EXISTS `monthly_revenue_aggregates`;
 DROP TABLE IF EXISTS `room_occupancy_metrics`;
 DROP TABLE IF EXISTS `revenue_records`;
 DROP TABLE IF EXISTS `monthly_revenue_reports`;
@@ -653,29 +692,51 @@ CREATE TABLE `monthly_revenue_reports` (
     INDEX `idx_mrr_house_period` (`boarding_house_id`, `year`, `month`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `monthly_revenue_aggregates` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `year` INT NOT NULL COMMENT 'Năm thống kê',
+    `month` INT NOT NULL COMMENT 'Tháng thống kê',
+    `total_revenue` DECIMAL(15,2) NOT NULL DEFAULT 0 COMMENT 'Tổng doanh thu thực tế',
+    `total_transactions` BIGINT NOT NULL DEFAULT 0 COMMENT 'Tổng số lượng giao dịch thành công',
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_mra_year_month` (`year`, `month`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `revenue_records` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `boarding_house_id` BIGINT NOT NULL COMMENT 'Cơ sở trọ (Logical FK -> room_db.boarding_houses.id)',
-    `category` VARCHAR(50) NOT NULL COMMENT 'Hạng mục: ROOM_RENT, UTILITIES, MAINTENANCE_FEE, MANAGEMENT_FEE',
-    `record_type` VARCHAR(20) NOT NULL COMMENT 'INCOME (Thu) hoặc EXPENSE (Chi)',
+    `boarding_house_id` BIGINT NULL COMMENT 'Cơ sở trọ (Logical FK -> room_db.boarding_houses.id)',
+    `payment_id` BIGINT NULL COMMENT 'Giao dịch thanh toán (Logical FK -> payment_db.payments.id)',
+    `invoice_id` BIGINT NULL COMMENT 'Hóa đơn tiền phòng (Logical FK -> billing_db.invoices.id)',
+    `category` VARCHAR(50) NULL COMMENT 'Hạng mục: ROOM_RENT, UTILITIES, MAINTENANCE_FEE, MANAGEMENT_FEE',
+    `record_type` VARCHAR(20) NOT NULL DEFAULT 'INCOME' COMMENT 'INCOME (Thu) hoặc EXPENSE (Chi)',
     `amount` DECIMAL(15,2) NOT NULL,
-    `description` VARCHAR(255) NOT NULL,
-    `record_date` DATE NOT NULL,
+    `payment_method` VARCHAR(30) NULL COMMENT 'Phương thức thanh toán',
+    `payment_date` DATETIME NULL COMMENT 'Ngày giờ thanh toán',
+    `year` INT NULL COMMENT 'Năm',
+    `month` INT NULL COMMENT 'Tháng',
+    `day` INT NULL COMMENT 'Ngày',
+    `description` VARCHAR(255) NULL,
+    `record_date` DATE NULL,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX `idx_rr_house` (`boarding_house_id`),
-    INDEX `idx_rr_date` (`record_date`)
+    INDEX `idx_rr_date` (`record_date`),
+    INDEX `idx_rr_payment` (`payment_id`),
+    INDEX `idx_rr_invoice` (`invoice_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `room_occupancy_metrics` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `boarding_house_id` BIGINT NOT NULL COMMENT 'Logical FK -> room_db.boarding_houses.id',
-    `record_date` DATE NOT NULL,
+    `boarding_house_id` BIGINT NULL COMMENT 'Logical FK -> room_db.boarding_houses.id',
     `total_rooms` INT NOT NULL,
     `occupied_rooms` INT NOT NULL,
     `available_rooms` INT NOT NULL,
     `maintenance_rooms` INT NOT NULL,
     `occupancy_rate` DOUBLE NOT NULL,
-    INDEX `idx_rom_house` (`boarding_house_id`)
+    `record_date` DATE NULL,
+    `metric_date` DATE NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_rom_house` (`boarding_house_id`),
+    INDEX `idx_rom_date` (`metric_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -780,6 +841,11 @@ INSERT INTO `audit_logs` (`id`, `log_code`, `timestamp`, `ip_address`, `user_rol
 (5, 'LOG-005', '2026-10-03 14:02:18', '113.190.23.41', 'ROLE_TENANT', 'tenant2', 'ONLINE_PAYMENT_VNPAY', 'HD-202609-03', 'SUCCESS', 'Thanh toán VNPay 3.840.000 đ thành công'),
 (6, 'LOG-006', '2026-10-03 11:25:33', '118.70.190.22', 'ROLE_ADMIN', 'admin', 'UPDATE_INTEGRATION_KEY', 'AI OCR Vision', 'SUCCESS', 'Kiểm tra kết nối AI Vision model GPT-4o thành công'),
 (7, 'LOG-007', '2026-10-03 09:14:52', '42.115.88.19', 'ROLE_STAFF', 'staff', 'CONFIRM_CASH_PAYMENT', 'HD-202609-05', 'SUCCESS', 'Thu tiền mặt 3.240.000 đ từ khách Hoàng Văn Nam');
+
+INSERT INTO `system_settings` (`setting_key`, `value`, `description`) VALUES
+('PLATFORM_NAME', 'Hệ Thống Quản Lý Chuỗi Phòng Trọ Toàn Diện', 'Tên thương hiệu nền tảng'),
+('MAINTENANCE_MODE', 'false', 'Bật tắt chế độ bảo trì hệ thống'),
+('ALLOW_REGISTRATION', 'true', 'Cho phép chủ trọ đăng ký mới');
 
 
 -- ------------------------------------------------------------------------------
@@ -1063,6 +1129,10 @@ INSERT INTO `monthly_revenue_reports` (`id`, `boarding_house_id`, `month`, `year
 (1, 1, 9, 2026, 44250000.00, 4800000.00, 39450000.00, 83.33, 10, 12, '2026-10-01 00:00:00'),
 (2, 2, 9, 2026, 26800000.00, 3200000.00, 23600000.00, 75.00, 6, 8, '2026-10-01 00:00:00'),
 (3, 3, 9, 2026, 68500000.00, 8500000.00, 60000000.00, 87.50, 14, 16, '2026-10-01 00:00:00');
+
+INSERT INTO `monthly_revenue_aggregates` (`id`, `year`, `month`, `total_revenue`, `total_transactions`, `updated_at`) VALUES
+(1, 2026, 9, 139550000.00, 32, '2026-10-01 00:00:00'),
+(2, 2026, 8, 128400000.00, 30, '2026-09-01 00:00:00');
 
 INSERT INTO `revenue_records` (`id`, `boarding_house_id`, `category`, `record_type`, `amount`, `description`, `record_date`) VALUES
 (1, 1, 'ROOM_RENT', 'INCOME', 35000000.00, 'Doanh thu tien thue phong thang 9 CS-01', '2026-09-30'),

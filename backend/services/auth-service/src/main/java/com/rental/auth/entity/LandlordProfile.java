@@ -34,18 +34,36 @@ public class LandlordProfile {
 
     private LocalDate birthDate;
 
-    @Column(length = 255)
-    private String cccdFrontUrl;
+    private LocalDate issueDate;
+
+    @Column(length = 150)
+    private String issuePlace;
 
     @Column(length = 255)
+    private String permanentAddress;
+
+    @Column(length = 500)
+    private String cccdFrontUrl;
+
+    @Column(length = 500)
     private String cccdBackUrl;
 
     @Column(length = 50)
     private String taxCode;
 
+    @Column(length = 500)
+    private String businessLicenseUrl;
+
     @Column(length = 20)
     @Builder.Default
     private String kycStatus = "PENDING"; // PENDING, VERIFIED, REJECTED
+
+    @Column(length = 255)
+    private String rejectionReason;
+
+    private LocalDateTime verifiedAt;
+
+    private Long verifiedBy;
 
     @CreatedDate
     @Column(updatable = false)

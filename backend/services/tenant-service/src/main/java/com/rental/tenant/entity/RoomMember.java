@@ -28,13 +28,22 @@ public class RoomMember {
     @Column(nullable = false)
     private Long tenantId;
 
+    @Column(nullable = false)
+    private Long contractId;
+
     @Column(length = 50)
     @Builder.Default
     private String roleInRoom = "MEMBER"; // REPRESENTATIVE, MEMBER
 
-    @Column(length = 50)
+    private java.time.LocalDate joinDate;
+
+    @Column(name = "temporary_residence_status", length = 50)
     @Builder.Default
-    private String tempResidenceStatus = "CHUA_DANG_KY"; // CHUA_DANG_KY, CHO_DUYET, DA_DANG_KY
+    private String tempResidenceStatus = "REGISTERED"; // REGISTERED, NOT_REGISTERED
+
+    @Column(length = 20)
+    @Builder.Default
+    private String status = "ACTIVE"; // ACTIVE, MOVED_OUT
 
     @CreatedDate
     @Column(updatable = false)

@@ -39,7 +39,17 @@ public class User {
     @Column(length = 20)
     private String phone;
 
+    @Column(name = "subscription_package", length = 20)
+    @Builder.Default
     private String packageCode = "TRIAL";
+
+    @Column(name = "role", length = 20)
+    @Builder.Default
+    private String role = "LANDLORD";
+
+    @Column(name = "max_houses_limit")
+    @Builder.Default
+    private Integer maxHousesLimit = 1;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
