@@ -89,6 +89,9 @@ public class AuthServiceImpl implements AuthService {
             targetRoleName = roleUpper.startsWith("ROLE_") ? roleUpper : "ROLE_" + roleUpper;
         }
 
+        if (!Set.of("ROLE_TENANT", "ROLE_STAFF").contains(targetRoleName)) {
+            throw new AppException("Unsupported registration role", HttpStatus.BAD_REQUEST, "INVALID_ROLE");
+        }
         final String roleNameToFind = targetRoleName;
         Role role = roleRepository.findByName(roleNameToFind)
                 .orElseGet(() -> roleRepository.save(Role.builder().name(roleNameToFind).build()));

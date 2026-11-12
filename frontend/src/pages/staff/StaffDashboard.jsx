@@ -71,18 +71,20 @@ const CustomChartTooltip = ({ active, payload, label }) => {
 };
 
 export default function StaffDashboard() {
+  const {boardingHouses:apiBoardingHouses=[]}=useData() || {};
+
   const { user } = useAuth();
-  const { invoices = [], tickets = [], rooms = [], tenants = [] } = useData();
+  const { invoices = [], tickets = [], rooms = [], tenants = [], revenueReport } = useData();
 
   const role = user?.role || 'STAFF';
 
   const staffManageableHouses = useMemo(() => {
     try {
-      const saved = localStorage.getItem('rental_boarding_houses');
+      const saved = JSON.stringify(apiBoardingHouses);
       const dynamicHouses = saved ? JSON.parse(saved) : [];
       const u = (user?.username || '').toLowerCase();
-      const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
-      return dynamicHouses.filter((h) => {
+      const isZeroSandbox = true;
+      return dynamicHouses.filter((h) => { if(user?.isTestMode) return true;
         const created = (h.createdBy || '').toLowerCase();
         const manager = (h.managerUsername || '').toLowerCase();
         if (created && created === u) return true;
@@ -97,7 +99,7 @@ export default function StaffDashboard() {
     } catch {
       return [];
     }
-  }, [user]);
+  }, [user,apiBoardingHouses]);
 
   const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
 
@@ -109,7 +111,7 @@ export default function StaffDashboard() {
   const occupiedCount = scopedRooms.filter((r) => r.status === 'OCCUPIED').length;
   const availableCount = scopedRooms.filter((r) => r.status === 'AVAILABLE').length;
   const maintenanceCount = scopedRooms.filter((r) => r.status === 'MAINTENANCE').length;
-  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+  const isZeroSandbox = true;
   const totalRooms = scopedRooms.length;
   const occupancyRate = totalRooms > 0 ? Math.round((occupiedCount / totalRooms) * 100) : 0;
 
@@ -162,19 +164,7 @@ export default function StaffDashboard() {
     ? staffActiveTenants.length
     : (staffActiveTenants.length || (scopedRooms.some((r) => r.status === 'OCCUPIED') ? occupiedCount : 0));
 
-  const staffChartRevenueData = (isZeroSandbox || monthlyPaidRevenue === 0)
-    ? [
-        { month: 'T1', revenue: 0, target: 0 },
-        { month: 'T2', revenue: 0, target: 0 },
-        { month: 'T3', revenue: 0, target: 0 },
-        { month: 'T4', revenue: 0, target: 0 },
-        { month: 'T5', revenue: 0, target: 0 },
-        { month: 'T6', revenue: 0, target: 0 },
-        { month: 'T7', revenue: 0, target: 0 },
-        { month: 'T8', revenue: 0, target: 0 },
-        { month: 'T9', revenue: monthlyPaidRevenue, target: totalRooms * 3000000 },
-      ]
-    : revenueData;
+  const staffChartRevenueData = (revenueReport?.monthlyData || []).map(m=>({month:m.monthLabel || `T${m.month}`,revenue:Number(m.revenue),target:0}));
 
   const openTicketsCount = tickets.filter((t) => {
     if (staffHouseCodes.length > 0) {

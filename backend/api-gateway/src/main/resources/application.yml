@@ -1,14 +1,16 @@
-﻿server:
+server:
   port: 8080
 
 spring:
+  config:
+    import: "optional:file:./backend/.env[.properties],optional:file:./.env[.properties]"
   application:
     name: api-gateway
   cloud:
     gateway:
       discovery:
         locator:
-          enabled: true
+          enabled: false
           lower-case-service-id: true
       globalcors:
         cors-configurations:

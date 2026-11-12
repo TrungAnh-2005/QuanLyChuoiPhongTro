@@ -57,7 +57,7 @@ export default function AdminDashboard() {
     saasInvoices = []
   } = useData();
 
-  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+  const isZeroSandbox = true;
 
   // 1. Thống kê Chủ trọ (UC-A01)
   const totalLandlords = isZeroSandbox ? (landlords.length || 0) : (landlords.length || 3);
@@ -77,29 +77,7 @@ export default function AdminDashboard() {
     : (totalSaasRevenue > 0 ? (totalSaasRevenue / 1000000).toFixed(1) + 'M ₫' : '4.99M ₫');
 
   // 4. Dữ liệu biểu đồ cước SaaS
-  const saasRevenueChartData = (isZeroSandbox || totalSaasRevenue === 0)
-    ? [
-        { month: 'T1', revenue: 0, target: 0 },
-        { month: 'T2', revenue: 0, target: 0 },
-        { month: 'T3', revenue: 0, target: 0 },
-        { month: 'T4', revenue: 0, target: 0 },
-        { month: 'T5', revenue: 0, target: 0 },
-        { month: 'T6', revenue: 0, target: 0 },
-        { month: 'T7', revenue: 0, target: 0 },
-        { month: 'T8', revenue: 0, target: 0 },
-        { month: 'T9', revenue: totalSaasRevenue, target: 0 },
-      ]
-    : [
-        { month: 'T1', revenue: 9980000, target: 8000000 },
-        { month: 'T2', revenue: 14970000, target: 12000000 },
-        { month: 'T3', revenue: 19960000, target: 16000000 },
-        { month: 'T4', revenue: 21950000, target: 18000000 },
-        { month: 'T5', revenue: 26940000, target: 22000000 },
-        { month: 'T6', revenue: 29930000, target: 25000000 },
-        { month: 'T7', revenue: 32920000, target: 28000000 },
-        { month: 'T8', revenue: 37910000, target: 32000000 },
-        { month: 'T9', revenue: totalSaasRevenue > 0 ? totalSaasRevenue : 42900000, target: 36000000 },
-      ];
+  const saasRevenueChartData = Array.from({length:12},(_,index)=>({month:`T${index+1}`,revenue:(saasInvoices || []).filter(i=>i.status==='PAID' && Number((i.paidAt || '').slice(5,7))===index+1).reduce((sum,i)=>sum+Number(i.amount),0),target:0}));
 
   // 5. Cơ cấu phân bổ gói cước bản quyền
   const packageDistributionData = useMemo(() => {

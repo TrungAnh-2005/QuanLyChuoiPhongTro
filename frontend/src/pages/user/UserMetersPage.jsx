@@ -569,11 +569,15 @@ export default function UserMetersPage() {
         houseCode={selectedDisputeRoom?.houseCode || 'CS-01'}
         systemElec={selectedDisputeRoom?.newElec || 0}
         systemWater={selectedDisputeRoom?.newWater || 0}
-        onSubmitDispute={(data) => {
+        onSubmitDispute={async (data) => {
+try {
+
           if (submitMeterDispute) {
-            submitMeterDispute(data);
+            await submitMeterDispute(data);
           }
-        }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
       />
     </div>
   );

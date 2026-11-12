@@ -22,8 +22,9 @@ public class RoomController {
 
     @PostMapping("/boarding-houses")
     public ResponseEntity<ApiResponse<BoardingHouseResponse>> createBoardingHouse(
-            @Valid @RequestBody CreateBoardingHouseRequest request
+            @Valid @RequestBody CreateBoardingHouseRequest request, @RequestHeader("X-User-Id") Long userId
     ) {
+        request.setOwnerId(userId);
         BoardingHouseResponse response = boardingHouseService.createBoardingHouse(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response, "Boarding house created successfully"));
     }

@@ -19,8 +19,8 @@ import {
 import { useData } from '../../contexts/DataContext';
 
 export default function AdminReportsPage() {
-  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
-  const { rooms = [], invoices = [], landlords = [], saasInvoices = [] } = useData();
+  const isZeroSandbox = true;
+  const { rooms = [], invoices = [], landlords = [], saasInvoices = [], allInvoices = [] } = useData();
 
   const [timeRange, setTimeRange] = useState('9_MONTHS');
   const [pdfToast, setPdfToast] = useState(false);
@@ -37,27 +37,7 @@ export default function AdminReportsPage() {
       .reduce((sum, i) => sum + (Number(i.total) || 0), 0);
   }, [invoices]);
 
-  const chartData = useMemo(() => {
-    const allMonths = [
-      'Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6', 'Tháng 7', 'Tháng 8', 'Tháng 9'
-    ];
-
-    let targetMonths = allMonths;
-    if (timeRange === 'SEP_2026') targetMonths = allMonths.slice(8);
-    else if (timeRange === 'Q3_2026') targetMonths = allMonths.slice(6, 9);
-    else if (timeRange === 'Q2_2026') targetMonths = allMonths.slice(3, 6);
-
-    return targetMonths.map((m) => {
-      const isSep = m === 'Tháng 9';
-      const saasRev = isSep ? (totalSaasRevenue / 1000000) : 0;
-      const gmv = isSep ? (totalGmv / 1000000) : 0;
-      return {
-        month: m,
-        revenue: Number(saasRev.toFixed(2)),
-        profit: Number(gmv.toFixed(2))
-      };
-    });
-  }, [timeRange, totalSaasRevenue, totalGmv]);
+  const chartData = Array.from({length:12},(_,i)=>({month:`Tháng ${i+1}`,revenue:saasInvoices.filter(inv=>inv.status==='PAID' && Number((inv.paidAt || '').slice(5,7))===i+1).reduce((sum,inv)=>sum+Number(inv.amount),0)/1000000,profit:allInvoices.filter(inv=>inv.status==='PAID' && inv.month===i+1).reduce((sum,inv)=>sum+Number(inv.totalAmount),0)/1000000}));
 
   return (
     <div className="space-y-6">

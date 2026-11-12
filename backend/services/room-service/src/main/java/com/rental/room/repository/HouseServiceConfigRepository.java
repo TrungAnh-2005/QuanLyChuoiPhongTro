@@ -1,4 +1,4 @@
-﻿package com.rental.room.repository;
+package com.rental.room.repository;
 
 import com.rental.room.entity.HouseServiceConfig;
 import org.springframework.data.jpa.repository.JpaRepository;

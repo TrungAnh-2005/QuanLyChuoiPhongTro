@@ -25,6 +25,8 @@ const CATEGORIES = [
 ];
 
 export default function StaffMaintenancePage() {
+  const {boardingHouses:apiBoardingHouses=[]}=useData() || {};
+
   const { user } = useAuth();
   const { tickets, createTicket, updateTicketStatus, addMaintenanceFeeToInvoice, rooms = [] } = useData();
   const role = user?.role || 'STAFF';
@@ -32,12 +34,12 @@ export default function StaffMaintenancePage() {
 
   const staffManageableHouses = useMemo(() => {
     try {
-      const saved = localStorage.getItem('rental_boarding_houses');
+      const saved = JSON.stringify(apiBoardingHouses);
       const dynamicHouses = saved ? JSON.parse(saved) : [];
       if (isAdmin) return dynamicHouses;
       const u = (user?.username || '').toLowerCase();
-      const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
-      return dynamicHouses.filter((h) => {
+      const isZeroSandbox = true;
+      return dynamicHouses.filter((h) => { if(user?.isTestMode) return true;
         const created = (h.createdBy || '').toLowerCase();
         const manager = (h.managerUsername || '').toLowerCase();
         if (created && created === u) return true;
@@ -52,7 +54,7 @@ export default function StaffMaintenancePage() {
     } catch {
       return [];
     }
-  }, [user, role, isAdmin]);
+  }, [user, role, isAdmin,apiBoardingHouses]);
 
   const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
 
@@ -78,13 +80,15 @@ export default function StaffMaintenancePage() {
     status: 'IN_PROGRESS'
   });
 
-  const handleCreateTicket = (e) => {
+  const handleCreateTicket = async (e) => {
+try {
+
     e.preventDefault();
     if (!newTicket.issue) return;
     const targetRoomObj = (rooms || []).find((r) => r.number === newTicket.room);
     const resolvedHouseCode = targetRoomObj?.houseCode || (staffHouseCodes[0] || null);
 
-    createTicket({
+    await createTicket({
       room: newTicket.room,
       houseCode: resolvedHouseCode,
       category: newTicket.category,
@@ -103,21 +107,27 @@ export default function StaffMaintenancePage() {
       priority: 'MEDIUM',
       imageUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=600&auto=format&fit=crop'
     });
-  };
 
-  const handleSaveStaffAssignment = (e) => {
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
+
+  const handleSaveStaffAssignment = async (e) => {
+try {
+
     e.preventDefault();
     if (!assignModal) return;
-    updateTicketStatus(assignModal.id, staffForm.status);
+    await updateTicketStatus(assignModal.id, staffForm.status, {cost:Number(staffForm.cost || 0),assignedTo:staffForm.technicianName,note:staffForm.technicianPhone || ""});
     assignModal.technicianName = staffForm.technicianName;
     assignModal.technicianPhone = staffForm.technicianPhone;
     assignModal.cost = staffForm.cost;
     assignModal.costBearer = staffForm.costBearer;
     if (staffForm.costBearer === 'TENANT' && staffForm.addToInvoice && staffForm.cost > 0 && addMaintenanceFeeToInvoice) {
-      addMaintenanceFeeToInvoice(assignModal.room, staffForm.cost, `Phí sửa chữa: ${assignModal.issue}`);
+      await addMaintenanceFeeToInvoice(assignModal.room, staffForm.cost, `Phí sửa chữa: ${assignModal.issue}`);
     }
     setAssignModal(null);
-  };
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
 
   const displayedTickets = useMemo(() => {
     if (isAdmin) return tickets || [];

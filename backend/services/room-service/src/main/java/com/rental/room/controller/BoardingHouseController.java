@@ -1,4 +1,4 @@
-﻿package com.rental.room.controller;
+package com.rental.room.controller;
 
 import com.rental.room.dto.ApiResponse;
 import com.rental.room.dto.BoardingHouseResponse;
@@ -21,8 +21,9 @@ public class BoardingHouseController {
 
     @PostMapping
     public ResponseEntity<ApiResponse<BoardingHouseResponse>> createBoardingHouse(
-            @Valid @RequestBody CreateBoardingHouseRequest request
+            @Valid @RequestBody CreateBoardingHouseRequest request, @RequestHeader("X-User-Id") Long userId
     ) {
+        request.setOwnerId(userId);
         BoardingHouseResponse response = boardingHouseService.createBoardingHouse(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response, "Boarding house created successfully"));
     }
@@ -42,7 +43,7 @@ public class BoardingHouseController {
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<BoardingHouseResponse>> updateBoardingHouse(
             @PathVariable Long id,
-            @Valid @RequestBody CreateBoardingHouseRequest request
+            @Valid @RequestBody CreateBoardingHouseRequest request, @RequestHeader("X-User-Id") Long userId
     ) {
         BoardingHouseResponse response = boardingHouseService.updateBoardingHouse(id, request);
         return ResponseEntity.ok(ApiResponse.success(response, "Boarding house updated successfully"));

@@ -24,6 +24,7 @@ public class MoMoServiceImpl implements MoMoService {
 
     @Override
     public MoMoPaymentResponse createPaymentUrl(MoMoPaymentRequest request) {
+        if(moMoConfig.getSecretKey()==null || moMoConfig.getSecretKey().isBlank() || moMoConfig.getPartnerCode()==null || moMoConfig.getPartnerCode().isBlank()) throw new org.springframework.web.server.ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Chưa cấu hình MoMo ở backend");
         String partnerCode = moMoConfig.getPartnerCode();
         String accessKey = moMoConfig.getAccessKey();
         String secretKey = moMoConfig.getSecretKey();
@@ -95,31 +96,26 @@ public class MoMoServiceImpl implements MoMoService {
                         .amount(amount)
                         .message(message != null ? message : "Success")
                         .resultCode(resultCode != null ? resultCode : 0)
-                        .payUrl(payUrl != null ? payUrl : redirectUrl + "?resultCode=0&orderId=" + orderId + "&amount=" + amount)
+                        .payUrl(payUrl)
                         .qrCodeUrl(qrCodeUrl)
                         .deeplink(deeplink)
                         .build();
             }
         } catch (Exception ex) {
-            log.warn("Direct MoMo Sandbox API request failed or timed out: {}. Using fallback sandbox redirect.", ex.getMessage());
+            log.warn("Direct MoMo Sandbox API request failed or timed out: {}. Rejecting payment URL creation.", ex.getMessage());
         }
 
-        // Fallback for offline or sandbox network isolation
-        String fallbackPayUrl = redirectUrl + "?resultCode=0&orderId=" + orderId + "&amount=" + amount + "&message=Successful.";
-        return MoMoPaymentResponse.builder()
-                .partnerCode(partnerCode)
-                .orderId(orderId)
-                .requestId(requestId)
-                .amount(amount)
-                .message("Success (Sandbox Mode)")
-                .resultCode(0)
-                .payUrl(fallbackPayUrl)
-                .build();
+        throw new org.springframework.web.server.ResponseStatusException(HttpStatus.BAD_GATEWAY, "Không tạo được giao dịch MoMo");
     }
 
     @Override
     public boolean verifyPayment(Map<String, String> params) {
-        String resultCode = params.get("resultCode");
-        return "0".equals(resultCode) || "9000".equals(resultCode);
+        if(moMoConfig.getSecretKey()==null || moMoConfig.getSecretKey().isBlank()) return false;
+        if (!"0".equals(params.get("resultCode")) || params.get("signature") == null) return false;
+        String[] keys = {"amount","extraData","message","orderId","orderInfo","orderType","partnerCode","payType","requestId","responseTime","resultCode","transId"};
+        StringBuilder raw = new StringBuilder("accessKey=" + moMoConfig.getAccessKey());
+        for (String key : keys) { if (!params.containsKey(key)) return false; raw.append("&").append(key).append("=").append(params.get(key)); }
+        String expected = MoMoConfig.hmacSHA256(moMoConfig.getSecretKey(), raw.toString());
+        return java.security.MessageDigest.isEqual(expected.getBytes(java.nio.charset.StandardCharsets.UTF_8),params.get("signature").getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 }

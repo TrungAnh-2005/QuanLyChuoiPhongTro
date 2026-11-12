@@ -89,10 +89,14 @@ export default function UserInvoicesPage() {
       .reduce((sum, inv) => sum + (inv.total || 0), 0);
   }, [invoices, myRentedRooms, user]);
 
-  const handlePaymentSuccess = (invoiceId) => {
-    payInvoice(invoiceId, 'ONLINE_GATEWAY');
+  const handlePaymentSuccess = async (invoiceId) => {
+try {
+
+    await payInvoice(invoiceId, 'ONLINE_GATEWAY');
     setPaymentModalInvoice(null);
-  };
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
 
   return (
     <div className="space-y-6">

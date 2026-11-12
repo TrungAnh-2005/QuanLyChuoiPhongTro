@@ -27,6 +27,8 @@ import java.util.Map;
 @Component
 public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAuthenticationFilter.Config> {
 
+    @org.springframework.beans.factory.annotation.Value("${APPLICATION_TEST_MODE:false}")
+    private boolean testMode;
     private final JwtUtils jwtUtils;
     private final ObjectMapper objectMapper;
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
@@ -35,7 +37,6 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
             "/api/auth/login",
             "/api/auth/register",
             "/api/auth/refresh",
-            "/api/ai/**",
             "/eureka/**",
             "/actuator/**"
     );
@@ -51,6 +52,15 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
         return (exchange, chain) -> {
             ServerHttpRequest request = exchange.getRequest();
             String path = request.getURI().getPath();
+            if (testMode) {
+                ServerHttpRequest testRequest = request.mutate()
+                        .headers(headers -> headers.remove(HttpHeaders.AUTHORIZATION))
+                        .header("X-User-Id", "2")
+                        .header("X-User-Roles", "ROLE_ADMIN,ROLE_STAFF,ROLE_TENANT")
+                        .header("X-User-Email", "test@rental.local")
+                        .build();
+                return chain.filter(exchange.mutate().request(testRequest).build());
+            }
 
             for (String publicEndpoint : PUBLIC_ENDPOINTS) {
                 if (pathMatcher.match(publicEndpoint, path)) {
@@ -75,6 +85,7 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
                 ServerHttpRequest mutatedRequest = request.mutate()
                         .header("X-User-Id", userId)
                         .header("X-User-Roles", roles)
+                        .header("X-User-Email", String.valueOf(jwtUtils.getClaims(token).get("email", String.class)))
                         .build();
 
                 return chain.filter(exchange.mutate().request(mutatedRequest).build());

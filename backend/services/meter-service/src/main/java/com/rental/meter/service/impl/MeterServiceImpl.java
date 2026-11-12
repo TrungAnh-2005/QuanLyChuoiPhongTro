@@ -132,7 +132,10 @@ public class MeterServiceImpl implements MeterService {
                 request.getRoomId(), request.getMeterType()
         );
 
-        double oldReading = latestReadingOpt.map(MeterReading::getNewReading).orElse(0.0);
+        LocalDate targetDate=request.getReadingDate()!=null?request.getReadingDate():LocalDate.now();
+        var history=readingRepository.findByRoomIdOrderByReadingDateDesc(request.getRoomId()).stream().filter(r -> r.getMeterType()==request.getMeterType()).toList();
+        var current=history.stream().filter(r -> java.time.YearMonth.from(r.getReadingDate()).equals(java.time.YearMonth.from(targetDate))).findFirst();
+        double oldReading=current.map(MeterReading::getOldReading).orElseGet(() -> history.stream().filter(r -> r.getReadingDate().isBefore(targetDate.withDayOfMonth(1))).findFirst().map(MeterReading::getNewReading).orElse(0.0));
         double newReading = request.getNewReading();
 
         if (newReading < oldReading) {
@@ -151,6 +154,8 @@ public class MeterServiceImpl implements MeterService {
         LocalDate readingDate = request.getReadingDate() != null ? request.getReadingDate() : LocalDate.now();
 
         MeterReading reading = MeterReading.builder()
+                .id(current.map(MeterReading::getId).orElse(null))
+                .createdAt(current.map(MeterReading::getCreatedAt).orElse(null))
                 .meterId(meter.getId())
                 .roomId(request.getRoomId())
                 .meterType(request.getMeterType())

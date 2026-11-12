@@ -124,7 +124,7 @@ export function healBoardingHousesList(list) {
   return healed;
 }
 
-const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+const isZeroSandbox = true;
 
 export const HOUSE_IMAGE_PRESETS = [
   { label: 'Tòa Thang Máy Hiện Đại', url: '/assets/images/house_cau_giay.jpg' },
@@ -190,6 +190,8 @@ const initialHouses = [
 ];
 
 export default function BoardingHousesPage() {
+  const {boardingHouses:apiBoardingHouses=[]}=useData() || {};
+
   const { user } = useAuth();
   const {
     rooms = [],
@@ -201,7 +203,7 @@ export default function BoardingHousesPage() {
     paySaasInvoice,
     updateLandlordPackage,
     deleteRoom,
-    recordHouseDeletion
+    recordHouseDeletion, boardingHouses: apiHouses = [], updateBoardingHouse, deleteBoardingHouse, refreshData
   } = useData();
   const role = user?.role || 'ADMIN';
   const isTenant = role === 'TENANT';
@@ -211,7 +213,7 @@ export default function BoardingHousesPage() {
   const [houseStatusTab, setHouseStatusTab] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'LOCKED' | 'PENDING'
 
   // Kiểm tra quyền sở hữu cơ sở: Chỉ Staff/Chủ trọ phụ trách cơ sở đó mới được Sửa, Xóa, Cài đặt Biểu giá (Admin không can thiệp)
-  const canManageHouse = (house) => {
+  const canManageHouse = (house) => { if(user?.isTestMode) return true;
     if (!house) return false;
     if (role !== 'STAFF') return false;
     const myUsername = user?.username;
@@ -263,7 +265,7 @@ export default function BoardingHousesPage() {
 
   const [rawHouses, setHouses] = useState(() => {
     try {
-      const saved = localStorage.getItem('rental_boarding_houses');
+      const saved = JSON.stringify(apiBoardingHouses);
       if (saved) {
         const parsed = JSON.parse(saved);
         return healCustomHouses(parsed);
@@ -471,15 +473,21 @@ export default function BoardingHousesPage() {
   }, [houses, staffHouseCode, isZeroSandbox, houseScopeTab, searchTerm]);
 
 
-  const handleApproveHouse = (code) => {
+  useEffect(() => { setHouses(apiHouses); }, [apiHouses]);
+
+  const handleApproveHouse = async (code) => {
+    const target = rawHouses.find(h => h.code === code);
+    if (!(await updateBoardingHouse(target.id, {status:"ACTIVE"})).success) return;
     const nextList = rawHouses.map((h) => (h.code === code ? { ...h, status: 'ACTIVE', approvedAt: new Date().toLocaleDateString('vi-VN') } : h));
     setHouses(nextList);
     try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
     alert(`✅ Quản Trị Viên đã phê duyệt cơ sở ${code}! Cơ sở đã chuyển sang trạng thái Hoạt Động chính thức.`);
   };
 
-  const handleRejectHouse = (code) => {
+  const handleRejectHouse = async (code) => {
     if (window.confirm(`Xác nhận từ chối và gỡ bỏ hồ sơ cơ sở ${code}?`)) {
+      const target = rawHouses.find(h => h.code === code);
+      if (!(await deleteBoardingHouse(target.id)).success) return;
       const nextList = rawHouses.filter((h) => h.code !== code);
       setHouses(nextList);
       try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
@@ -487,7 +495,7 @@ export default function BoardingHousesPage() {
     }
   };
 
-  const handleToggleLockHouse = (houseOrCode) => {
+  const handleToggleLockHouse = async (houseOrCode) => {
     const code = typeof houseOrCode === 'string' ? houseOrCode : houseOrCode.code;
     const targetHouse = rawHouses.find((h) => h.code === code) || (typeof houseOrCode === 'object' ? houseOrCode : null);
 
@@ -504,6 +512,7 @@ export default function BoardingHousesPage() {
 
     if (window.confirm(confirmMsg)) {
       const nextStatus = isCurrentlyLocked ? 'ACTIVE' : 'LOCKED';
+      if (!(await updateBoardingHouse(targetHouse.id,{status:nextStatus})).success) return;
       const nextList = rawHouses.map((h) => {
         if (h.code === code) {
           return { ...h, status: nextStatus };
@@ -540,7 +549,7 @@ export default function BoardingHousesPage() {
     );
   }, [editHouseForm.name, editingHouse, rawHouses, user, role]);
 
-  const handleSaveEditHouse = (e) => {
+  const handleSaveEditHouse = async (e) => {
     e.preventDefault();
     if (!editingHouse) return;
     const cleanName = (editHouseForm.name || '').trim();
@@ -552,6 +561,7 @@ export default function BoardingHousesPage() {
       return;
     }
 
+    if (!(await updateBoardingHouse(editingHouse.id,{...editHouseForm,name:cleanName,address:cleanAddress,managerName:editHouseForm.manager,totalFloors:Number(editHouseForm.floors)})).success) return;
     const nextList = rawHouses.map((h) => {
       if (h.code === editingHouse.code) {
         return {
@@ -568,8 +578,8 @@ export default function BoardingHousesPage() {
       return h;
     });
     setHouses(nextList);
-    try { 
-      localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); 
+    try {
+      localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList));
       const savedRooms = localStorage.getItem('rental_rooms');
       if (savedRooms) {
         const parsedRooms = JSON.parse(savedRooms);
@@ -605,10 +615,12 @@ export default function BoardingHousesPage() {
     });
   };
 
-  const handleDeleteHouse = (houseOrCode) => {
+  const handleDeleteHouse = async (houseOrCode) => {
+try {
+
     const code = typeof houseOrCode === 'string' ? houseOrCode : houseOrCode.code;
     const targetHouse = enrichedHouses.find((h) => h.code === code) || (typeof houseOrCode === 'object' ? houseOrCode : null);
-    
+
     if (targetHouse && !canManageHouse(targetHouse)) {
       alert(`⚠️ Bạn không có quyền xóa cơ sở này!\nCơ sở này do "${targetHouse.manager || 'Quản lý khác'}" phụ trách.`);
       return;
@@ -622,6 +634,7 @@ export default function BoardingHousesPage() {
     }
 
     if (window.confirm(`Xác nhận xóa vĩnh viễn cơ sở "${targetHouse?.name || code}" (${code})?\n\nDữ liệu cơ sở này và toàn bộ danh mục phòng trực thuộc sẽ được dọn sạch khỏi hệ thống.`)) {
+      if (!(await deleteBoardingHouse(targetHouse.id)).success) return;
       const nextList = rawHouses.filter((h) => h.code !== code);
       setHouses(nextList);
       try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
@@ -629,7 +642,7 @@ export default function BoardingHousesPage() {
       // Xóa đồng bộ các phòng thuộc cơ sở này
       const houseRoomsToDelete = (rooms || []).filter((r) => r.houseCode === code || (code === 'CS-01' && !r.houseCode));
       if (typeof deleteRoom === 'function') {
-        houseRoomsToDelete.forEach((r) => deleteRoom(r.id));
+        // Rooms are removed by the backend transaction with the house.
       }
       try {
         const savedRooms = localStorage.getItem('rental_rooms');
@@ -642,7 +655,7 @@ export default function BoardingHousesPage() {
 
       // Gửi thông báo khẩn cấp đến Quản Trị Viên (Admin) và ghi nhận Audit Log
       if (typeof recordHouseDeletion === 'function') {
-        recordHouseDeletion({
+        await recordHouseDeletion({
           houseCode: code,
           houseName: targetHouse?.name || code,
           deletedBy: user?.fullName || user?.username || (isStaff ? 'Quản lý cơ sở (Staff)' : 'Admin'),
@@ -654,7 +667,9 @@ export default function BoardingHousesPage() {
 
       alert(`✅ Đã xóa cơ sở "${targetHouse?.name || code}".\n\n🚨 Hệ thống đã tự động gửi Cảnh Báo Khẩn Cấp đến Quản Trị Viên (Admin) trên thanh thông báo và ghi nhận vào Nhật Ký Kiểm Toán (Audit Log).`);
     }
-  };
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -699,7 +714,7 @@ export default function BoardingHousesPage() {
       setShowUpgradeModal(true);
       return;
     }
-    
+
     // Mã cơ sở do hệ thống tự sinh theo từng Chuỗi của Chủ trọ (Staff 1: S1-CS-01, Staff 2: S2-CS-01, Admin: CS-01...)
     const staffPrefix = isStaff
       ? (user?.username === 'staff2' ? 'S2-CS' : (user?.username === 'staff' ? 'S1-CS' : `${(user?.username || 'S').toUpperCase()}-CS`))
@@ -718,7 +733,7 @@ export default function BoardingHousesPage() {
     });
 
     const newCode = `${staffPrefix}-${String(nextPrefixNum).padStart(2, '0')}`;
-    const initialStatus = isStaff ? 'PENDING_APPROVAL' : 'ACTIVE';
+    const initialStatus = isStaff && !user?.isTestMode ? 'PENDING_APPROVAL' : 'ACTIVE';
     const targetRooms = Math.min(Number(newHouse.totalRooms) || 10, maxRoomsAllowed);
     const creatorUser = user?.username || (isStaff ? 'staff' : 'admin');
     const assignedManager = newHouse.manager || user?.fullName || 'Quản lý cơ sở';
@@ -740,15 +755,15 @@ export default function BoardingHousesPage() {
       ]
     };
 
+    let savedHouse;
     try {
-      await api.post('/properties', payload);
-    } catch {
-      // Proceed locally if offline
-    }
+      savedHouse = (await api.post('/properties', {...payload,managerUsername:creatorUser,createdBy:creatorUser})).data;
+      await refreshData();
+    } catch (error) { alert(error.message); return; }
 
     const now = Date.now();
     const created = {
-      id: now,
+      id: savedHouse.id,
       createdAtMs: now,
       createdAt: new Date().toLocaleString('vi-VN'),
       code: newCode,
@@ -1796,7 +1811,9 @@ export default function BoardingHousesPage() {
         onClose={() => setShowBuyPackageModal(false)}
         currentLandlord={currentLandlord}
         initialPackageCode="PRO"
-        onConfirmPurchase={(planData) => {
+        onConfirmPurchase={async (planData) => {
+try {
+
           setShowBuyPackageModal(false);
           const targetLandlordId = currentLandlord?.id || (user?.username === 'staff2' ? 2 : 1);
           const newInv = {
@@ -1816,27 +1833,33 @@ export default function BoardingHousesPage() {
             status: 'UNPAID',
             isSaas: true
           };
-          const createdInv = createSaasInvoice ? createSaasInvoice(newInv) : newInv;
+          const createdInv = createSaasInvoice ? await createSaasInvoice(newInv) : newInv;
           setPayingSaasInvoice(createdInv || newInv);
-        }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
       />
 
       {/* Modal Cổng Thanh Toán SePay VietQR / VNPay / MoMo Cho Gói SaaS */}
       <PaymentModal
         isOpen={!!payingSaasInvoice}
         onClose={() => setPayingSaasInvoice(null)}
-        onSuccess={(inv, payMethod) => {
+        onSuccess={async (inv, payMethod) => {
+try {
+
           const methodLabel = payMethod === 'VNPAY' ? 'Cổng VNPay' : (payMethod === 'MOMO' ? 'Ví MoMo' : 'VietQR / SePay');
           if (paySaasInvoice) {
-            paySaasInvoice(inv.id, methodLabel);
+            await paySaasInvoice(inv.id, methodLabel);
           }
           const targetLandlordId = currentLandlord?.id || (user?.username === 'staff2' ? 2 : 1);
           if (updateLandlordPackage) {
-            updateLandlordPackage(targetLandlordId, inv.packageCode || 'PRO');
+            await updateLandlordPackage(targetLandlordId, inv.packageCode || 'PRO');
           }
           setPayingSaasInvoice(null);
           alert(`🎉 Nộp tiền cước SaaS qua ${methodLabel} thành công!\nGói ${inv.packageName || inv.packageCode} đã được kích hoạt, bạn có thể tạo cơ sở không giới hạn.`);
-        }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
         invoice={payingSaasInvoice || undefined}
       />
     </div>

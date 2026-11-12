@@ -39,6 +39,8 @@ public class User {
     @Column(length = 20)
     private String phone;
 
+    private String packageCode = "TRIAL";
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     @Builder.Default

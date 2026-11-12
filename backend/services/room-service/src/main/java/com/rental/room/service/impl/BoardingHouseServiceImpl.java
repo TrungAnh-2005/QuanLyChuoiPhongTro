@@ -27,7 +27,17 @@ public class BoardingHouseServiceImpl implements BoardingHouseService {
     @Transactional
     public BoardingHouseResponse createBoardingHouse(CreateBoardingHouseRequest request) {
         BoardingHouse boardingHouse = BoardingHouse.builder()
+                .ownerId(request.getOwnerId())
                 .name(request.getName().trim())
+                .code(request.getCode())
+                .managerName(request.getManagerName())
+                .managerUsername(request.getManagerUsername())
+                .createdBy(request.getCreatedBy())
+                .status(request.getStatus())
+                .imageUrl(request.getImageUrl())
+                .totalFloors(request.getTotalFloors())
+                .totalRooms(request.getTotalRooms())
+
                 .address(request.getAddress().trim())
                 .managerPhone(request.getManagerPhone() != null ? request.getManagerPhone().trim() : null)
                 .buildings(new ArrayList<>())
@@ -79,6 +89,14 @@ public class BoardingHouseServiceImpl implements BoardingHouseService {
         boardingHouse.setAddress(request.getAddress().trim());
         boardingHouse.setManagerPhone(request.getManagerPhone() != null ? request.getManagerPhone().trim() : null);
 
+        boardingHouse.setCode(request.getCode());
+        boardingHouse.setManagerName(request.getManagerName());
+        boardingHouse.setManagerUsername(request.getManagerUsername());
+        boardingHouse.setCreatedBy(request.getCreatedBy());
+        boardingHouse.setStatus(request.getStatus());
+        boardingHouse.setImageUrl(request.getImageUrl());
+        boardingHouse.setTotalFloors(request.getTotalFloors());
+        boardingHouse.setTotalRooms(request.getTotalRooms());
         BoardingHouse updated = boardingHouseRepository.save(boardingHouse);
         return mapToResponse(updated);
     }
@@ -95,6 +113,16 @@ public class BoardingHouseServiceImpl implements BoardingHouseService {
     private BoardingHouseResponse mapToResponse(BoardingHouse entity) {
         return BoardingHouseResponse.builder()
                 .id(entity.getId())
+                .ownerId(entity.getOwnerId())
+                .code(entity.getCode())
+                .managerName(entity.getManagerName())
+                .managerUsername(entity.getManagerUsername())
+                .createdBy(entity.getCreatedBy())
+                .status(entity.getStatus())
+                .imageUrl(entity.getImageUrl())
+                .totalFloors(entity.getTotalFloors())
+                .totalRooms(entity.getTotalRooms())
+
                 .name(entity.getName())
                 .address(entity.getAddress())
                 .managerPhone(entity.getManagerPhone())

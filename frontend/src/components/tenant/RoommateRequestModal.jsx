@@ -29,7 +29,9 @@ export default function RoommateRequestModal({ isOpen, onClose, userRoom, active
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
+try {
+
     e.preventDefault();
     setError('');
 
@@ -56,7 +58,7 @@ export default function RoommateRequestModal({ isOpen, onClose, userRoom, active
     }
 
     try {
-      submitRoommateRequest({
+      await submitRoommateRequest({
         requestedByTenantId: user?.id || 'KH-001',
         roomId: userRoom?.id || 'P101',
         contractId: activeContract?.id || 'HD-2026-001',
@@ -71,7 +73,9 @@ export default function RoommateRequestModal({ isOpen, onClose, userRoom, active
     } catch (err) {
       setError(err.message || 'Không thể gửi đăng ký ở ghép.');
     }
-  };
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">

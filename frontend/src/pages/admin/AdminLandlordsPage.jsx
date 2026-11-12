@@ -34,9 +34,11 @@ import Modal from '../../components/common/Modal';
 import CreateLandlordAiModal from '../../components/admin/CreateLandlordAiModal';
 import { checkKycTrialAbuse, registerKycTrial, getTrialStatus } from '../../utils/packagePermissions';
 
-const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+const isZeroSandbox = true;
 
 export default function AdminLandlordsPage() {
+  const {boardingHouses:apiBoardingHouses=[]}=useData() || {};
+
   const {
     landlords = [],
     createLandlord,
@@ -50,7 +52,7 @@ export default function AdminLandlordsPage() {
   // Load actual boarding houses from system to dynamically compute landlord facilities
   const [boardingHouses, setBoardingHouses] = useState(() => {
     try {
-      const saved = localStorage.getItem('rental_boarding_houses');
+      const saved = JSON.stringify(apiBoardingHouses);
       if (saved) return JSON.parse(saved);
     } catch {}
     return [];
@@ -59,14 +61,14 @@ export default function AdminLandlordsPage() {
   useEffect(() => {
     const handleSync = () => {
       try {
-        const saved = localStorage.getItem('rental_boarding_houses');
+        const saved = JSON.stringify(apiBoardingHouses);
         if (saved) setBoardingHouses(JSON.parse(saved));
       } catch {}
     };
     handleSync();
-    window.addEventListener('storage', handleSync);
-    return () => window.removeEventListener('storage', handleSync);
-  }, []);
+    window.addEventListener('rental:data-loaded', handleSync);
+    return () => window.removeEventListener('rental:data-loaded', handleSync);
+  }, [apiBoardingHouses]);
 
   // Compute live facilities & rooms for each landlord dynamically
   const getLandlordStats = (landlord) => {
@@ -116,15 +118,19 @@ export default function AdminLandlordsPage() {
     setCustomPwdInput('TroVietAdmin@' + Math.floor(1000 + Math.random() * 9000));
   };
 
-  const handleConfirmResetPassword = (e) => {
+  const handleConfirmResetPassword = async (e) => {
+try {
+
     e.preventDefault();
     if (!resetPwdLandlord) return;
     if (resetLandlordPassword) {
-      resetLandlordPassword(resetPwdLandlord.id, customPwdInput);
+      await resetLandlordPassword(resetPwdLandlord.id, customPwdInput);
     }
     showToast(`🔑 Đã cấp lại mật khẩu cho Chủ trọ ${resetPwdLandlord.fullName}! Mật khẩu tạm: ${customPwdInput}`);
     setResetPwdLandlord(null);
-  };
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
 
   const [selectedLandlordForPackage, setSelectedLandlordForPackage] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
@@ -149,7 +155,9 @@ export default function AdminLandlordsPage() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const handleCreate = (e) => {
+  const handleCreate = async (e) => {
+try {
+
     e.preventDefault();
     if (!newLandlord.fullName || !newLandlord.email || !newLandlord.phone) return;
 
@@ -165,7 +173,7 @@ export default function AdminLandlordsPage() {
       registerKycTrial({ identityCard: newLandlord.identityCard });
     }
 
-    createLandlord({
+    await createLandlord({
       ...newLandlord,
       username: newLandlord.username || newLandlord.email.split('@')[0]
     });
@@ -187,9 +195,13 @@ export default function AdminLandlordsPage() {
     });
 
     showToast('Tạo tài khoản Chủ trọ và gửi email kích hoạt thành công (UC-A01)!');
-  };
 
-  const handleToggleLock = (landlord) => {
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
+
+  const handleToggleLock = async (landlord) => {
+try {
+
     const isLocking = landlord.status === 'ACTIVE';
     const confirmAction = window.confirm(
       isLocking
@@ -198,20 +210,26 @@ export default function AdminLandlordsPage() {
     );
     if (!confirmAction) return;
 
-    toggleLandlordLock(landlord.id);
+    await toggleLandlordLock(landlord.id);
     showToast(
       isLocking
         ? `Đã khóa tài khoản Chủ trọ ${landlord.fullName}!`
         : `Đã mở khóa tài khoản ${landlord.fullName}!`
     );
-  };
 
-  const handleSavePackage = (newPackage) => {
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
+
+  const handleSavePackage = async (newPackage) => {
+try {
+
     if (!selectedLandlordForPackage) return;
-    updateLandlordPackage(selectedLandlordForPackage.id, newPackage);
+    await updateLandlordPackage(selectedLandlordForPackage.id, newPackage);
     setSelectedLandlordForPackage(null);
     showToast('Cập nhật gói dịch vụ và hạn mức chi nhánh thành công (UC-A04)!');
-  };
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
 
   const filteredLandlords = (landlords || []).filter((l) => {
     const matchSearch =
@@ -478,23 +496,31 @@ export default function AdminLandlordsPage() {
                         {p.kycStatus === 'PENDING' && (
                           <>
                             <button
-                              onClick={() => {
-                                verifyLandlordKyc(p.id, 'VERIFIED');
+                              onClick={async () => {
+try {
+
+                                await verifyLandlordKyc(p.id, 'VERIFIED');
                                 showToast(`Đã xác minh KYC thành công cho chủ trọ ${p.landlordName || p.fullName}!`);
-                              }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
                               className="btn-press px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
                             >
                               Duyệt KYC
                             </button>
 
                             <button
-                              onClick={() => {
+                              onClick={async () => {
+try {
+
                                 const reason = window.prompt('Nhập lý do từ chối hồ sơ KYC:');
                                 if (reason !== null) {
-                                  verifyLandlordKyc(p.id, 'REJECTED', reason || 'Ảnh CCCD mờ hoặc thông tin không trùng khớp');
+                                  await verifyLandlordKyc(p.id, 'REJECTED', reason || 'Ảnh CCCD mờ hoặc thông tin không trùng khớp');
                                   showToast(`Đã từ chối hồ sơ KYC của ${p.landlordName || p.fullName}!`, 'WARNING');
                                 }
-                              }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
                               className="btn-press px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition cursor-pointer"
                             >
                               Từ chối
@@ -504,13 +530,17 @@ export default function AdminLandlordsPage() {
 
                         {p.kycStatus === 'VERIFIED' && (
                           <button
-                            onClick={() => {
+                            onClick={async () => {
+try {
+
                               const reason = window.prompt('Nhập lý do thu hồi xác minh hồ sơ KYC này:');
                               if (reason !== null) {
-                                verifyLandlordKyc(p.id, 'REJECTED', reason || 'Thu hồi xác minh do thông tin cần kiểm tra lại');
+                                await verifyLandlordKyc(p.id, 'REJECTED', reason || 'Thu hồi xác minh do thông tin cần kiểm tra lại');
                                 showToast(`Đã thu hồi xác minh của ${p.landlordName || p.fullName}!`, 'WARNING');
                               }
-                            }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
                             className="btn-press px-2.5 py-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg text-[11px] font-semibold transition cursor-pointer"
                             title="Hủy/Thu hồi xác minh khi cần thiết"
                           >
@@ -520,10 +550,14 @@ export default function AdminLandlordsPage() {
 
                         {p.kycStatus === 'REJECTED' && (
                           <button
-                            onClick={() => {
-                              verifyLandlordKyc(p.id, 'VERIFIED');
+                            onClick={async () => {
+try {
+
+                              await verifyLandlordKyc(p.id, 'VERIFIED');
                               showToast(`Đã duyệt lại KYC thành công cho chủ trọ ${p.landlordName || p.fullName}!`);
-                            }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
                             className="btn-press px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition cursor-pointer"
                           >
                             Duyệt lại
@@ -715,10 +749,14 @@ export default function AdminLandlordsPage() {
         isOpen={showAiModal}
         onClose={() => setShowAiModal(false)}
         existingLandlords={landlords}
-        onSaveLandlord={(landlordData) => {
-          createLandlord(landlordData);
+        onSaveLandlord={async (landlordData) => {
+try {
+
+          await createLandlord(landlordData);
           showToast(`Đã thêm thành công Chủ trọ ${landlordData.fullName} qua AI OCR CCCD!`);
-        }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
       />
 
       {/* Modal Thêm Chủ Trọ Mới */}

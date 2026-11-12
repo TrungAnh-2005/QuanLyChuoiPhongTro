@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 
 export default function AppLayout() {
-  const { user } = useAuth();
+  const { user, testMode } = useAuth();
   const { landlordProfiles = [], landlords = [] } = useData() || {};
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -55,19 +55,19 @@ export default function AppLayout() {
 
   // Check RBAC permissions theo chuẩn SRS-RENTAL-2026-V1.0
   const isTenantRestricted =
-    role === 'TENANT' &&
+    !testMode && role === 'TENANT' &&
     (path.startsWith('/houses') ||
       path.startsWith('/tenants') ||
       path.startsWith('/reports') ||
       path.startsWith('/admin'));
 
   const isStaffRestricted =
-    role === 'STAFF' && path.startsWith('/admin');
+    !testMode && role === 'STAFF' && path.startsWith('/admin');
 
   // Quy định RBAC chuẩn Multi-tenant SaaS: Admin quản lý nền tảng đối tác và toàn bộ cơ sở toàn sàn,
   // không trực tiếp vận hành vi mô (sơ đồ phòng trọ cá nhân, khách thuê và ghi chỉ số điện nước)
   const isAdminRestricted =
-    role === 'ADMIN' &&
+    !testMode && role === 'ADMIN' &&
     (path.startsWith('/meters') ||
       path.startsWith('/rooms') ||
       path.startsWith('/tenants'));

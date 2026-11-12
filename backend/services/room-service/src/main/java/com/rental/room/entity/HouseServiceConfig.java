@@ -1,4 +1,4 @@
-﻿package com.rental.room.entity;
+package com.rental.room.entity;
 
 import jakarta.persistence.*;
 import lombok.*;

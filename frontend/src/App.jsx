@@ -1,4 +1,5 @@
 import React from 'react';
+import ApiStatus from './components/common/ApiStatus';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
@@ -80,6 +81,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <DataProvider>
+          <ApiStatus />
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/" element={<AppLayout />}>

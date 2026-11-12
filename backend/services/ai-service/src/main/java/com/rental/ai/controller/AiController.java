@@ -1,4 +1,4 @@
-﻿package com.rental.ai.controller;
+package com.rental.ai.controller;
 
 import com.rental.ai.dto.IdCardOcrResponse;
 import com.rental.ai.dto.MeterOcrResponse;

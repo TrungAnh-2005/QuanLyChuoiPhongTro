@@ -279,10 +279,14 @@ export default function AdminSaasInvoicesPage() {
                     {inv.status === 'UNPAID' ? (
                       <div className="flex items-center justify-end gap-1.5">
                         <button
-                          onClick={() => {
-                            paySaasInvoice(inv.id, 'Admin xác nhận chuyển khoản ngân hàng');
+                          onClick={async () => {
+try {
+
+                            await paySaasInvoice(inv.id, 'Admin xác nhận chuyển khoản ngân hàng');
                             showToast(`Đã xác nhận thu tiền cước cho chủ trọ ${inv.landlordName} thành công!`);
-                          }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
                           className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-xs inline-flex items-center gap-1 cursor-pointer"
                           title="Xác nhận tiền đã vào tài khoản Admin và gạch nợ"
                         >
@@ -291,10 +295,14 @@ export default function AdminSaasInvoicesPage() {
                         </button>
 
                         <button
-                          onClick={() => {
-                            if (sendSaasReminder) sendSaasReminder(inv);
+                          onClick={async () => {
+try {
+
+                            if (sendSaasReminder) await sendSaasReminder(inv);
                             showToast(`🔔 Đã gửi thông báo nhắc nợ cước SaaS đến tài khoản Staff/Chủ trọ và SMS Brandname đến SĐT ${inv.landlordPhone}!`);
-                          }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
                           className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition inline-flex items-center gap-1 cursor-pointer"
                           title="Gửi thông báo và tin nhắn nhắc nợ cước SaaS"
                         >
@@ -397,10 +405,12 @@ export default function AdminSaasInvoicesPage() {
       {/* Modal Tạo Hóa Đơn Thu Phí Cước Mới Cho Chủ Trọ */}
       <Modal isOpen={showAddSaasModal} onClose={() => setShowAddSaasModal(false)} maxWidth="max-w-md">
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
+try {
+
             e.preventDefault();
             const targetLandlord = landlords.find(l => l.id === Number(newSaasInvoice.landlordId)) || landlords[0];
-            createSaasInvoice({
+            await createSaasInvoice({
               landlordId: targetLandlord.id,
               landlordUsername: targetLandlord.username || (targetLandlord.id === 2 ? 'staff2' : 'staff'),
               landlordName: targetLandlord.fullName,
@@ -413,7 +423,9 @@ export default function AdminSaasInvoicesPage() {
             });
             setShowAddSaasModal(false);
             showToast(`Đã phát hành hóa đơn thu phí SaaS cho Chủ trọ ${targetLandlord.fullName} thành công!`);
-          }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
           className="p-6 space-y-4"
         >
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">

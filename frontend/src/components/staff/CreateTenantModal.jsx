@@ -413,7 +413,7 @@ export default function CreateTenantModal({ isOpen, onClose, onSaveTenant }) {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitError(null);
     if (!formData.fullName || !formData.identityCard) {
@@ -450,7 +450,8 @@ export default function CreateTenantModal({ isOpen, onClose, onSaveTenant }) {
     };
 
     if (onSaveTenant) {
-      onSaveTenant(newTenant);
+      const saved = await onSaveTenant(newTenant);
+      if(saved?.success===false) return;
     }
     onClose();
   };

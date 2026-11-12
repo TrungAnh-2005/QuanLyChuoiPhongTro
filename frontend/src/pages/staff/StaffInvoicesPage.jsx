@@ -25,9 +25,11 @@ import Modal from '../../components/common/Modal';
 import BuySaasPackageModal from '../../components/staff/BuySaasPackageModal';
 import TrialExpiryBanner from '../../components/common/TrialExpiryBanner';
 
-const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+const isZeroSandbox = true;
 
 export default function StaffInvoicesPage({ forcedTab }) {
+  const {boardingHouses:apiBoardingHouses=[]}=useData() || {};
+
   const { user } = useAuth();
   const {
     invoices = [],
@@ -80,10 +82,10 @@ export default function StaffInvoicesPage({ forcedTab }) {
   // Lọc cơ sở mà Staff quản lý
   const staffManageableHouses = useMemo(() => {
     try {
-      const saved = localStorage.getItem('rental_boarding_houses');
+      const saved = JSON.stringify(apiBoardingHouses);
       const dynamicHouses = saved ? JSON.parse(saved) : [];
       const u = (user?.username || '').toLowerCase();
-      return dynamicHouses.filter((h) => {
+      return dynamicHouses.filter((h) => { if(user?.isTestMode) return true;
         const created = (h.createdBy || '').toLowerCase();
         const manager = (h.managerUsername || '').toLowerCase();
         if (created && created === u) return true;
@@ -98,7 +100,7 @@ export default function StaffInvoicesPage({ forcedTab }) {
     } catch {
       return [];
     }
-  }, [user]);
+  }, [user,apiBoardingHouses]);
 
   const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
 
@@ -114,25 +116,31 @@ export default function StaffInvoicesPage({ forcedTab }) {
     });
   }, [saasInvoices, currentLandlord, user]);
 
-  const handleConfirmPurchase = (planData) => {
+  const handleConfirmPurchase = async (planData) => {
+try {
+
     setShowBuyPackageModal(false);
     const targetLandlordId = currentLandlord?.id || (user?.username === 'staff2' ? 2 : 1);
     if (updateLandlordPackage) {
-      updateLandlordPackage(targetLandlordId, planData.packageCode);
+      await updateLandlordPackage(targetLandlordId, planData.packageCode);
     }
     setBatchSentToast({
       success: true,
       message: `Đã cập nhật yêu cầu mua gói ${planData.packageName}. Hóa đơn mới đã được phát hành!`
     });
     setTimeout(() => setBatchSentToast(null), 4000);
-  };
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
 
   const handlePaySaasConfirm = (saasInv) => {
     setSaasPaySimulated(true);
-    setTimeout(() => {
-      paySaasInvoice(saasInv.id, 'Chuyển khoản VietQR', saasInv.packageCode || 'ENTERPRISE', saasInv.landlordId || 1);
+    setTimeout(async () => {
+try {
+
+      await paySaasInvoice(saasInv.id, 'Chuyển khoản VietQR', saasInv.packageCode || 'ENTERPRISE', saasInv.landlordId || 1);
       if (updateLandlordPackage) {
-        updateLandlordPackage(saasInv.landlordId || (user?.username === 'staff2' ? 2 : 1), saasInv.packageCode || 'ENTERPRISE');
+        await updateLandlordPackage(saasInv.landlordId || (user?.username === 'staff2' ? 2 : 1), saasInv.packageCode || 'ENTERPRISE');
       }
       setSaasPaySimulated(false);
       setPayingSaasInvoice(null);
@@ -141,7 +149,9 @@ export default function StaffInvoicesPage({ forcedTab }) {
         message: `Thanh toán hóa đơn gói SaaS ${saasInv.code} thành công! Bản quyền đã được gia hạn tự động.`
       });
       setTimeout(() => setBatchSentToast(null), 5000);
-    }, 1200);
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}, 1200);
   };
 
   const handleBatchPublish = () => {
@@ -156,14 +166,18 @@ export default function StaffInvoicesPage({ forcedTab }) {
     }, 1200);
   };
 
-  const handleManualConfirmPay = (invoiceId) => {
-    payInvoice(invoiceId, 'CASH');
+  const handleManualConfirmPay = async (invoiceId) => {
+try {
+
+    await payInvoice(invoiceId, 'CASH');
     setBatchSentToast({
       success: true,
       message: 'Đã xác nhận thu tiền mặt và gạch nợ hóa đơn thành công!'
     });
     setTimeout(() => setBatchSentToast(null), 3000);
-  };
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
 
   // Lọc hóa đơn phòng của khách
   const displayedTenantInvoices = useMemo(() => {

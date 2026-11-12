@@ -158,7 +158,7 @@ export default function MoveOutSettlementModal({ isOpen, onClose, settlement, ro
     });
   };
 
-  if (!isOpen) return null;
+
 
   const originalDeposit = settlement?.originalDeposit || contract?.deposit || 3000000;
   // Nếu trả trước hạn -> Tịch thu 100% tiền cọc (effectiveDeposit = 0)
@@ -201,13 +201,15 @@ export default function MoveOutSettlementModal({ isOpen, onClose, settlement, ro
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
+try {
+
     e.preventDefault();
     setError('');
 
     try {
       if (settlement?.id) {
-        settleMoveOut(settlement.id, {
+        await settleMoveOut(settlement.id, {
           damageFee,
           damageDescription: formData.damageDescription,
           unpaidUtilitiesFee,
@@ -229,11 +231,14 @@ export default function MoveOutSettlementModal({ isOpen, onClose, settlement, ro
     } catch (err) {
       setError(err.message || 'Lỗi khi thực hiện quyết toán hoàn cọc.');
     }
-  };
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
 
   const formatVND = (num) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(num || 0);
 
-  return (
+  if (!isOpen) return null;
+return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
       <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-slate-100 animate-scale-up">
         {/* Header */}

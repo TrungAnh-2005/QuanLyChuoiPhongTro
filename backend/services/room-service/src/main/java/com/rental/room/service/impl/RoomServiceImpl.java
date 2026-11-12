@@ -130,6 +130,7 @@ public class RoomServiceImpl implements RoomService {
 
         return RoomResponse.builder()
                 .id(room.getId())
+                .boardingHouseId(room.getFloor().getBuilding().getBoardingHouse().getId())
                 .floorId(floor != null ? floor.getId() : null)
                 .floorNumber(floor != null ? floor.getFloorNumber() : null)
                 .buildingName(building != null ? building.getName() : null)
@@ -158,6 +159,7 @@ public class RoomServiceImpl implements RoomService {
 
         return RoomDetailResponse.builder()
                 .id(room.getId())
+                .boardingHouseId(room.getFloor().getBuilding().getBoardingHouse().getId())
                 .floorId(floor != null ? floor.getId() : null)
                 .floorNumber(floor != null ? floor.getFloorNumber() : null)
                 .buildingId(building != null ? building.getId() : null)

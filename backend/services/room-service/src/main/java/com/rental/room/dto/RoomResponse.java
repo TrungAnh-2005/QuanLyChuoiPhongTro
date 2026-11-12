@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class RoomResponse {
     private Long id;
+    private Long boardingHouseId;
     private Long floorId;
     private Integer floorNumber;
     private String buildingName;

@@ -62,14 +62,16 @@ export default function UserMaintenancePage() {
     imageUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=600&auto=format&fit=crop'
   });
 
-  const handleCreateTicket = (e) => {
+  const handleCreateTicket = async (e) => {
+try {
+
     e.preventDefault();
     if (!newTicket.issue) return;
     const targetRoomName = newTicket.room || myRentedRooms[0] || 'Khu vực chung';
     const targetRoomObj = (rooms || []).find((r) => r.number === targetRoomName);
     const resolvedHouseCode = targetRoomObj?.houseCode || null;
 
-    createTicket({
+    await createTicket({
       room: targetRoomName,
       houseCode: resolvedHouseCode,
       category: newTicket.category,
@@ -88,7 +90,9 @@ export default function UserMaintenancePage() {
       priority: 'MEDIUM',
       imageUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=600&auto=format&fit=crop'
     });
-  };
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
 
   const displayedTickets = useMemo(() => {
     return (tickets || []).filter(

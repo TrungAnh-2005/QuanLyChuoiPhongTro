@@ -1,4 +1,4 @@
-﻿package com.rental.auth.entity;
+package com.rental.auth.entity;
 
 import jakarta.persistence.*;
 import lombok.*;

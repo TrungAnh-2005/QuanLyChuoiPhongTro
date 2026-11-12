@@ -213,7 +213,7 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
     // =========================================================================
     // 💼 STAFF: Phân quyền chính xác theo từng cơ sở do Staff này phụ trách
     // =========================================================================
-    const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+    const isZeroSandbox = true;
     const myStaffHouses = (() => {
       try {
         const saved = localStorage.getItem('rental_boarding_houses');
@@ -623,6 +623,8 @@ function generateNotifications(user, data = {}, readSet = new Set()) {
 }
 
 export default function Navbar({ onOpenMobileMenu = () => {} }) {
+  const {boardingHouses:apiBoardingHouses=[]}=useData() || {};
+
   const { user, logout, switchRole, tenantRooms } = useAuth();
   const dataContext = useData() || {};
   const { resetToZeroSandbox, restoreDefaultDemoData } = dataContext;
@@ -642,7 +644,7 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
 
   const hasSavedHouses = (() => {
     try {
-      const s = localStorage.getItem('rental_boarding_houses');
+      const s = JSON.stringify(apiBoardingHouses);
       const arr = s ? JSON.parse(s) : [];
       return Array.isArray(arr) && arr.length > 0;
     } catch {
@@ -671,28 +673,7 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
   }, [accountKey]);
 
   // Sinh danh sách thông báo chính xác cho tài khoản hiện hành
-  const notifications = useMemo(() => {
-    return generateNotifications(
-      user,
-      {
-        invoices: dataContext.invoices || [],
-        tickets: dataContext.tickets || [],
-        roomRequests: dataContext.roomRequests || [],
-        tenants: dataContext.tenants || [],
-        rooms: dataContext.rooms || [],
-        systemNotices: dataContext.systemNotices || [],
-        roomPaymentNotices: dataContext.roomPaymentNotices || [],
-        roommateLeaveNotices: dataContext.roommateLeaveNotices || [],
-        tenantRooms,
-        saasReminders: dataContext.saasReminders || [],
-        saasInvoices: dataContext.saasInvoices || [],
-        landlords: dataContext.landlords || [],
-        houseDeleteNotices: dataContext.houseDeleteNotices || [],
-        packagePurchaseNotices: dataContext.packagePurchaseNotices || []
-      },
-      new Set(readNotifIds)
-    );
-  }, [user, dataContext, tenantRooms, readNotifIds]);
+  const notifications = (dataContext.notifications || []).map(n => ({...n,desc:n.content,time:n.createdAt,link:n.type==='INVOICE'?'/invoices':'/'}));
 
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef(null);
@@ -710,29 +691,8 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  const markAllAsRead = () => {
-    const allIds = notifications.map((n) => String(n.id));
-    const merged = Array.from(new Set([...readNotifIds, ...allIds]));
-    setReadNotifIds(merged);
-    try {
-      localStorage.setItem(`rental_read_notifs_${accountKey}`, JSON.stringify(merged));
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const markSingleAsRead = (id) => {
-    const strId = String(id);
-    if (!readNotifIds.includes(strId)) {
-      const updated = [...readNotifIds, strId];
-      setReadNotifIds(updated);
-      try {
-        localStorage.setItem(`rental_read_notifs_${accountKey}`, JSON.stringify(updated));
-      } catch (e) {
-        console.error(e);
-      }
-    }
-  };
+  const markAllAsRead = () => dataContext.markAllNotificationsRead();
+  const markSingleAsRead = id => dataContext.markNotificationRead(id);
 
   const currentTenant = (dataContext.tenants || []).find((t) => {
     const uName = (user?.fullName || '').toLowerCase();
@@ -805,142 +765,28 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
       <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
         {/* Quick Role & Multi-Tenant Switcher - Bản đầy đủ trên Desktop lớn */}
         <div className="hidden xl:flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 text-xs shadow-inner gap-1">
-          <button
-            onClick={() => switchRole('ADMIN')}
-            title="Quản trị viên hệ thống (Admin)"
-            className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press cursor-pointer ${
-              role === 'ADMIN'
-                ? 'bg-slate-900 text-white shadow-sm shadow-slate-900/20 scale-[1.02]'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
-            }`}
-          >
-            👑 Admin
-          </button>
-          <button
-            onClick={() => switchRole('STAFF_1')}
-            title={hasSavedHouses ? "Staff 1: Lê Thị Thu Ngân (Cơ Sở 1 - Cầu Giấy)" : "Chủ trọ 1: Lê Thị Thu Ngân (Chưa tạo cơ sở)"}
-            className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press cursor-pointer ${
-              role === 'STAFF' && (user?.username === 'staff' || user?.houseCode === 'CS-01')
-                ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/25 scale-[1.02]'
-                : 'text-slate-600 hover:text-indigo-700 hover:bg-white/80'
-            }`}
-          >
-            👔 {hasSavedHouses ? 'Staff 1 (CS1)' : 'Chủ trọ 1'}
-          </button>
-          <button
-            onClick={() => switchRole('STAFF_2')}
-            title={hasSavedHouses ? "Staff 2: Đàm Văn Táo (Cơ Sở 2 - Bách Khoa)" : "Chủ trọ 2: Đàm Văn Táo (Chưa tạo cơ sở)"}
-            className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press cursor-pointer ${
-              role === 'STAFF' && (user?.username === 'staff2' || user?.houseCode === 'CS-02')
-                ? 'bg-purple-600 text-white shadow-sm shadow-purple-600/25 scale-[1.02]'
-                : 'text-slate-600 hover:text-purple-700 hover:bg-white/80'
-            }`}
-          >
-            👔 {hasSavedHouses ? 'Staff 2 (CS2)' : 'Chủ trọ 2'}
-          </button>
+          {false}
+          {false}
+          {false}
 
           <span className="h-4 w-px bg-slate-300 mx-0.5" />
 
-          <button
-            onClick={() => switchRole('TENANT_1')}
-            title={`Khách thuê 1: Nguyễn Văn An ${tenant1Room ? 'đang ở ' + tenant1Room : '(Chưa thuê)'}`}
-            className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press cursor-pointer flex items-center gap-1 ${
-              role === 'TENANT' && (user?.username === 'tenant' || user?.username === 'tenant1')
-                ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/25 scale-[1.02]'
-                : 'text-slate-600 hover:text-emerald-700 hover:bg-white/80'
-            }`}
-          >
-            <span>👤</span> Khách 1 <span className="text-[10px] opacity-85 font-medium">({tenant1Room || 'Chưa thuê'})</span>
-          </button>
+          {false}
 
-          <button
-            onClick={() => switchRole('TENANT_2')}
-            title={`Khách thuê 2: Phạm Minh Cường ${tenant2Room ? 'đang ở ' + tenant2Room : '(Chưa thuê)'}`}
-            className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press cursor-pointer flex items-center gap-1 ${
-              role === 'TENANT' && user?.username === 'tenant2'
-                ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/25 scale-[1.02]'
-                : 'text-slate-600 hover:text-teal-700 hover:bg-white/80'
-            }`}
-          >
-            <span>👤</span> Khách 2 <span className="text-[10px] opacity-85 font-medium">({tenant2Room || 'Chưa thuê'})</span>
-          </button>
+          {false}
 
-          <button
-            onClick={() => switchRole('TENANT_NEW')}
-            title={`Khách mới: Hoàng Văn Nam ${tenantNewRoom ? 'đang ở ' + tenantNewRoom : '(Chưa có phòng)'}`}
-            className={`px-2.5 py-1.5 rounded-lg font-bold transition-all duration-200 btn-press cursor-pointer flex items-center gap-1 ${
-              role === 'TENANT' && user?.username === 'tenant_new'
-                ? 'bg-amber-600 text-white shadow-sm shadow-amber-600/25 scale-[1.02]'
-                : 'text-slate-600 hover:text-amber-700 hover:bg-white/80'
-            }`}
-          >
-            <span>🔍</span> Khách Mới <span className="text-[10px] opacity-85 font-normal">({tenantNewRoom || 'Chưa thuê'})</span>
-          </button>
+          {false}
         </div>
 
         {/* Nút Reset Về 0 Để Test Từ Đầu */}
-        <button
-          type="button"
-          onClick={() => {
-            if (dataContext && dataContext.resetToZeroSandbox) {
-              dataContext.resetToZeroSandbox();
-            } else {
-              try {
-                const keys = Object.keys(localStorage).filter((k) => k.startsWith('rental_'));
-                keys.forEach((k) => localStorage.removeItem(k));
-                localStorage.setItem('rental_is_zero_sandbox', 'true');
-                localStorage.setItem('rental_boarding_houses', JSON.stringify([]));
-                localStorage.setItem('rental_audit_logs', JSON.stringify([]));
-                sessionStorage.clear();
-              } catch {}
-              window.location.href = window.location.href.split('#')[0];
-            }
-          }}
-          title="Đưa toàn bộ hệ thống về 0 để test từ đầu (Khách 1 & 2 thành khách mới, phòng trống 100%, doanh thu 0, Staff chưa mua gói)"
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white rounded-xl text-xs font-black transition-all shadow-md shadow-amber-500/20 cursor-pointer btn-press"
-        >
-          <span>🧪 Reset Về 0 Test</span>
-        </button>
+        {false}
 
         {/* Nút Khôi Phục Gốc - Làm sạch dữ liệu demo */}
-        <button
-          type="button"
-          onClick={() => {
-            if (dataContext && dataContext.restoreDefaultDemoData) {
-              dataContext.restoreDefaultDemoData();
-            } else {
-              try {
-                const keys = Object.keys(localStorage).filter((k) => k.startsWith('rental_'));
-                keys.forEach((k) => localStorage.removeItem(k));
-                sessionStorage.clear();
-              } catch {}
-              window.location.href = window.location.href.split('#')[0];
-            }
-          }}
-          title="Khôi phục lại dữ liệu mẫu demo ban đầu"
-          className="flex items-center gap-1 px-2.5 py-1.5 text-slate-700 bg-white hover:bg-slate-50 hover:text-purple-700 rounded-xl text-xs font-bold transition-all border border-slate-200/90 shadow-2xs hover:border-purple-300 cursor-pointer btn-press"
-        >
-          <span>🔄 Khôi Phục Gốc</span>
-        </button>
+        {false}
 
         {/* Chuyển đổi vai trò rút gọn trên Di động & Tablet (Dạng Select tiện lợi) */}
         <div className="xl:hidden flex items-center bg-slate-100/90 px-2 py-1 rounded-xl border border-slate-200/90 text-xs font-bold shadow-2xs">
-          <select
-            value={
-              role === 'STAFF'
-                ? (user?.username === 'staff2' || user?.houseCode === 'CS-02' ? 'STAFF_2' : 'STAFF_1')
-                : (role === 'TENANT' ? (user?.username === 'tenant2' ? 'TENANT_2' : (user?.username === 'tenant_new' ? 'TENANT_NEW' : 'TENANT_1')) : role)
-            }
-            onChange={(e) => switchRole(e.target.value)}
-            className="bg-transparent font-bold text-slate-800 text-[11px] outline-none cursor-pointer pr-1"
-          >
-            <option value="ADMIN">👑 Admin</option>
-            <option value="STAFF_1">👔 Staff 1 (Cơ Sở 1)</option>
-            <option value="STAFF_2">👔 Staff 2 (Cơ Sở 2)</option>
-            <option value="TENANT_1">👤 Khách 1 (An)</option>
-            <option value="TENANT_2">👤 Khách 2 (Cường)</option>
-            <option value="TENANT_NEW">🔍 Khách Mới</option>
-          </select>
+          {false}
         </div>
 
         {/* Notification bell & Dropdown */}
@@ -993,8 +839,10 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
                     <Link
                       key={notif.id}
                       to={notif.link}
-                      onClick={() => {
-                        markSingleAsRead(notif.id);
+                      onClick={async () => {
+try {
+
+                        await markSingleAsRead(notif.id);
                         setShowDropdown(false);
                         const isReqNotif =
                           (notif.link && notif.link.includes('action=review-requests')) ||
@@ -1009,7 +857,9 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
                         if (isReqNotif) {
                           window.dispatchEvent(new CustomEvent('rental:open-requests-manager', { detail: { notif } }));
                         }
-                      }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
                       className={`p-3 sm:p-3.5 flex items-start gap-2.5 sm:gap-3 transition-colors hover:bg-slate-50 block ${
                         !notif.read ? 'bg-purple-50/40' : ''
                       }`}

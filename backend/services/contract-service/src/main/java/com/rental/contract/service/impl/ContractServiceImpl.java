@@ -191,6 +191,7 @@ public class ContractServiceImpl implements ContractService {
     private ContractResponse mapToResponse(Contract contract, String tenantName, String roomNumber) {
         return ContractResponse.builder()
                 .id(contract.getId())
+                .signedElectronically(contract.isSignedElectronically()).signedAt(contract.getSignedAt()).depositPaid(contract.isDepositPaid()).depositPaidAt(contract.getDepositPaidAt())
                 .contractCode(contract.getContractCode())
                 .tenantId(contract.getTenantId())
                 .tenantName(tenantName)

@@ -1,4 +1,4 @@
-﻿package com.rental.meter.entity;
+package com.rental.meter.entity;
 
 import jakarta.persistence.*;
 import lombok.*;

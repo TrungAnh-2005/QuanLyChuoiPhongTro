@@ -16,6 +16,7 @@ import java.util.Map;
 public class MoMoController {
 
     private final MoMoService moMoService;
+    private final com.rental.payment.service.VerifiedPaymentRecorder recorder;
 
     @PostMapping("/create-url")
     public ResponseEntity<MoMoPaymentResponse> createPaymentUrl(@Valid @RequestBody MoMoPaymentRequest request) {
@@ -28,6 +29,7 @@ public class MoMoController {
         String resultCode = allParams.get("resultCode");
         boolean isSuccess = valid;
 
+        if (isSuccess) recorder.record(Long.valueOf(allParams.get("orderId").split("_")[1]),new java.math.BigDecimal(allParams.get("amount")),"MOMO-"+allParams.get("transId"),com.rental.payment.entity.PaymentMethod.MOMO);
         return ResponseEntity.ok(Map.of(
                 "success", isSuccess,
                 "resultCode", resultCode != null ? resultCode : "99",

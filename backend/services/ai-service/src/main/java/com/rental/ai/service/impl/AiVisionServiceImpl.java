@@ -47,7 +47,7 @@ public class AiVisionServiceImpl implements AiVisionService {
             log.info("GEMINI_API_KEY is not configured. Using local smart OCR engine for ID card.");
         }
 
-        return fallbackIdCardOcr(frontImage, backImage);
+        throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,"OCR chưa được cấu hình hoặc không khả dụng");
     }
 
     @Override
@@ -68,7 +68,7 @@ public class AiVisionServiceImpl implements AiVisionService {
             log.info("GEMINI_API_KEY is not configured. Using local smart OCR engine for meter reading.");
         }
 
-        return fallbackMeterOcr(meterImage, normalizedType);
+        throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,"OCR chưa được cấu hình hoặc không khả dụng");
     }
 
     private IdCardOcrResponse callGeminiForIdCard(MultipartFile frontImage, MultipartFile backImage) throws IOException {

@@ -56,7 +56,7 @@ export function getHouseDistrict(h) {
   const addr = getHouseFullAddress(h);
   const name = h?.name || '';
   const districts = [
-    'Cầu Giấy', 'Đống Đa', 'Hai Bà Trưng', 'Thanh Xuân', 'Ba Đình', 
+    'Cầu Giấy', 'Đống Đa', 'Hai Bà Trưng', 'Thanh Xuân', 'Ba Đình',
     'Hoàn Kiếm', 'Hoàng Mai', 'Nam Từ Liêm', 'Bắc Từ Liêm', 'Hà Đông', 'Tây Hồ', 'Long Biên'
   ];
   for (const d of districts) {
@@ -157,9 +157,11 @@ export function healBoardingHousesList(list) {
   return healed;
 }
 
-const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+const isZeroSandbox = true;
 
 export default function UserRoomsPage() {
+  const {boardingHouses:apiBoardingHouses=[]}=useData() || {};
+
   const { user, tenantRooms } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -177,7 +179,7 @@ export default function UserRoomsPage() {
 
   const [storedBoardingHouses, setStoredBoardingHouses] = useState(() => {
     try {
-      const saved = localStorage.getItem('rental_boarding_houses');
+      const saved = JSON.stringify(apiBoardingHouses);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) return healBoardingHousesList(parsed);
@@ -189,20 +191,22 @@ export default function UserRoomsPage() {
       { id: 3, code: 'CS-03', name: 'Nhà Trọ Đống Đa - Cơ Sở 3', managerUsername: 'admin', createdBy: 'admin', status: 'ACTIVE', floors: 6 }
     ];
   });
+  useEffect(()=>{setStoredBoardingHouses(apiBoardingHouses);},[apiBoardingHouses]);
+
 
   useEffect(() => {
     const handleSyncHouses = () => {
       try {
-        const saved = localStorage.getItem('rental_boarding_houses');
+        const saved = JSON.stringify(apiBoardingHouses);
         if (saved) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed)) setStoredBoardingHouses(healBoardingHousesList(parsed));
         }
       } catch {}
     };
-    window.addEventListener('storage', handleSyncHouses);
-    return () => window.removeEventListener('storage', handleSyncHouses);
-  }, []);
+    window.addEventListener('rental:data-loaded', handleSyncHouses);
+    return () => window.removeEventListener('rental:data-loaded', handleSyncHouses);
+  }, [apiBoardingHouses]);
 
   const [selectedHouse, setSelectedHouse] = useState('ALL');
   const [tenantLocation, setTenantLocation] = useState(null);
@@ -878,12 +882,16 @@ export default function UserRoomsPage() {
         isOpen={!!selectedContractForModal}
         onClose={() => setSelectedContractForModal(null)}
         contract={selectedContractForModal}
-        onSignSuccess={(contractId) => {
-          if (signContractElectronically) signContractElectronically(contractId);
+        onSignSuccess={async (contractId) => {
+try {
+
+          if (signContractElectronically) await signContractElectronically(contractId);
           setSelectedContractForModal(null);
           setActionToast('🎉 Đặt cọc giữ chỗ và ký hợp đồng điện tử thành công!');
           setTimeout(() => setActionToast(null), 4000);
-        }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
       />
 
       {/* Roommate Modal */}

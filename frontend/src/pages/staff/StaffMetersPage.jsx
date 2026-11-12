@@ -29,12 +29,14 @@ import TrialExpiryBanner from '../../components/common/TrialExpiryBanner';
 import { getTrialStatus } from '../../utils/packagePermissions';
 
 export default function StaffMetersPage() {
+  const {boardingHouses:apiBoardingHouses=[]}=useData() || {};
+
   const { user } = useAuth();
   const role = user?.role || 'STAFF';
   const isAdmin = role === 'ADMIN';
 
   const {
-    billingMonth = '2026-09',
+    billingMonth, availableBillingMonths = [],
     switchBillingMonth,
     meters: readings = [],
     updateMeterReading,
@@ -59,7 +61,7 @@ export default function StaffMetersPage() {
     );
   }, [user, landlords]);
 
-  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+  const isZeroSandbox = true;
   const landlordPackage =
     isZeroSandbox && (!currentLandlord || currentLandlord.packageCode === 'NONE')
       ? 'NONE'
@@ -83,7 +85,9 @@ export default function StaffMetersPage() {
     updateMeterReading(id, field, value);
   };
 
-  const handleSave = (id) => {
+  const handleSave = async (id) => {
+try {
+
     const trial = getTrialStatus(currentLandlord);
     if (trial.isTrialExpired) {
       setSaveToast({
@@ -95,13 +99,15 @@ export default function StaffMetersPage() {
       return;
     }
 
-    saveMeterReading(id);
+    await saveMeterReading(id);
     setSaveToast({
       type: 'SUCCESS',
       message: 'Đã lưu và chốt chỉ số công tơ thành công!'
     });
     setTimeout(() => setSaveToast(null), 3500);
-  };
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
 
   const handleUnlock = (id) => {
     const target = readings.find((r) => r.id === id);
@@ -129,7 +135,7 @@ export default function StaffMetersPage() {
 
   const dynamicHouses = useMemo(() => {
     try {
-      const saved = localStorage.getItem('rental_boarding_houses');
+      const saved = JSON.stringify(apiBoardingHouses);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -147,12 +153,12 @@ export default function StaffMetersPage() {
         { code: 'CS-03', name: 'CS-03: Đống Đa' }
       ];
     }
-  }, [isZeroSandbox]);
+  }, [isZeroSandbox,apiBoardingHouses]);
 
   const staffManageableHouses = useMemo(() => {
     if (user?.role !== 'STAFF') return dynamicHouses;
     const u = (user?.username || '').toLowerCase();
-    return dynamicHouses.filter((h) => {
+    return dynamicHouses.filter((h) => { if(user?.isTestMode) return true;
       const created = (h.createdBy || '').toLowerCase();
       const manager = (h.managerUsername || '').toLowerCase();
       if (created && created === u) return true;
@@ -263,7 +269,9 @@ export default function StaffMetersPage() {
     }
   };
 
-  const handleSavePrices = (e) => {
+  const handleSavePrices = async (e) => {
+try {
+
     e.preventDefault();
     const numElec = Number(tempElecPrice);
     const numWater = Number(tempWaterPrice);
@@ -274,7 +282,7 @@ export default function StaffMetersPage() {
     }
 
     if (updateUtilityPrices) {
-      updateUtilityPrices({ elecPrice: numElec, waterPrice: numWater });
+      await updateUtilityPrices({ elecPrice: numElec, waterPrice: numWater });
     }
 
     setShowPriceModal(false);
@@ -283,7 +291,9 @@ export default function StaffMetersPage() {
       message: `Đã cập nhật đơn giá mới: Điện ${numElec.toLocaleString('vi-VN')} đ/kWh • Nước ${numWater.toLocaleString('vi-VN')} đ/m³!`
     });
     setTimeout(() => setSaveToast(null), 5000);
-  };
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
 
   return (
     <div className="space-y-6">
@@ -307,7 +317,7 @@ export default function StaffMetersPage() {
               <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
                 <span>{user?.role === 'STAFF' ? 'Ghi Chỉ Số Điện & Nước Cơ Sở Của Tôi' : 'Ghi Chỉ Số Điện & Nước Toàn Chuỗi'}</span>
                 <span className="text-xs bg-amber-100 text-amber-800 font-bold px-2.5 py-0.5 rounded-full border border-amber-200">
-                  {billingMonth === '2026-09' ? 'Tháng 09/2026' : billingMonth === '2026-10' ? 'Tháng 10/2026' : 'Tháng 08/2026'}
+                  {`Tháng ${billingMonth?.slice(5)}/${billingMonth?.slice(0,4)}`}
                 </span>
               </h1>
               <p className="text-slate-500 text-xs font-semibold mt-1 flex flex-wrap items-center gap-1.5">
@@ -348,9 +358,7 @@ export default function StaffMetersPage() {
                 }}
                 className="bg-transparent font-black text-amber-800 focus:outline-none cursor-pointer text-xs"
               >
-                <option value="2026-09">Tháng 09/2026 (Hiện tại)</option>
-                <option value="2026-10">Tháng 10/2026 (Kỳ tới)</option>
-                <option value="2026-08">Tháng 08/2026 (Kỳ trước)</option>
+                {availableBillingMonths.map(month=><option key={month} value={month}>Tháng {month.slice(5)}/{month.slice(0,4)}</option>)}
               </select>
             </div>
 
@@ -806,7 +814,9 @@ export default function StaffMetersPage() {
         onClose={() => setShowBuyPackageModal(false)}
         currentLandlord={currentLandlord}
         initialPackageCode="ENTERPRISE"
-        onConfirmPurchase={(planData) => {
+        onConfirmPurchase={async (planData) => {
+try {
+
           setShowBuyPackageModal(false);
           const targetLandlordId = currentLandlord?.id || (user?.username === 'staff2' ? 2 : 1);
           const newInv = {
@@ -826,23 +836,27 @@ export default function StaffMetersPage() {
             status: 'UNPAID',
             isSaas: true
           };
-          const createdInv = createSaasInvoice ? createSaasInvoice(newInv) : newInv;
+          const createdInv = createSaasInvoice ? await createSaasInvoice(newInv) : newInv;
           setPayingSaasInvoice(createdInv || newInv);
-        }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
       />
 
       {/* Modal Thanh Toán Gói SaaS */}
       <PaymentModal
         isOpen={!!payingSaasInvoice}
         onClose={() => setPayingSaasInvoice(null)}
-        onSuccess={(inv, payMethod) => {
+        onSuccess={async (inv, payMethod) => {
+try {
+
           const methodLabel = payMethod === 'VNPAY' ? 'Cổng VNPay' : payMethod === 'MOMO' ? 'Ví MoMo' : 'VietQR / SePay';
           if (paySaasInvoice) {
-            paySaasInvoice(inv.id, methodLabel);
+            await paySaasInvoice(inv.id, methodLabel);
           }
           const targetLandlordId = currentLandlord?.id || (user?.username === 'staff2' ? 2 : 1);
           if (updateLandlordPackage) {
-            updateLandlordPackage(targetLandlordId, inv.packageCode || 'ENTERPRISE');
+            await updateLandlordPackage(targetLandlordId, inv.packageCode || 'ENTERPRISE');
           }
           setPayingSaasInvoice(null);
           setSaveToast({
@@ -850,7 +864,9 @@ export default function StaffMetersPage() {
             message: `🎉 Nộp cước SaaS qua ${methodLabel} thành công! Đã kích hoạt toàn bộ tính năng AI Vision OCR.`
           });
           setTimeout(() => setSaveToast(null), 4000);
-        }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
         invoice={payingSaasInvoice || undefined}
       />
     </div>

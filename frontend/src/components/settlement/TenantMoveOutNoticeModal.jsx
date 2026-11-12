@@ -33,7 +33,9 @@ export default function TenantMoveOutNoticeModal({ isOpen, onClose, activeContra
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
+try {
+
     e.preventDefault();
     setError('');
 
@@ -55,7 +57,7 @@ export default function TenantMoveOutNoticeModal({ isOpen, onClose, activeContra
     }
 
     try {
-      submitMoveOutNotice({
+      await submitMoveOutNotice({
         contractId: activeContract?.id || 'HD-2026-001',
         roomId: userRoom?.id || 'P101',
         roomNumber: userRoom?.roomNumber || 'P.101',
@@ -73,7 +75,9 @@ export default function TenantMoveOutNoticeModal({ isOpen, onClose, activeContra
     } catch (err) {
       setError(err.message || 'Không thể gửi thông báo trả phòng.');
     }
-  };
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
@@ -114,7 +118,7 @@ export default function TenantMoveOutNoticeModal({ isOpen, onClose, activeContra
           )}
 
           <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 text-xs text-amber-800 leading-relaxed">
-            <span className="font-bold">Quy chế quyết toán cọc & Tiền phòng (UC-S07):</span> 
+            <span className="font-bold">Quy chế quyết toán cọc & Tiền phòng (UC-S07):</span>
             <ul className="list-disc pl-4 mt-1 space-y-0.5">
               <li><strong>Hết hạn hợp đồng:</strong> Hoàn cọc = Tiền cọc gốc - Tiền phòng nợ - Tiền điện nước - Đồ đạc hư hỏng.</li>
               <li><strong>Chưa hết hạn hợp đồng:</strong> Tịch thu toàn bộ cọc và không hoàn lại tiền phòng đã đóng tháng này.</li>

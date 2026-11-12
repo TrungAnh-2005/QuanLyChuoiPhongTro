@@ -64,14 +64,18 @@ export default function AdminIntegrationsPage() {
     }, 900);
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
+try {
+
     e.preventDefault();
     if (updateSystemIntegration) {
-      updateSystemIntegration(activeTab, configs[activeTab]);
+      await updateSystemIntegration(activeTab, configs[activeTab]);
     }
     setSaveToast(true);
     setTimeout(() => setSaveToast(false), 3500);
-  };
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
 
   return (
     <div className="space-y-6">

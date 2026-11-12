@@ -26,7 +26,9 @@ import {
 import { useData } from '../../contexts/DataContext';
 
 export default function AdminHousesPage() {
-  const { landlords = [] } = useData();
+  const {boardingHouses:apiBoardingHouses=[]}=useData() || {};
+
+  const { landlords = [], boardingHouses = [], updateBoardingHouse, deleteBoardingHouse } = useData();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'PENDING' | 'ACTIVE'
   const [toastMessage, setToastMessage] = useState(null);
@@ -36,7 +38,7 @@ export default function AdminHousesPage() {
 
   const [housesList, setHousesList] = useState(() => {
     try {
-      const saved = localStorage.getItem('rental_boarding_houses');
+      const saved = JSON.stringify(apiBoardingHouses);
       if (saved) return JSON.parse(saved);
     } catch {}
     return [
@@ -81,10 +83,13 @@ export default function AdminHousesPage() {
       }
     ];
   });
+  useEffect(()=>{setHousesList(apiBoardingHouses);},[apiBoardingHouses]);
 
+
+  useEffect(() => { setHousesList(boardingHouses); },[boardingHouses]);
   const reloadHouses = () => {
     try {
-      const saved = localStorage.getItem('rental_boarding_houses');
+      const saved = JSON.stringify(apiBoardingHouses);
       if (saved) {
         setHousesList(JSON.parse(saved));
       }
@@ -94,8 +99,8 @@ export default function AdminHousesPage() {
   useEffect(() => {
     reloadHouses();
     const handleStorage = () => reloadHouses();
-    window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
+    window.addEventListener('rental:data-loaded', handleStorage);
+    return () => window.removeEventListener('rental:data-loaded', handleStorage);
   }, []);
 
   const showToast = (msg, type = 'SUCCESS') => {
@@ -103,7 +108,8 @@ export default function AdminHousesPage() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const handleApproveHouse = (code) => {
+  const handleApproveHouse = async (code) => {
+    await updateBoardingHouse(housesList.find(h=>h.code===code).id,{status:"ACTIVE"});
     const updated = housesList.map((h) =>
       h.code === code ? { ...h, status: 'ACTIVE', approvedAt: new Date().toLocaleDateString('vi-VN') } : h
     );
@@ -115,8 +121,9 @@ export default function AdminHousesPage() {
     showToast(`✅ Quản Trị Viên đã phê duyệt cơ sở ${code}! Cơ sở đã kích hoạt đưa vào hoạt động chính thức.`);
   };
 
-  const handleRejectHouse = (code) => {
+  const handleRejectHouse = async (code) => {
     if (window.confirm(`Xác nhận từ chối và gỡ bỏ cơ sở ${code}?`)) {
+      await deleteBoardingHouse(housesList.find(h=>h.code===code).id);
       const updated = housesList.filter((h) => h.code !== code);
       setHousesList(updated);
       try {

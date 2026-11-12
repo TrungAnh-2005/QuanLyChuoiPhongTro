@@ -1,4 +1,4 @@
-﻿package com.rental.contract.entity;
+package com.rental.contract.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
@@ -30,7 +30,7 @@ public class MoveOutSettlement {
     @Column(nullable = false)
     private LocalDate moveOutDate;
 
-    @Column(nullable = false, precision = 12, scale = 2)
+    @Column(name="original_deposit", nullable = false, precision = 12, scale = 2)
     private BigDecimal depositAmount;
 
     @Column(precision = 12, scale = 2)

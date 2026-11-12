@@ -179,7 +179,7 @@ export function healBoardingHousesList(list) {
   return healed;
 }
 
-const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+const isZeroSandbox = true;
 
 const AMENITY_OPTIONS = [
   'WiFi', 'Điều hòa', 'Nóng lạnh', 'Tủ lạnh', 'Máy giặt',
@@ -187,6 +187,8 @@ const AMENITY_OPTIONS = [
 ];
 
 export default function StaffRoomsPage() {
+  const {boardingHouses:apiBoardingHouses=[]}=useData() || {};
+
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const rawParam = searchParams.get('house') || 'ALL';
@@ -206,12 +208,13 @@ export default function StaffRoomsPage() {
     removeRoomMember,
     updateTemporaryResidence,
     contracts = [],
+    moveOutSettlements = [],
     landlords = []
   } = useData();
 
   const [storedBoardingHouses, setStoredBoardingHouses] = useState(() => {
     try {
-      const saved = localStorage.getItem('rental_boarding_houses');
+      const saved = JSON.stringify(apiBoardingHouses);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) return healBoardingHousesList(parsed);
@@ -223,20 +226,22 @@ export default function StaffRoomsPage() {
       { id: 3, code: 'CS-03', name: 'Nhà Trọ Đống Đa - Cơ Sở 3', managerUsername: 'admin', createdBy: 'admin', status: 'ACTIVE', floors: 6 }
     ];
   });
+  useEffect(()=>{setStoredBoardingHouses(apiBoardingHouses);},[apiBoardingHouses]);
+
 
   useEffect(() => {
     const handleSyncHouses = () => {
       try {
-        const saved = localStorage.getItem('rental_boarding_houses');
+        const saved = JSON.stringify(apiBoardingHouses);
         if (saved) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed)) setStoredBoardingHouses(healBoardingHousesList(parsed));
         }
       } catch {}
     };
-    window.addEventListener('storage', handleSyncHouses);
-    return () => window.removeEventListener('storage', handleSyncHouses);
-  }, []);
+    window.addEventListener('rental:data-loaded', handleSyncHouses);
+    return () => window.removeEventListener('rental:data-loaded', handleSyncHouses);
+  }, [apiBoardingHouses]);
 
   const currentLandlord = useMemo(() => {
     if (!user) return null;
@@ -250,9 +255,9 @@ export default function StaffRoomsPage() {
 
   // Lọc cơ sở mà Staff có thẩm quyền
   const staffManageableHouses = useMemo(() => {
-    if (user?.role === 'ADMIN') return storedBoardingHouses;
+    if (user?.isTestMode || user?.role === 'ADMIN') return storedBoardingHouses;
     const u = (user?.username || '').toLowerCase();
-    return storedBoardingHouses.filter((h) => {
+    return storedBoardingHouses.filter((h) => { if(user?.isTestMode) return true;
       const created = (h.createdBy || '').toLowerCase();
       const manager = (h.managerUsername || '').toLowerCase();
       if (created && created === u) return true;
@@ -299,6 +304,7 @@ export default function StaffRoomsPage() {
     image: '/assets/images/room_studio_1.jpg'
   });
 
+  useEffect(()=>{ if(staffHouseCodes.length && !staffHouseCodes.includes(roomFormData.houseCode)) setRoomFormData(previous=>({...previous,houseCode:staffHouseCodes[0]})); },[staffHouseCodes,roomFormData.houseCode]);
   const [newRoomPriceInput, setNewRoomPriceInput] = useState('');
   const [roomToEditPrice, setRoomToEditPrice] = useState(null);
 
@@ -360,13 +366,15 @@ export default function StaffRoomsPage() {
     setShowAddModal(true);
   };
 
-  const handleSaveRoom = (e) => {
+  const handleSaveRoom = async (e) => {
+try {
+
     e.preventDefault();
     if (!roomFormData.number) return;
 
     if (editingRoom) {
       if (updateRoom) {
-        updateRoom(editingRoom.id, roomFormData);
+        await updateRoom(editingRoom.id, roomFormData);
       }
       setEditingRoom(null);
       setActionToast(`Đã cập nhật thông tin phòng ${roomFormData.number} thành công!`);
@@ -380,27 +388,37 @@ export default function StaffRoomsPage() {
         id: `room-${Date.now()}`,
         occupants: 0
       };
-      if (addRoom) addRoom(newRoomObj);
+      if (addRoom) await addRoom(newRoomObj);
       setShowAddModal(false);
       setActionToast(`Đã thêm mới phòng ${roomFormData.number} vào hệ thống!`);
     }
     setTimeout(() => setActionToast(null), 3500);
-  };
 
-  const handleDeleteRoom = (roomId, roomNumber) => {
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
+
+  const handleDeleteRoom = async (roomId, roomNumber) => {
+try {
+
     if (window.confirm(`Bạn có chắc chắn muốn xóa phòng ${roomNumber} không?`)) {
-      if (deleteRoom) deleteRoom(roomId);
+      if (deleteRoom) await deleteRoom(roomId);
       setActionToast(`Đã xóa phòng ${roomNumber} thành công!`);
       setTimeout(() => setActionToast(null), 3000);
     }
-  };
 
-  const handleToggleRoomLock = (room) => {
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
+
+  const handleToggleRoomLock = async (room) => {
+try {
+
     const nextStatus = room.status === 'LOCKED' ? 'AVAILABLE' : 'LOCKED';
-    if (updateRoomStatus) updateRoomStatus(room.id, nextStatus);
+    if (updateRoomStatus) await updateRoomStatus(room.id, nextStatus);
     setActionToast(`Đã ${nextStatus === 'LOCKED' ? 'tạm khóa' : 'mở khóa'} phòng ${room.number}!`);
     setTimeout(() => setActionToast(null), 3000);
-  };
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
 
   return (
     <div className="space-y-6">
@@ -855,22 +873,30 @@ export default function StaffRoomsPage() {
                       <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
                         <button
                           type="button"
-                          onClick={() => {
-                            if (rejectRoomRequest) rejectRoomRequest(req.id);
+                          onClick={async () => {
+try {
+
+                            if (rejectRoomRequest) await rejectRoomRequest(req.id);
                             setActionToast('Đã từ chối đơn!');
                             setTimeout(() => setActionToast(null), 3000);
-                          }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
                           className="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg cursor-pointer"
                         >
                           Từ chối
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            if (approveRoomRequest) approveRoomRequest(req.id);
+                          onClick={async () => {
+try {
+
+                            if (approveRoomRequest) await approveRoomRequest(req.id);
                             setActionToast('Đã phê duyệt đơn thành công!');
                             setTimeout(() => setActionToast(null), 3000);
-                          }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
                           className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer"
                         >
                           Phê duyệt
@@ -943,6 +969,12 @@ export default function StaffRoomsPage() {
           </div>
         </Modal>
       )}
+      <section className="p-4 border rounded-xl bg-white space-y-3">
+        <h2 className="font-bold">Yêu cầu trả phòng và quyết toán</h2>
+        {moveOutSettlements.filter(item=>item.refundStatus!=='COMPLETED').map(item=><div key={item.id} className="flex justify-between gap-4 border-t pt-3"><span>{item.roomNumber} · {item.tenantName} · {item.moveOutDate}</span><button className="px-3 py-1 border rounded" onClick={()=>setActiveSettlementModal(item)}>Quyết toán</button></div>)}
+        {!moveOutSettlements.some(item=>item.refundStatus!=='COMPLETED') && <p className="text-sm text-slate-500">Chưa có yêu cầu chờ quyết toán.</p>}
+      </section>
+      <MoveOutSettlementModal isOpen={!!activeSettlementModal} onClose={()=>setActiveSettlementModal(null)} settlement={activeSettlementModal} room={rooms.find(item=>item.id===activeSettlementModal?.roomId)} contract={contracts.find(item=>item.id===activeSettlementModal?.contractId)} />
     </div>
   );
 }

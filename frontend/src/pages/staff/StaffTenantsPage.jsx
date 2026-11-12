@@ -40,6 +40,8 @@ const DEFAULT_FACILITIES = [
 ];
 
 export default function TenantsPage() {
+  const {boardingHouses:apiBoardingHouses=[]}=useData() || {};
+
   const {
     tenants,
     addTenant,
@@ -67,12 +69,12 @@ export default function TenantsPage() {
     ) || (landlords && landlords.length > 0 ? landlords[0] : null);
   }, [user, landlords]);
 
-  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+  const isZeroSandbox = true;
 
   // Danh mục Cơ sở năng động (Đọc từ localStorage hoặc dữ liệu chuỗi trọ thực tế)
   const facilities = useMemo(() => {
     try {
-      const saved = localStorage.getItem('rental_boarding_houses');
+      const saved = JSON.stringify(apiBoardingHouses);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -88,15 +90,15 @@ export default function TenantsPage() {
     } catch {
       return isZeroSandbox ? [] : DEFAULT_FACILITIES;
     }
-  }, [isZeroSandbox]);
+  }, [isZeroSandbox,apiBoardingHouses]);
 
   const staffManageableHouses = useMemo(() => {
     if (user?.role !== 'STAFF') return facilities;
     const u = (user?.username || '').toLowerCase();
     try {
-      const saved = localStorage.getItem('rental_boarding_houses');
+      const saved = JSON.stringify(apiBoardingHouses);
       const parsedHouses = saved ? JSON.parse(saved) : [];
-      return facilities.filter((h) => {
+      return facilities.filter((h) => { if(user?.isTestMode) return true;
         const fullHouse = parsedHouses.find((ph) => ph.code === h.code);
         const created = (fullHouse?.createdBy || '').toLowerCase();
         const manager = (fullHouse?.managerUsername || '').toLowerCase();
@@ -112,7 +114,7 @@ export default function TenantsPage() {
     } catch {
       return facilities;
     }
-  }, [facilities, user, isZeroSandbox]);
+  }, [facilities, user, isZeroSandbox,apiBoardingHouses]);
 
   const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
 
@@ -478,49 +480,7 @@ export default function TenantsPage() {
   // 🛡️ MULTI-TENANT BOUNDARY GUARD: Giới hạn quyền riêng tư dữ liệu cư dân
   // Admin nền tảng chỉ quản lý đối tác (Chủ trọ), không can thiệp khách thuê
   // =========================================================================
-  if (user?.role === 'ADMIN') {
-    return (
-      <div className="space-y-6 animate-fade-in max-w-4xl mx-auto py-6">
-        <div className="bento-card p-8 sm:p-10 border border-amber-300/80 bg-gradient-to-b from-amber-50/60 to-white rounded-3xl shadow-xl text-center space-y-6">
-          <div className="w-16 h-16 mx-auto rounded-3xl bg-amber-100 text-amber-700 flex items-center justify-center text-3xl font-black shadow-inner">
-            🛡️
-          </div>
 
-          <div className="space-y-3 max-w-xl mx-auto">
-            <span className="px-3 py-1 bg-amber-100 text-amber-800 text-xs font-black uppercase tracking-wider rounded-full border border-amber-300">
-              Quy Định Phân Quyền Multi-Tenant SaaS
-            </span>
-            <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              Giới Hạn Quyền Riêng Tư Cư Dân (Tenant Data Isolation)
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed font-medium">
-              Theo chính sách bảo mật của nền tảng <strong>Trọ Việt SaaS</strong>, Ban Quản Trị Hệ Thống (Platform Admin) chỉ quản lý hạ tầng máy chủ, microservices và hợp đồng đối tác với các <strong>Chủ trọ</strong>.
-            </p>
-            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed font-medium">
-              Dữ liệu danh bạ định danh, CCCD và tài khoản của khách thuê thuộc toàn quyền sở hữu và vận hành của <strong>Staff / Chủ trọ từng cơ sở</strong>.
-            </p>
-          </div>
-
-          <div className="pt-2 flex flex-wrap justify-center gap-3">
-            <Link
-              to="/admin/landlords"
-              className="px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs sm:text-sm shadow-lg shadow-indigo-600/25 transition-all flex items-center gap-2 cursor-pointer btn-press"
-            >
-              <Building2 className="w-4 h-4" />
-              <span>Chuyển đến Quản Lý Đối Tác Chủ Trọ (/admin/landlords)</span>
-            </Link>
-            <Link
-              to="/admin/saas-invoices"
-              className="px-5 py-3 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs sm:text-sm shadow-lg shadow-purple-600/25 transition-all flex items-center gap-2 cursor-pointer btn-press"
-            >
-              <ShieldCheck className="w-4 h-4" />
-              <span>Quản Lý Cước SaaS (/admin/saas-invoices)</span>
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   // Helper tính ngày kết thúc hợp đồng theo các mức 3, 6, 12 tháng
   const calculateContractEnd = (startDateStr, months) => {
@@ -655,7 +615,9 @@ export default function TenantsPage() {
     });
   }, [scopedTenants, searchTerm, statusFilter]);
 
-  const handleCreateTenant = (e) => {
+  const handleCreateTenant = async (e) => {
+try {
+
     e.preventDefault();
     if (!newTenant.fullName || !newTenant.cccd) return;
     if (!newTenant.room) {
@@ -665,7 +627,7 @@ export default function TenantsPage() {
     const selectedFacilityObj = facilities.find((f) => f.code === manualHouseCode);
     const calculatedEnd = calculateContractEnd(newTenant.contractStart, newTenant.contractDuration);
 
-    addTenant({
+    await addTenant({
       ...newTenant,
       houseCode: manualHouseCode,
       house: selectedFacilityObj?.name || (facilities[0]?.name || 'Cơ sở nhà trọ'),
@@ -694,16 +656,20 @@ export default function TenantsPage() {
       status: 'ACTIVE',
       daysSinceLeave: 0
     });
-  };
 
-  const handleSaveEdit = (e) => {
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
+
+  const handleSaveEdit = async (e) => {
+try {
+
     e.preventDefault();
     if (!editingTenant) return;
 
     // QUY CHẾ HỆ THỐNG: Admin và Staff KHÔNG được sửa trạng thái hợp đồng và các phòng đang thuê!
     // Các dữ liệu này phải tự động cập nhật theo giao dịch của khách hàng.
     // Staff/Admin chỉ chỉnh sửa thông tin cá nhân và tiền cọc.
-    updateTenant(editingTenant.id, {
+    await updateTenant(editingTenant.id, {
       fullName: editingTenant.fullName,
       cccd: editingTenant.cccd,
       phone: editingTenant.phone,
@@ -724,11 +690,15 @@ export default function TenantsPage() {
       });
     }
     setEditingTenant(null);
-  };
 
-  const handleConfirmDelete = () => {
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
+
+  const handleConfirmDelete = async () => {
+try {
+
     if (!confirmDeleteTenant) return;
-    const result = deleteTenant(confirmDeleteTenant.id);
+    const result = await deleteTenant(confirmDeleteTenant.id);
     if (!result.success) {
       setDeleteNotice({ type: 'ERROR', message: result.message });
     } else {
@@ -738,9 +708,54 @@ export default function TenantsPage() {
         setSelectedTenant(null);
       }
     }
-  };
 
-  return (
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
+
+  if (user?.role === 'ADMIN') {
+    return (
+      <div className="space-y-6 animate-fade-in max-w-4xl mx-auto py-6">
+        <div className="bento-card p-8 sm:p-10 border border-amber-300/80 bg-gradient-to-b from-amber-50/60 to-white rounded-3xl shadow-xl text-center space-y-6">
+          <div className="w-16 h-16 mx-auto rounded-3xl bg-amber-100 text-amber-700 flex items-center justify-center text-3xl font-black shadow-inner">
+            🛡️
+          </div>
+
+          <div className="space-y-3 max-w-xl mx-auto">
+            <span className="px-3 py-1 bg-amber-100 text-amber-800 text-xs font-black uppercase tracking-wider rounded-full border border-amber-300">
+              Quy Định Phân Quyền Multi-Tenant SaaS
+            </span>
+            <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+              Giới Hạn Quyền Riêng Tư Cư Dân (Tenant Data Isolation)
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed font-medium">
+              Theo chính sách bảo mật của nền tảng <strong>Trọ Việt SaaS</strong>, Ban Quản Trị Hệ Thống (Platform Admin) chỉ quản lý hạ tầng máy chủ, microservices và hợp đồng đối tác với các <strong>Chủ trọ</strong>.
+            </p>
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed font-medium">
+              Dữ liệu danh bạ định danh, CCCD và tài khoản của khách thuê thuộc toàn quyền sở hữu và vận hành của <strong>Staff / Chủ trọ từng cơ sở</strong>.
+            </p>
+          </div>
+
+          <div className="pt-2 flex flex-wrap justify-center gap-3">
+            <Link
+              to="/admin/landlords"
+              className="px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs sm:text-sm shadow-lg shadow-indigo-600/25 transition-all flex items-center gap-2 cursor-pointer btn-press"
+            >
+              <Building2 className="w-4 h-4" />
+              <span>Chuyển đến Quản Lý Đối Tác Chủ Trọ (/admin/landlords)</span>
+            </Link>
+            <Link
+              to="/admin/saas-invoices"
+              className="px-5 py-3 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs sm:text-sm shadow-lg shadow-purple-600/25 transition-all flex items-center gap-2 cursor-pointer btn-press"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>Quản Lý Cước SaaS (/admin/saas-invoices)</span>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+return (
     <div className="space-y-6">
       {pwdResetToast && (
         <div className="fixed top-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700 text-xs font-bold animate-bounce">
@@ -962,7 +977,7 @@ export default function TenantsPage() {
                       <td className="py-3 px-4 font-mono text-slate-700 font-semibold">{t.cccd}</td>
                       <td className="py-3 px-4 font-mono text-slate-600">{t.phone}</td>
                       <td className="py-3 px-4 text-slate-600">{t.hometown || 'Chưa cập nhật'}</td>
-                      
+
                       {/* Phòng đang thuê (hỗ trợ nhiều phòng) */}
                       <td className="py-3 px-4">
                         {roomCount > 0 ? (
@@ -2055,14 +2070,18 @@ export default function TenantsPage() {
       <CreateTenantModal
         isOpen={showAiTenantModal}
         onClose={() => setShowAiTenantModal(false)}
-        onSaveTenant={(newTenantData) => {
-          addTenant(newTenantData);
+        onSaveTenant={async (newTenantData) => {
+try {
+
+          await addTenant(newTenantData);
           setDeleteNotice({
             type: 'SUCCESS',
             message: `Đã thêm thành công hồ sơ khách ${newTenantData.name || newTenantData.fullName} từ AI OCR CCCD!`
           });
           setTimeout(() => setDeleteNotice(null), 5000);
-        }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
       />
           {/* UC-S02 & UC-A01: Modal Cấp Lại Mật Khẩu Tạm Cho Khách Thuê */}
       {resetPwdModal && (
@@ -2099,9 +2118,11 @@ export default function TenantsPage() {
             </div>
 
             <form
-              onSubmit={(e) => {
+              onSubmit={async (e) => {
+try {
+
                 e.preventDefault();
-                const res = resetTenantPassword(resetPwdModal.id, customPasswordInput);
+                const res = await resetTenantPassword(resetPwdModal.id, customPasswordInput);
                 setResetPwdModal(null);
                 setCustomPasswordInput('');
                 setPwdResetToast({
@@ -2110,7 +2131,9 @@ export default function TenantsPage() {
                   message: `Mật khẩu tạm mới: "${res.tempPassword}". Mã xác thực OTP đã được gửi đến số điện thoại ${res.phone} của khách thuê ${res.tenantName}.`
                 });
                 setTimeout(() => setPwdResetToast(null), 8000);
-              }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
               className="space-y-3.5"
             >
               <div>
@@ -2196,7 +2219,9 @@ export default function TenantsPage() {
         onClose={() => setShowBuyPackageModal(false)}
         currentLandlord={currentLandlord}
         initialPackageCode="ENTERPRISE"
-        onConfirmPurchase={(planData) => {
+        onConfirmPurchase={async (planData) => {
+try {
+
           setShowBuyPackageModal(false);
           const targetLandlordId = currentLandlord?.id || (user?.username === 'staff2' ? 2 : 1);
           const newInv = {
@@ -2216,23 +2241,27 @@ export default function TenantsPage() {
             status: 'UNPAID',
             isSaas: true
           };
-          const createdInv = createSaasInvoice ? createSaasInvoice(newInv) : newInv;
+          const createdInv = createSaasInvoice ? await createSaasInvoice(newInv) : newInv;
           setPayingSaasInvoice(createdInv || newInv);
-        }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
       />
 
       {/* Modal Cổng Thanh Toán SePay VietQR / VNPay / MoMo Cho Gói SaaS */}
       <PaymentModal
         isOpen={!!payingSaasInvoice}
         onClose={() => setPayingSaasInvoice(null)}
-        onSuccess={(inv, payMethod) => {
+        onSuccess={async (inv, payMethod) => {
+try {
+
           const methodLabel = payMethod === 'VNPAY' ? 'Cổng VNPay' : (payMethod === 'MOMO' ? 'Ví MoMo' : 'VietQR / SePay');
           if (paySaasInvoice) {
-            paySaasInvoice(inv.id, methodLabel);
+            await paySaasInvoice(inv.id, methodLabel);
           }
           const targetLandlordId = currentLandlord?.id || (user?.username === 'staff2' ? 2 : 1);
           if (updateLandlordPackage) {
-            updateLandlordPackage(targetLandlordId, inv.packageCode || 'ENTERPRISE');
+            await updateLandlordPackage(targetLandlordId, inv.packageCode || 'ENTERPRISE');
           }
           setPayingSaasInvoice(null);
           setPwdResetToast({
@@ -2241,7 +2270,9 @@ export default function TenantsPage() {
             message: `🎉 Nộp cước SaaS qua ${methodLabel} thành công! Đã kích hoạt toàn bộ tính năng AI OCR CCCD.`
           });
           setTimeout(() => setPwdResetToast(null), 4000);
-        }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
         invoice={payingSaasInvoice || undefined}
       />
 

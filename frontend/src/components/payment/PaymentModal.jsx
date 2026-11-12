@@ -41,7 +41,6 @@ import {
   generateSePayQrUrl,
   getSePayConfig,
   saveSePayConfig,
-  simulateSePayWebhookPayload,
   checkSePayTransaction,
   SEPAY_PORTAL_URL,
   SEPAY_DOCS_URL
@@ -51,18 +50,9 @@ export default function PaymentModal({
   isOpen,
   onClose,
   onSuccess,
-  invoice = {
-    code: 'HD-202609-01',
-    room: 'P.101',
-    tenant: 'Nguyễn Văn Khách Thuê',
-    total: 4037500,
-    roomFee: 3500000,
-    elec: 262500,
-    water: 175000,
-    service: 100000
-  }
+  invoice = {}
 }) {
-  if (!isOpen) return null;
+
 
   const navigate = useNavigate();
   const [method, setMethod] = useState('SEPAY'); // 'SEPAY' | 'VNPAY' | 'MOMO'
@@ -144,16 +134,16 @@ export default function PaymentModal({
     String(invoice.code).includes('HD-SAAS')
   );
 
-  const invoiceTotal = Number(invoice.total ?? invoice.amount ?? 4037500);
+  const invoiceTotal = Number(invoice.total ?? invoice.totalAmount ?? invoice.amount ?? 0);
   const invoiceCode = invoice.code || (isSaas ? 'HD-SAAS' : 'HD');
   const invoiceRoom = isSaas ? (invoice.packageName || invoice.packageCode || 'Gói Bản Quyền SaaS') : (invoice.room || 'Phòng');
   const invoiceTenant = isSaas ? (invoice.providerName || 'CTCP SaaS Trọ Việt (Web Admin)') : (invoice.tenant || invoice.landlordName || 'Khách thuê');
 
   const sepayCfg = getSePayConfig();
   const bankInfo = {
-    bankName: sepayBank || sepayCfg.bank || 'MBBank',
-    accountNumber: sepayAcc || sepayCfg.accountNumber || '35825112005',
-    accountName: sepayCfg.accountName || 'DAM TRUNG ANH',
+    bankName: sepayBank || sepayCfg.bank || '',
+    accountNumber: sepayAcc || sepayCfg.accountNumber || '',
+    accountName: sepayCfg.accountName || '',
     content: isSaas ? invoiceCode : `${invoiceCode} ${invoiceRoom}`.replace(/\s+/g, ' ').trim()
   };
 
@@ -165,6 +155,8 @@ export default function PaymentModal({
     const checkPayment = async () => {
       try {
         const res = await checkSePayTransaction({
+        invoiceId:invoice.id,
+          invoiceId:invoice.id,
           invoiceCode,
           amount: invoiceTotal,
           accountNumber: bankInfo.accountNumber,
@@ -175,7 +167,7 @@ export default function PaymentModal({
           setDetectedTx(res.transaction);
           setIsDone(true);
           if (onSuccess) {
-            onSuccess(invoice, 'SEPAY');
+            await onSuccess(invoice, 'SEPAY');
           }
         }
       } catch (err) {
@@ -272,6 +264,7 @@ export default function PaymentModal({
     setSepayStatusMsg(null);
     try {
       const res = await checkSePayTransaction({
+        invoiceId:invoice.id,
         invoiceCode,
         amount: invoiceTotal,
         accountNumber: bankInfo.accountNumber
@@ -299,21 +292,25 @@ export default function PaymentModal({
   };
 
   // Xác nhận thanh toán (Mô phỏng tức thì cho VNPay / MoMo / VietQR)
-  const handleConfirmSimulation = (selectedMethod) => {
+  const handleConfirmSimulation = async (selectedMethod) => {
     if (isProcessing) return;
-    const finalMethod = selectedMethod || method;
-    setIsProcessing(true);
-    setTimeout(() => {
-      setIsProcessing(false);
-      setIsDone(true);
-      if (onSuccess) {
-        onSuccess(invoice, finalMethod);
+    setIsProcessing(true); setApiError(null);
+    try {
+      const finalMethod = selectedMethod || method;
+      if (finalMethod !== 'CASH') {
+        const result = await checkSePayTransaction({invoiceId:invoice.id});
+        if (!result.success) throw new Error('Chưa có giao dịch đã được máy chủ xác minh');
       }
-    }, 800);
+      if (onSuccess) { const result=await onSuccess(invoice, finalMethod === 'CASH' ? 'CASH' : 'SEPAY'); if(result?.success===false) throw new Error(result.error || 'Chưa ghi nhận được thanh toán'); }
+      setIsDone(true);
+    } catch(error) { setApiError(error.message); }
+    finally { setIsProcessing(false); }
   };
 
+  if (!isOpen) return null;
   return createPortal(
     <div className="fixed inset-0 bg-slate-950/65 z-50 flex items-center justify-center p-2 sm:p-4 modal-backdrop-smooth">
+      {apiError && <div role="alert" className="fixed top-4 z-[100] bg-red-50 border border-red-300 text-red-800 p-4 rounded">{apiError}</div>}
       <div className="bg-white border border-slate-200/90 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[96vh] sm:max-h-[92vh] modal-content-spring">
         {/* Modal Header */}
         <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-50 to-purple-50/40">

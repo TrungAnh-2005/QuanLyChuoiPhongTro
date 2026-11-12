@@ -20,9 +20,11 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 
 export default function StaffReportsPage() {
+  const {boardingHouses:apiBoardingHouses=[]}=useData() || {};
+
   const { user } = useAuth();
-  const { rooms = [], invoices = [] } = useData();
-  const isZeroSandbox = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
+  const { rooms = [], invoices = [], revenueReport } = useData();
+  const isZeroSandbox = true;
 
   const [selectedFacility, setSelectedFacility] = useState('ALL');
   const [timeRange, setTimeRange] = useState('9_MONTHS');
@@ -30,10 +32,10 @@ export default function StaffReportsPage() {
 
   const staffManageableHouses = useMemo(() => {
     try {
-      const saved = localStorage.getItem('rental_boarding_houses');
+      const saved = JSON.stringify(apiBoardingHouses);
       const dynamicHouses = saved ? JSON.parse(saved) : [];
       const u = (user?.username || '').toLowerCase();
-      return dynamicHouses.filter((h) => {
+      return dynamicHouses.filter((h) => { if(user?.isTestMode) return true;
         const created = (h.createdBy || '').toLowerCase();
         const manager = (h.managerUsername || '').toLowerCase();
         if (created && created === u) return true;
@@ -48,7 +50,7 @@ export default function StaffReportsPage() {
     } catch {
       return [];
     }
-  }, [user, isZeroSandbox]);
+  }, [user, isZeroSandbox,apiBoardingHouses]);
 
   const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
 
@@ -98,27 +100,7 @@ export default function StaffReportsPage() {
     };
   }, [rooms, invoices, selectedFacility, staffHouseCodes]);
 
-  const chartData = useMemo(() => {
-    const allMonths = [
-      'Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6', 'Tháng 7', 'Tháng 8', 'Tháng 9'
-    ];
-
-    let targetMonths = allMonths;
-    if (timeRange === 'SEP_2026') targetMonths = allMonths.slice(8);
-    else if (timeRange === 'Q3_2026') targetMonths = allMonths.slice(6, 9);
-    else if (timeRange === 'Q2_2026') targetMonths = allMonths.slice(3, 6);
-
-    return targetMonths.map((m) => {
-      const isSep = m === 'Tháng 9';
-      const roomRev = isSep ? (facilityStats.totalRevenue / 1000000) : 0;
-      const roomProfit = roomRev > 0 ? Number((roomRev * 0.75).toFixed(2)) : 0;
-      return {
-        month: m,
-        revenue: Number(roomRev.toFixed(2)),
-        profit: Number(roomProfit.toFixed(2))
-      };
-    });
-  }, [timeRange, facilityStats.totalRevenue]);
+  const chartData = (revenueReport?.monthlyData || []).map(m=>({month:m.monthLabel || `Tháng ${m.month}`,revenue:Number(m.revenue)/1000000}));
 
   return (
     <div className="space-y-6">

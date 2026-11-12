@@ -1,0 +1,8 @@
+import React, {useEffect,useState} from 'react';
+import {useData} from '../../contexts/DataContext';
+import {useAuth} from '../../contexts/AuthContext';
+export default function ApiStatus() {
+ const {error,loading,refreshData,tenants=[]}=useData(); const {testMode,user,switchRole}=useAuth(); const [message,setMessage]=useState('');
+ useEffect(()=>{const listener=e=>setMessage(e.detail);window.addEventListener('rental:api-error',listener);return()=>window.removeEventListener('rental:api-error',listener);},[]);
+ return <>{testMode && <div className="fixed bottom-4 left-4 z-[100] rounded bg-amber-50 border border-amber-300 p-3 shadow text-sm"><span className="mr-3">Test nghiệp vụ • {loading?'Đang tải…':'Gateway API'}</span><select aria-label="Chọn màn hình kiểm thử" value={user?.role || 'STAFF'} onChange={e=>switchRole(e.target.value,e.target.value==='TENANT' && tenants[0]?{id:tenants[0].id,fullName:tenants[0].fullName,email:tenants[0].email,room:tenants[0].room,rooms:tenants[0].rooms}: {})}><option value="STAFF">Quản lý phòng trọ</option><option value="TENANT">Khách thuê</option><option value="ADMIN">Quản trị</option></select></div>}{!testMode && loading && <div role="status" className="fixed bottom-4 left-4 z-[100] rounded bg-white border p-3 shadow">Đang tải dữ liệu…</div>}{(message||error) && <div role="alert" className="fixed bottom-4 right-4 z-[100] max-w-lg rounded bg-red-50 border border-red-300 p-4 shadow"><p>{message||error}</p><button onClick={()=>{setMessage('');refreshData();}} className="mr-4 underline">Thử lại</button><button onClick={()=>setMessage('')}>Đóng</button></div>}</>;
+}

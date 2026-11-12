@@ -20,7 +20,8 @@ public class PaymentController {
     private final PaymentService paymentService;
 
     @PostMapping
-    public ResponseEntity<PaymentResponse> createPayment(@Valid @RequestBody CreatePaymentRequest request) {
+    public ResponseEntity<PaymentResponse> createPayment(@Valid @RequestBody CreatePaymentRequest request, @RequestHeader("X-User-Roles") String roles) {
+        if(!roles.contains("ROLE_ADMIN") && !roles.contains("ROLE_STAFF")) throw new org.springframework.web.server.ResponseStatusException(HttpStatus.FORBIDDEN,"Chủ trọ cần xác nhận giao dịch thủ công");
         return ResponseEntity.status(HttpStatus.CREATED).body(paymentService.createPayment(request));
     }
 

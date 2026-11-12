@@ -74,17 +74,23 @@ export default function HouseServiceConfigModal({ isOpen, onClose, houseCode, ho
     }));
   };
 
-  const handleSaveConfig = (config) => {
+  const handleSaveConfig = async (config) => {
+try {
+
     const newPrice = editingValues[config.id] !== undefined
       ? Number(editingValues[config.id])
       : config.unitPrice;
 
-    updateHouseServiceConfig(config.id, newPrice, config.calculationType);
+    await updateHouseServiceConfig(config.id, newPrice, config.calculationType);
     setSaveToast(`Đã lưu đơn giá mới cho dịch vụ "${config.serviceName}": ${newPrice.toLocaleString('vi-VN')} đ`);
     setTimeout(() => setSaveToast(null), 3500);
-  };
 
-  const handleDeleteConfig = (config) => {
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
+
+  const handleDeleteConfig = async (config) => {
+try {
+
     // Kiểm tra an toàn: Không cho phép xóa dịch vụ công tơ điện nước bắt buộc
     const isProtected = isMandatoryService(config);
     if (isProtected) {
@@ -93,19 +99,23 @@ export default function HouseServiceConfigModal({ isOpen, onClose, houseCode, ho
     }
 
     if (window.confirm(`Bạn có chắc chắn muốn xóa dịch vụ "${config.serviceName}" khỏi biểu giá của ${displayHouseName} (${activeHouseCode})?\n\nLưu ý: Các hóa đơn xuất từ tháng sau sẽ không còn tính phí dịch vụ này.`)) {
-      deleteHouseServiceConfig(config.id);
+      await deleteHouseServiceConfig(config.id);
       setSaveToast(`Đã xóa dịch vụ "${config.serviceName}" khỏi ${activeHouseCode}`);
       setTimeout(() => setSaveToast(null), 3500);
     }
-  };
 
-  const handleAddNewService = (e) => {
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
+
+  const handleAddNewService = async (e) => {
+try {
+
     e.preventDefault();
     if (!newServiceName || !newUnitPrice) return;
 
     const bId = activeHouseCode === 'CS-01' ? 1 : activeHouseCode === 'CS-02' ? 2 : 3;
 
-    addHouseServiceConfig({
+    await addHouseServiceConfig({
       boardingHouseId: bId,
       houseCode: activeHouseCode,
       serviceName: newServiceName,
@@ -118,7 +128,9 @@ export default function HouseServiceConfigModal({ isOpen, onClose, houseCode, ho
     setShowAddForm(false);
     setSaveToast(`Đã bổ sung dịch vụ mới "${newServiceName}" vào cơ sở ${activeHouseCode}`);
     setTimeout(() => setSaveToast(null), 3500);
-  };
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
 
   const isMandatoryService = (cfg) => {
     const lower = (cfg.serviceName || '').toLowerCase();

@@ -33,7 +33,6 @@ import {
   getSePayConfig,
   saveSePayConfig,
   checkSePayTransaction,
-  simulateSePayWebhookPayload,
   syncBankAccountsFromSePay,
   SEPAY_PORTAL_URL
 } from '../../services/sepayService';
@@ -220,7 +219,7 @@ export default function UserDashboard() {
   useEffect(() => {
     if (!isContractPending || !myContract) return;
     const targetRoomNum = myContract.roomNumber || 'P.102';
-    const holdingUntil = myContract.holdingUntil || 
+    const holdingUntil = myContract.holdingUntil ||
       rooms?.find(r => r.number === targetRoomNum && (!myContract.houseCode || r.houseCode === myContract.houseCode))?.holdingUntil ||
       (Date.now() + 15 * 60 * 1000);
 
@@ -250,10 +249,12 @@ export default function UserDashboard() {
     return `${hours}:${mins} ngày ${day}/${month}/${year}`;
   };
 
-  const handleCancelHoldRoom = (roomNum, houseCode) => {
+  const handleCancelHoldRoom = async (roomNum, houseCode) => {
+try {
+
     if (window.confirm(`Bạn có chắc chắn muốn hủy giữ chỗ phòng ${roomNum}? Phòng sẽ được tự động mở lại trên sàn cho khách khác thuê.`)) {
       if (cancelRoomHold) {
-        cancelRoomHold(roomNum, houseCode);
+        await cancelRoomHold(roomNum, houseCode);
       }
       setPaySuccessToast(`Đã hủy giữ chỗ phòng ${roomNum}. Phòng đã được mở lại cho người khác thuê.`);
       setTimeout(() => {
@@ -261,7 +262,9 @@ export default function UserDashboard() {
         navigate('/rooms');
       }, 1000);
     }
-  };
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
 
   const isRepresentative = useMemo(() => {
     const rNum = (user?.room || user?.rooms?.[0] || 'P.101');
@@ -464,23 +467,29 @@ export default function UserDashboard() {
     });
   }, [myRoomNumber, roomRequests, user]);
 
-  const handleSendLeave = (e) => {
+  const handleSendLeave = async (e) => {
+try {
+
     e.preventDefault();
     if (!leaveModal || !agreedForfeitLeave || hasUnpaidBillsForLeave) return;
     const roomNumber = typeof leaveModal === 'string' ? leaveModal : leaveModal.number;
-    const res = leaveRoom(roomNumber, user?.fullName);
+    const res = await leaveRoom(roomNumber, user?.fullName);
     if (res?.success) {
       setLeaveSuccess(true);
     } else {
       alert(res?.message || 'Không thể rời phòng do chưa hoàn tất nghĩa vụ tài chính.');
     }
-  };
 
-  const handleSendCheckout = (e) => {
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
+
+  const handleSendCheckout = async (e) => {
+try {
+
     e.preventDefault();
     if (!checkoutModal || (!isContractExpired && !agreedForfeitDeposit)) return;
     const roomNumber = typeof checkoutModal === 'string' ? checkoutModal : checkoutModal.number;
-    submitCheckoutRequest({
+    await submitCheckoutRequest({
       room: roomNumber,
       reason: checkoutReason,
       forfeitDeposit: !isContractExpired,
@@ -492,7 +501,9 @@ export default function UserDashboard() {
       isContractExpired
     });
     setCheckoutSuccess(true);
-  };
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
 
   const currentTenant = useMemo(() => {
     const userFullName = user?.fullName || '';
@@ -657,15 +668,19 @@ export default function UserDashboard() {
       setTimeout(() => setCopiedGateField(null), 2000);
     };
 
-    const handleConfirmDepositAndSign = (cccdData = null) => {
+    const handleConfirmDepositAndSign = async (cccdData = null) => {
+try {
+
       if (payDepositAndSignContract) {
-        payDepositAndSignContract(myContract.id, { cccdData });
+        await payDepositAndSignContract(myContract.id, { cccdData });
         setPaySuccessToast(
           `🎉 Ký HĐ thành công! Dữ liệu CCCD đã được gửi đến Quản lý cơ sở để làm thủ tục Tạm Trú (VNeID) phòng ${targetRoomNum}.`
         );
         setTimeout(() => setPaySuccessToast(null), 7000);
       }
-    };
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+};
 
     const handleCheckSepayDepositNow = async () => {
       setIsCheckingSepayDeposit(true);
@@ -1249,22 +1264,30 @@ export default function UserDashboard() {
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
+try {
+
                     if (voteRoommateRequest) {
-                      voteRoommateRequest(req.id, user?.fullName, false);
+                      await voteRoommateRequest(req.id, user?.fullName, false);
                     }
-                  }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
                   className="px-4 py-2 bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 font-bold rounded-xl text-xs transition-colors btn-press-ghost cursor-pointer"
                 >
                   ❌ Từ Chối
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
+try {
+
                     if (voteRoommateRequest) {
-                      voteRoommateRequest(req.id, user?.fullName, true);
+                      await voteRoommateRequest(req.id, user?.fullName, true);
                     }
-                  }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
                   className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-emerald-600/20 btn-press cursor-pointer flex items-center gap-1.5"
                 >
                   <span>✅ Đồng Ý</span>
@@ -1668,9 +1691,13 @@ export default function UserDashboard() {
         isOpen={showContractModal}
         onClose={() => setShowContractModal(false)}
         contract={myActiveContract}
-        onSignSuccess={(contractId) => {
-          signContractElectronically(contractId);
-        }}
+        onSignSuccess={async (contractId) => {
+try {
+
+          await signContractElectronically(contractId);
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
       />
 
       {/* Modal Gửi CCCD Xin Ở Ghép Cho Chủ Trọ Duyệt (UC-T07) */}
@@ -1685,13 +1712,17 @@ export default function UserDashboard() {
       <PaymentModal
         isOpen={!!payingInvoice}
         onClose={() => setPayingInvoice(null)}
-        onSuccess={(paidInv, payMethod) => {
+        onSuccess={async (paidInv, payMethod) => {
+try {
+
           const methodLabel = payMethod === 'VNPAY' ? 'Cổng VNPay' : (payMethod === 'MOMO' ? 'Ví MoMo' : 'SePay VietQR');
-          payInvoice(payingInvoice.id, methodLabel);
+          await payInvoice(payingInvoice.id, methodLabel);
           setPayingInvoice(null);
           setPaySuccessToast(`Đã thanh toán thành công qua ${methodLabel} cho hóa đơn ${payingInvoice.code}!`);
           setTimeout(() => setPaySuccessToast(null), 6000);
-        }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
         invoice={payingInvoice || undefined}
       />
 
@@ -1813,11 +1844,15 @@ export default function UserDashboard() {
                           </div>
                           <button
                             type="button"
-                            onClick={() => {
-                              payInvoice(inv.id, 'SePay VietQR');
+                            onClick={async () => {
+try {
+
+                              await payInvoice(inv.id, 'SePay VietQR');
                               setPaySuccessToast(`Đã thanh toán nhanh thành công hóa đơn ${inv.code}!`);
                               setTimeout(() => setPaySuccessToast(null), 5000);
-                            }}
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}}
                             className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] transition-all flex items-center gap-1 shadow-xs cursor-pointer btn-press"
                           >
                             <Zap className="w-3.5 h-3.5" />
@@ -1836,7 +1871,9 @@ export default function UserDashboard() {
                   </div>
                 )}
 
-                <form onSubmit={(e) => {
+                <form onSubmit={async (e) => {
+try {
+
                   e.preventDefault();
                   if (isRepresentative && otherRoommates.length > 0) {
                     if (!selectedSuccessor) {
@@ -1844,13 +1881,15 @@ export default function UserDashboard() {
                       return;
                     }
                     if (transferContractHolder) {
-                      transferContractHolder(myRoomNumber, user?.fullName, selectedSuccessor);
+                      await transferContractHolder(myRoomNumber, user?.fullName, selectedSuccessor);
                       setLeaveSuccess(true);
                     }
                   } else {
                     handleSendLeave(e);
                   }
-                }} className="space-y-4 text-xs">
+
+} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
+}} className="space-y-4 text-xs">
                   {isRepresentative && otherRoommates.length > 0 ? (
                     <div className="p-3.5 bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-300 rounded-2xl space-y-2">
                       <div className="flex items-center gap-2 font-bold text-purple-950">
