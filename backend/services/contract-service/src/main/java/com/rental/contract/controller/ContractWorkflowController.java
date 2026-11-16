@@ -219,27 +219,6 @@ public class ContractWorkflowController {
         return Map.of("success", true, "data", id);
     }
 
-    @PostMapping("/{id}/representative")
-    @Transactional
-    public Object representative(
-            @PathVariable Long id,
-            @RequestBody Map<String, Long> body,
-            @RequestHeader("X-User-Roles") String roles
-    ) {
-        manager(roles);
-        Contract contract = contractRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy hợp đồng"));
-
-        if (body.get("tenantId") == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Thiếu tenantId");
-        }
-
-        contract.setTenantId(body.get("tenantId"));
-        contractRepository.save(contract);
-
-        return Map.of("success", true, "data", id);
-    }
-
     public record RoomRequestBody(
             String type,
             Long contractId,

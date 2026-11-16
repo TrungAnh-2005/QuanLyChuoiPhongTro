@@ -6,6 +6,7 @@
 --    Trên DBeaver: Nhấn tổ hợp phím ALT + X (Execute SQL Script)
 --    HOẶC nhấn nút biểu tượng [▶▶] (Execute SQL Script) trên thanh công cụ.
 --    KHÔNG nhấn Ctrl + Enter vì Ctrl + Enter chỉ chạy 1 câu lệnh đơn lẻ tại con trỏ.
+--    Database đã có dữ liệu: chỉ chạy khối PHẦN 3 ở cuối file để sửa requested_date.
 -- ==============================================================================
 
 SET NAMES 'utf8mb4';
@@ -645,7 +646,7 @@ CREATE TABLE `maintenance_requests` (
     `status` VARCHAR(20) NOT NULL DEFAULT 'PENDING' COMMENT 'Trạng thái: PENDING (Chờ tiếp nhận), IN_PROGRESS (Đang sửa), RESOLVED (Đã sửa xong), CANCELLED',
     `cost` DECIMAL(15,2) NOT NULL DEFAULT 0 COMMENT 'Chi phí sửa chữa thực tế phát sinh',
     `assigned_to` VARCHAR(100) NULL COMMENT 'Thợ hoặc nhân sự kỹ thuật chịu trách nhiệm',
-    `requested_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm báo hỏng',
+    `requested_date` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT 'Thời điểm báo hỏng',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `resolved_at` DATETIME NULL COMMENT 'Thời điểm hoàn tất nghiệm thu',
@@ -1107,12 +1108,12 @@ INSERT INTO `payment_gateways_config` (`id`, `gateway_name`, `is_active`, `merch
 -- ------------------------------------------------------------------------------
 USE `maintenance_db`;
 
-INSERT INTO `maintenance_requests` (`id`, `ticket_code`, `room_id`, `tenant_id`, `category`, `title`, `description`, `image_url`, `priority`, `status`, `cost`, `assigned_to`, `created_at`, `resolved_at`) VALUES
-(1, 'SC-2026-001', 102, 2, 'WATER', 'Hỏng vòi sen nhà tắm bị rò rỉ nước', 'Vòi sen nhà tắm bị rò nước liên tục ở khớp nối van khóa, áp lực nước phun yếu.', 'https://images.unsplash.com/photo-1585338107529-13afc5f02586?w=600', 'HIGH', 'IN_PROGRESS', 150000.00, 'Thợ nước Nguyễn Tuấn', '2026-09-20 08:30:00', NULL),
-(2, 'SC-2026-002', 105, 4, 'ELECTRICITY', 'Điều hòa không lạnh, có tiếng kêu to', 'Bật 18 độ nhưng quạt gió kêu rè rè không phả ra hơi lạnh sau 30 phút.', 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=600', 'HIGH', 'PENDING', 0.00, NULL, '2026-09-21 09:15:00', NULL),
-(3, 'SC-2026-003', 107, 6, 'ELECTRICITY', 'Bóng đèn tuýp ban công bị cháy', 'Bóng đèn tuýp LED ban công bị chớp nháy rồi tắt hẳn.', 'https://images.unsplash.com/photo-1507668077129-56e32842fceb?w=600', 'LOW', 'RESOLVED', 60000.00, 'Bảo vệ Trần Văn Mạnh', '2026-09-18 10:00:00', '2026-09-19 14:00:00'),
-(4, 'SC-2026-004', 101, 1, 'FURNITURE', 'Cửa sổ ban công bị kẹt khóa', 'Tay nắm cửa sổ bị gãy then gài, không khép chặt được khi trời mưa.', 'https://images.unsplash.com/photo-1513694203232-719a280e022f?w=600', 'MEDIUM', 'RESOLVED', 80000.00, 'Thợ cơ khí Lê Văn Tuấn', '2026-09-15 14:20:00', '2026-09-16 11:00:00'),
-(5, 'SC-2026-005', 103, 3, 'WATER', 'Áp lực nước vòi sen yếu vào giờ cao điểm', 'Khoảng 18h - 20h tối nước tắm chảy chậm, ban ngày thì chảy bình thường.', NULL, 'LOW', 'IN_PROGRESS', 0.00, 'Kỹ thuật tòa nhà', '2026-09-22 19:40:00', NULL);
+INSERT INTO `maintenance_requests` (`id`, `ticket_code`, `room_id`, `tenant_id`, `category`, `title`, `description`, `image_url`, `priority`, `status`, `cost`, `assigned_to`, `requested_date`, `created_at`, `resolved_at`) VALUES
+(1, 'SC-2026-001', 102, 2, 'WATER', 'Hỏng vòi sen nhà tắm bị rò rỉ nước', 'Vòi sen nhà tắm bị rò nước liên tục ở khớp nối van khóa, áp lực nước phun yếu.', 'https://images.unsplash.com/photo-1585338107529-13afc5f02586?w=600', 'HIGH', 'IN_PROGRESS', 150000.00, 'Thợ nước Nguyễn Tuấn', '2026-09-20 08:30:00', '2026-09-20 08:30:00', NULL),
+(2, 'SC-2026-002', 105, 4, 'ELECTRICITY', 'Điều hòa không lạnh, có tiếng kêu to', 'Bật 18 độ nhưng quạt gió kêu rè rè không phả ra hơi lạnh sau 30 phút.', 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=600', 'HIGH', 'PENDING', 0.00, NULL, '2026-09-21 09:15:00', '2026-09-21 09:15:00', NULL),
+(3, 'SC-2026-003', 107, 6, 'ELECTRICITY', 'Bóng đèn tuýp ban công bị cháy', 'Bóng đèn tuýp LED ban công bị chớp nháy rồi tắt hẳn.', 'https://images.unsplash.com/photo-1507668077129-56e32842fceb?w=600', 'LOW', 'RESOLVED', 60000.00, 'Bảo vệ Trần Văn Mạnh', '2026-09-18 10:00:00', '2026-09-18 10:00:00', '2026-09-19 14:00:00'),
+(4, 'SC-2026-004', 101, 1, 'FURNITURE', 'Cửa sổ ban công bị kẹt khóa', 'Tay nắm cửa sổ bị gãy then gài, không khép chặt được khi trời mưa.', 'https://images.unsplash.com/photo-1513694203232-719a280e022f?w=600', 'MEDIUM', 'RESOLVED', 80000.00, 'Thợ cơ khí Lê Văn Tuấn', '2026-09-15 14:20:00', '2026-09-15 14:20:00', '2026-09-16 11:00:00'),
+(5, 'SC-2026-005', 103, 3, 'WATER', 'Áp lực nước vòi sen yếu vào giờ cao điểm', 'Khoảng 18h - 20h tối nước tắm chảy chậm, ban ngày thì chảy bình thường.', NULL, 'LOW', 'IN_PROGRESS', 0.00, 'Kỹ thuật tòa nhà', '2026-09-22 19:40:00', '2026-09-22 19:40:00', NULL);
 
 INSERT INTO `maintenance_logs` (`id`, `request_id`, `actor_username`, `action`, `notes`, `created_at`) VALUES
 (1, 1, 'staff', 'ASSIGNED', 'Đã phân công thợ nước kiểm tra và mang theo cụm vòi sen mới', '2026-09-20 09:00:00'),
@@ -1176,3 +1177,41 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- ==============================================================================
 -- HOÀN TẤT THIẾT LẬP CƠ SỞ DỮ LIỆU MICROSERVICES ĐẦY ĐỦ VÀ CHUẨN XÁC 100%
 -- ==============================================================================
+
+-- ==============================================================================
+-- PHẦN 3: NÂNG CẤP requested_date CHO DATABASE ĐÃ CÓ DỮ LIỆU
+-- Khi sửa database hiện tại: CHỈ chọn và chạy toàn bộ khối bên dưới.
+-- Không chạy lại phần FULL SETUP phía trên vì có DROP TABLE và nạp lại dữ liệu mẫu.
+-- Thêm cột nullable trước, điền ngày từ created_at, sau đó mới đặt NOT NULL.
+-- Có thể chạy lại khối này khi cột đã tồn tại; giữ nguyên requested_date hợp lệ.
+-- ==============================================================================
+SET @maintenance_requested_date_exists = (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'maintenance_db'
+      AND TABLE_NAME = 'maintenance_requests'
+      AND COLUMN_NAME = 'requested_date'
+);
+
+SET @maintenance_requested_date_ddl = IF(
+    @maintenance_requested_date_exists = 0,
+    'ALTER TABLE `maintenance_db`.`maintenance_requests` ADD COLUMN `requested_date` DATETIME(6) NULL DEFAULT NULL AFTER `assigned_to`',
+    'SELECT 1'
+);
+PREPARE maintenance_requested_date_stmt FROM @maintenance_requested_date_ddl;
+EXECUTE maintenance_requested_date_stmt;
+DEALLOCATE PREPARE maintenance_requested_date_stmt;
+
+UPDATE `maintenance_db`.`maintenance_requests`
+SET `requested_date` = CASE
+        WHEN `created_at` IS NOT NULL AND CAST(`created_at` AS CHAR) NOT LIKE '0000-%'
+            THEN `created_at`
+        ELSE CURRENT_TIMESTAMP(6)
+    END,
+    `updated_at` = `updated_at`
+WHERE `requested_date` IS NULL
+   OR CAST(`requested_date` AS CHAR) LIKE '0000-%';
+
+ALTER TABLE `maintenance_db`.`maintenance_requests`
+    MODIFY COLUMN `requested_date` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+    COMMENT 'Thời điểm báo hỏng';

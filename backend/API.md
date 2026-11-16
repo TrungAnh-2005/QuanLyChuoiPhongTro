@@ -1,47 +1,53 @@
-# API dành cho bản test nghiệp vụ
+# API nghiệp vụ hiện tại
 
-Base URL: `http://localhost:8080/api`. Khi `APPLICATION_TEST_MODE=true`, không gửi JWT hay thông tin account. Mọi thao tác frontend đi qua Gateway.
+Base URL: `http://localhost:8080/api`. Đối chiếu theo mã nguồn ngày 16/11/2026. Danh sách đủ 98 endpoint, mô tả và vị trí FE/BE gọi nằm trong [API_LIST.md](../API_LIST.md); kết quả dọn API nằm trong [API_UNUSED_BY_FE.md](../API_UNUSED_BY_FE.md).
 
-Các endpoint hiện có trả cả hai dạng: `{success:true,data:...}` và DTO trực tiếp. Frontend chuẩn hóa tại lớp API/context; lỗi HTTP không được chuyển thành thành công giả.
+Khi `APPLICATION_TEST_MODE=true`, Gateway gắn ngữ cảnh kiểm thử thay cho JWT. Ngoài test mode, FE dùng token đăng nhập; các API quản lý có kiểm tra vai trò riêng.
 
-| Nghiệp vụ | Endpoint chính |
-| --- | --- |
-| Cơ sở | GET/POST `/properties`, GET/PUT/DELETE `/properties/{id}` |
-| Phòng | GET/POST `/rooms`, GET/PUT/DELETE `/rooms/{id}`, PATCH `/rooms/{id}/status` |
-| Tòa/tầng | GET/POST `/rooms/records/buildings`, `/rooms/records/floors` |
-| Biểu giá dịch vụ | GET/POST `/rooms/records/service-configs`, PATCH/DELETE `/rooms/records/service-configs/{id}` |
-| Khách thuê | GET/POST `/tenants`, GET/PUT/DELETE `/tenants/{id}` |
-| Hợp đồng | GET/POST `/contracts`, GET `/contracts/{id}` |
-| Gia hạn/chấm dứt | POST `/contracts/{id}/renew`, `/contracts/{id}/terminate` |
+Các endpoint hiện có trả cả hai dạng `{success:true,data:...}` và DTO trực tiếp. FE chuẩn hóa tại lớp API/context.
+
+Các đường dẫn dưới đây tính từ base URL:
+
+| Nghiệp vụ | Endpoint |
+|---|---|
+| Tài khoản | POST `/auth/login`, `/auth/register`, `/auth/refresh`; GET `/auth/me`; quản lý account/profile trong API_LIST.md |
+| Cơ sở | GET/POST `/properties`; PUT/DELETE `/properties/{id}` |
+| Phòng | GET/POST `/rooms`; GET/PUT/DELETE `/rooms/{id}`; PATCH `/rooms/{id}/status` |
+| Tòa/tầng | GET/POST `/rooms/buildings`, `/rooms/floors` |
+| Biểu giá dịch vụ | GET/POST `/rooms/service-configs`; PATCH/DELETE `/rooms/service-configs/{id}` |
+| Khách thuê | GET/POST `/tenants`; GET/PUT/DELETE `/tenants/{id}` |
+| Hợp đồng | GET/POST `/contracts`; GET `/contracts/{id}` |
 | Ký/xác nhận cọc | POST `/contracts/{id}/sign`, `/contracts/{id}/confirm-deposit` |
-| Yêu cầu thuê/đổi/gia hạn/trả | GET/POST `/contracts/records/requests`, PATCH `/contracts/records/requests/{id}` |
-| Phê duyệt yêu cầu | POST `/contracts/requests/{id}/approve` |
-| Biểu quyết yêu cầu | POST `/contracts/requests/{id}/vote` |
-| Thành viên phòng | GET/POST `/tenants/records/members`, PATCH/DELETE `/tenants/records/members/{id}` |
-| Đề nghị ở ghép | GET/POST `/tenants/records/roommate-requests` |
-| Duyệt ở ghép | POST `/tenants/roommate-requests/{id}/review` |
-| Chốt điện nước | POST `/meters/readings`, GET `/meters/rooms/{roomId}` |
-| Khiếu nại công tơ | GET/POST `/meters/records/disputes`, PATCH `/meters/records/disputes/{id}` |
-| Hóa đơn | GET/POST `/invoices`, GET `/invoices/{id}`, POST `/invoices/generate-monthly` |
-| Điều chỉnh điện nước/phí sửa | PUT `/invoices/{id}/meter-fees`, POST `/invoices/{id}/maintenance-fee` |
-| Thu tiền | POST `/payments`, GET `/payments`, GET `/payments/invoice/{invoiceId}` |
-| Bảo trì | GET/POST `/maintenance`, GET `/maintenance/{id}`, PUT `/maintenance/{id}/status` |
-| Quyết toán trả phòng | GET/POST `/contracts/records/settlements`, POST `/contracts/settlements/{id}/complete` |
-| Thông báo | GET/POST `/notifications`, GET `/notifications/unread-count` |
-| Đọc thông báo | PATCH `/notifications/{id}/read`, `/notifications/read-all` |
-| Báo cáo | GET `/reports/dashboard-summary`, `/reports/revenue`, `/reports/occupancy`, `/reports/debt`, `/reports/contracts-expiring` |
+| Rời phòng/chuyển người đại diện | POST `/contracts/{id}/leave` |
+| Yêu cầu thuê/đổi/gia hạn/trả | GET/POST `/contracts/requests`; PATCH/DELETE `/contracts/requests/{id}` |
+| Phê duyệt/biểu quyết | POST `/contracts/requests/{id}/approve`, `/contracts/requests/{id}/vote` |
+| Thành viên phòng | GET/POST `/tenants/members`; PATCH/DELETE `/tenants/members/{id}` |
+| Đề nghị ở ghép | GET/POST `/tenants/roommate-requests`; POST `/tenants/roommate-requests/{id}/review` |
+| Chốt điện nước | POST `/meters/readings`; GET `/meters/rooms/{roomId}` |
+| Chỉ số mới nhất (billing gọi nội bộ) | GET `/meters/rooms/{roomId}/latest` |
+| Khiếu nại công tơ | GET/POST `/meters/disputes`; PATCH `/meters/disputes/{id}` |
+| Hóa đơn | GET `/invoices`; POST `/invoices/generate-monthly` |
+| Điều chỉnh phí | PUT `/invoices/{id}/meter-fees`; POST `/invoices/{id}/maintenance-fee` |
+| Thu tiền | POST `/invoices/{id}/confirm-payment`; POST `/payments` |
+| Hóa đơn SaaS | GET/POST `/invoices/saas`; POST `/invoices/saas/{id}/confirm-payment` |
+| Thanh toán online | POST `/payments/vnpay/create-url`, `/payments/momo/create-url`; GET `/payments/vnpay/verify`, `/payments/momo/verify`, `/payments/sepay/accounts`, `/payments/sepay/check` |
+| Bảo trì | GET/POST `/maintenance`; PUT `/maintenance/{id}/status` |
+| Quyết toán trả phòng | GET/POST `/contracts/settlements`; POST `/contracts/settlements/{id}/complete` |
+| Thông báo | GET/POST `/notifications`; GET `/notifications/unread-count`; PATCH `/notifications/{id}/read`, `/notifications/read-all` |
+| Báo cáo | GET `/reports/dashboard-summary`, `/reports/revenue`, `/reports/occupancy`, `/reports/debt`, `/reports/contracts-expiring`, `/reports/system-status` |
+| OCR multipart | POST `/ai/ocr/id-card` (front/back), `/ai/ocr/meter` (image + meterType) |
 
-Các resource `/records/` đọc danh sách theo thứ tự ID giảm dần, tối đa 2.000 bản ghi. Trường trả về từ SQL là snake_case; frontend đổi thành camelCase. Khi gửi JSON có thể dùng camelCase. Chỉ chấp nhận các cột nằm trong allowlist; không nhận tên bảng/cột SQL từ client.
+Tòa/tầng, biểu giá, thành viên phòng, yêu cầu phòng, quyết toán, khiếu nại và hóa đơn SaaS dùng controller và entity/repository riêng. Prefix `/records` cũ không còn là đường dẫn hiện hành.
 
-Luồng thử nhanh:
+Luồng tạo dữ liệu cơ bản theo mã nguồn:
 
-1. POST `/properties` với `name`, `address`, `code`, `managerPhone`, `managerUsername`. Backend tạo tòa và tầng mặc định.
-2. GET `/rooms/records/floors` để lấy `floorId`, POST `/rooms` với `floorId`, `roomNumber`, `basePrice`, `area`, `maxOccupants`.
+1. POST `/properties` để tạo cơ sở. BE tạo tòa và tầng mặc định.
+2. GET `/rooms/floors` lấy `floorId`; POST `/rooms` với `floorId`, `roomNumber`, `basePrice`, `area`, `maxOccupants`.
 3. POST `/tenants` với `fullName`, `identityCard`, `birthDate`, `gender`, `phone`, `email`.
-4. POST `/contracts` với `tenantId`, `roomId`, `startDate`, `endDate`, `rentalPrice`, `depositAmount`, `paymentCycle`. Phòng phải AVAILABLE; backend chuyển sang OCCUPIED.
-5. POST `/meters/readings` một lần cho ELECTRICITY và một lần cho WATER: `roomId`, `meterType`, `newReading`, `unitPrice`, `readingDate`. Sửa cùng tháng giữ số cũ đầu kỳ và cập nhật bản ghi đã có.
-6. POST `/invoices/generate-monthly`: `contractId`, `month`, `year`; hoặc POST `/invoices` để lập hóa đơn có phí cụ thể.
-7. POST `/payments`: `invoiceId`, `amount`, `paymentMethod:"CASH"`. RabbitMQ chuyển sự kiện để billing cập nhật trạng thái hóa đơn; có thể cần tải lại sau khi consumer xử lý.
-8. POST `/maintenance` để báo hỏng, PUT `/{id}/status` để giao/hoàn tất, POST `/invoices/{id}/maintenance-fee` nếu thu thêm tiền sửa chữa.
+4. POST `/contracts` với `tenantId`, `roomId`, `startDate`, `endDate`, `rentalPrice`, `depositAmount`, `paymentCycle`.
+5. Ký và xác nhận đã nhận cọc qua hai API tương ứng; tạo yêu cầu gia hạn/trả phòng qua `/contracts/requests`.
+6. POST `/meters/readings` ghi điện nước; POST `/invoices/generate-monthly` tạo hóa đơn; FE cập nhật phí bằng PUT `/invoices/{id}/meter-fees` khi hóa đơn đã có.
+7. POST `/invoices/{id}/confirm-payment` xác nhận thu tiền. POST `/payments` ghi nhận giao dịch trong nhánh thanh toán phù hợp.
+8. POST `/maintenance`, PUT `/maintenance/{id}/status` xử lý bảo trì; POST `/invoices/{id}/maintenance-fee` nếu thu thêm phí.
 
-Các API VNPay/MoMo/SePay/OCR cần khóa nhà cung cấp ở backend. Bản test cơ bản có thể dùng nhập chỉ số thủ công và thu tiền mặt. Việc xác minh tài khoản, JWT, phân quyền và cô lập dữ liệu người dùng được để lại cho giai đoạn sau.
+API VNPay/MoMo/SePay/OCR cần cấu hình nhà cung cấp ở BE. Đây là tài liệu đối chiếu mã nguồn; build/test và kiểm thử đầu cuối cho lần dọn API này để sau theo yêu cầu người dùng.

@@ -32,7 +32,7 @@ Các file `.env` và `.env.example` nằm ở thư mục gốc, `backend`, `fron
 | --- | --- | --- |
 | api-gateway | 8080 | `/api/**` |
 | auth-service | 8081 | `/api/auth` (để giai đoạn tài khoản) |
-| room-service | 8082 | `/api/rooms`, `/api/properties`, `/api/boarding-houses` |
+| room-service | 8082 | `/api/rooms`, `/api/properties` |
 | tenant-service | 8083 | `/api/tenants` |
 | contract-service | 8084 | `/api/contracts` |
 | meter-service | 8085 | `/api/meters` |
@@ -43,7 +43,7 @@ Các file `.env` và `.env.example` nằm ở thư mục gốc, `backend`, `fron
 | report-service | 8090 | `/api/reports` |
 | ai-service | 8091 | `/api/ai` |
 
-Các nhóm chức năng đã nối Gateway: cơ sở/phòng; khách thuê và tạo hợp đồng khi xếp phòng; yêu cầu thuê/đổi/gia hạn/trả phòng; ký và xác nhận cọc; ở ghép và cư trú; điện nước/biểu giá/khiếu nại; hóa đơn/thu tiền; bảo trì; quyết toán và thông báo. Các resource bổ sung dùng `/api/{domain}/records/{resource}`, chỉ nhận các trường thuộc allowlist của bảng nghiệp vụ.
+Các nhóm chức năng đã nối Gateway: cơ sở/phòng; khách thuê và tạo hợp đồng khi xếp phòng; yêu cầu thuê/đổi/gia hạn/trả phòng; ký và xác nhận cọc; ở ghép và cư trú; điện nước/biểu giá/khiếu nại; hóa đơn/thu tiền; bảo trì; quyết toán và thông báo. Các resource bổ sung dùng controller và entity/repository riêng, ví dụ `/api/rooms/service-configs`, `/api/contracts/requests`, `/api/tenants/members`; xem [API.md](API.md) và [API_LIST.md](../API_LIST.md) để lấy đường dẫn hiện hành.
 
 Database mới: Compose chạy `01-init-databases.sql`, `03-notifications.sql`, `04-workflow-resources.sql`. Hibernate tạo/cập nhật các bảng entity nghiệp vụ; auth-service có seed riêng. Script seed cũ `02-seed-data.sql` vẫn được giữ để tham khảo nhưng không chạy tự động vì dùng nhiều bảng/schema không khớp với backend hiện tại.
 

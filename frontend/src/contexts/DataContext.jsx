@@ -123,11 +123,6 @@ export function DataProvider({ children }) {
       await refreshData(); return {success:true};
     },
     addMaintenanceFeeToInvoice: (number,amount) => request('post',`/invoices/${view.invoices.find(i=>i.roomId===room(number).id && i.status!=='PAID')?.id}/maintenance-fee`,{amount:Number(amount)}),
-    transferContractHolder: (number,_previous,name) => {
-      const contract = view.contracts.find(c=>c.roomId===room(number).id && c.status==='ACTIVE');
-      const successor = view.tenants.find(t=>t.fullName===name);
-      return request('post',`/contracts/${contract.id}/representative`,{tenantId:successor?.id});
-    },
     inspectAndApproveCheckout: id => actions.approveRoomRequest(id),
     voteRoommateRequest: (id,_name,approved) => request('post',`/contracts/requests/${id}/vote`,{approved}),
     sendSaasReminder: invoice => request('post','/notifications',{userId:invoice.landlordId,title:`Nhắc thanh toán ${invoice.code}`,content:`Vui lòng thanh toán hóa đơn ${invoice.code}`,type:'INVOICE'}),

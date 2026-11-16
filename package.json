@@ -1,8 +1,8 @@
 {
   "scripts": {
-    "be": "powershell -ExecutionPolicy Bypass -File ./start-be.ps1",
-    "be:fast": "powershell -ExecutionPolicy Bypass -File ./start-be.ps1 -SkipBuild",
-    "be:stop": "powershell -ExecutionPolicy Bypass -File ./start-be.ps1 -Stop"
+    "be": "node -e \"const {execFileSync}=require('child_process'); process.platform==='win32' ? execFileSync('powershell',['-ExecutionPolicy','Bypass','-File','./start-be.ps1',...process.argv.slice(1)],{stdio:'inherit'}) : execFileSync('bash',['./start-be.sh',...process.argv.slice(1)],{stdio:'inherit'})\" --",
+    "be:fast": "npm run be -- -SkipBuild",
+    "be:stop": "npm run be -- -Stop"
   },
   "devDependencies": {
     "playwright": "^1.64.0"

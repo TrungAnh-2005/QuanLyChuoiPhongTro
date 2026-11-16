@@ -1,82 +1,61 @@
-# Kết quả nối API FE và dọn API BE
+# Đối chiếu API FE–BE và dọn endpoint thừa
 
-Ngày cập nhật: 12/11/2026. Tài liệu này thay thế kết quả rà soát trước khi sửa.
+Rà soát mã nguồn ngày 16/11/2026. Báo cáo này thay thế số liệu của lần rà soát 12/11; chỉ kết luận về mã nguồn. Build/test và kiểm thử đầu cuối cho thay đổi lần này để sau theo yêu cầu người dùng.
 
-## Tổng hợp
+## Kết quả
 
-- Trước khi sửa: 128 API trong API_LIST.md, trong đó 41 API chưa có luồng gọi từ FE.
-- Đã nối 6 API trong danh sách cũ vào FE, đồng thời nối thao tác cập nhật tạm trú qua API PATCH thành viên.
-- Giữ 4 API chưa được FE gọi trực tiếp vì các service khác đang sử dụng.
-- Xóa 31 endpoint không có luồng sử dụng, 13 phương thức service không còn nơi gọi và action reset hóa đơn SaaS thừa trên FE.
-- API_LIST.md hiện còn 97 API. Không thay đổi dữ liệu hoặc xóa bảng trong database.
+- Trước khi dọn: 105 endpoint REST khai báo trong controller, tính riêng từng cặp HTTP method + path, kể cả alias.
+- FE có lời gọi tới 94 endpoint; cả 94 đều có mapping BE và prefix Gateway tương ứng. Chưa thấy API FE đang gọi bị thiếu ở BE.
+- Giữ thêm 4 endpoint chỉ được các service nội bộ gọi.
+- Xóa 7 endpoint không có luồng gọi đang dùng. BE còn 98 endpoint.
+- Danh sách đầy đủ kèm vị trí lời gọi: [API_LIST.md](API_LIST.md). Tài liệu cũ chưa ghi POST `/api/contracts/{id}/leave`, POST `/api/invoices/{id}/confirm-payment` và chưa tính riêng các alias.
 
-## Các luồng đã nối API
+Đã kiểm tra cả `api.get/post/put/patch/delete`, helper `request`, các resource động trong `DataContext`, các trang/component sử dụng action, cấu hình Gateway và các Feign client. Giữ các API tài khoản cho chế độ xác thực thật, dù môi trường hiện tại có thể bật test mode. API của hạ tầng như Actuator, Eureka và OpenAPI không thuộc nhóm API nghiệp vụ cần dọn.
 
-| Luồng | API | Vị trí |
+## Theo service sau khi dọn
+
+| Service | FE có lời gọi | Chỉ gọi nội bộ | Tổng giữ |
+|---|---:|---:|---:|
+| auth-service | 16 | 0 | 16 |
+| room-service | 17 | 1 | 18 |
+| tenant-service | 11 | 1 | 12 |
+| contract-service | 14 | 1 | 15 |
+| meter-service | 5 | 1 | 6 |
+| billing-service | 8 | 0 | 8 |
+| payment-service | 7 | 0 | 7 |
+| maintenance-service | 3 | 0 | 3 |
+| notification-service | 5 | 0 | 5 |
+| report-service | 6 | 0 | 6 |
+| ai-service | 2 | 0 | 2 |
+| **Tổng** | **94** | **4** | **98** |
+
+## Endpoint đã xóa trong lần này
+
+| Method | Endpoint | Căn cứ |
 |---|---|---|
-| Làm mới phiên khi access token hết hạn; dùng chung một lần refresh cho các request đồng thời, retry tối đa một lần | POST /api/auth/refresh | frontend/src/services/api.js |
-| Tổng số thông báo chưa đọc từ server | GET /api/notifications/unread-count | DataContext.jsx và Navbar.jsx |
-| Thêm khách đã có hồ sơ vào phòng có hợp đồng hoạt động | POST /api/tenants/members | RoomMemberActions.jsx trong modal cư dân ở StaffRoomsPage.jsx |
-| Xóa thành viên ở ghép khỏi phòng | DELETE /api/tenants/members/{id} | RoomMemberActions.jsx |
-| Cập nhật tạm trú | PATCH /api/tenants/members/{id} | RoomMemberActions.jsx và modal đổi trạng thái tại StaffTenantsPage.jsx |
-| Duyệt hoặc từ chối yêu cầu ở ghép | POST /api/tenants/roommate-requests/{id}/review | WorkflowReviewPanel.jsx trên StaffRoomsPage.jsx |
-| Xử lý hoặc từ chối khiếu nại chỉ số, lưu ghi chú | PATCH /api/meters/disputes/{id} | WorkflowReviewPanel.jsx trên StaffMetersPage.jsx |
+| GET | `/api/boarding-houses` | FE đọc danh sách qua `/api/properties`; không có caller nội bộ dùng alias |
+| POST | `/api/boarding-houses` | FE tạo cơ sở qua `/api/properties` |
+| PUT | `/api/boarding-houses/{id}` | FE cập nhật cơ sở qua `/api/properties/{id}` |
+| DELETE | `/api/boarding-houses/{id}` | FE xóa cơ sở qua `/api/properties/{id}` |
+| POST | `/api/ai/id-card-ocr` | FE và AiClient của tenant-service dùng `/api/ai/ocr/id-card` |
+| POST | `/api/ai/meter-ocr` | FE và AiClient của meter-service dùng `/api/ai/ocr/meter` |
+| POST | `/api/contracts/{id}/representative` | Chỉ được khai báo trong action `transferContractHolder`, không có màn hình/component hay service nào gọi action/endpoint này |
 
-Các thao tác chờ API hoàn tất, hiển thị lỗi và tải lại dữ liệu từ server. Đánh dấu khiếu nại đã xử lý không tự thay đổi chỉ số hay phí hóa đơn; nhân viên điều chỉnh qua luồng ghi chỉ số hiện có nếu cần.
+Đã xóa cả predicate Gateway `/api/boarding-houses/**` và action FE `transferContractHolder` tương ứng. Luồng chuyển người đại diện khi rời phòng vẫn được gọi qua `/api/contracts/{id}/leave`: `PersonalLeaveController` kiểm tra thành viên tiếp quản, cập nhật vai trò thành viên và người đại diện hợp đồng.
 
-## API nội bộ được giữ
+## Endpoint nội bộ cần giữ dù FE không gọi trực tiếp
 
-| API | Nơi gọi |
-|---|---|
-| GET /api/rooms/{id} | contract-service / RoomClient |
-| GET /api/tenants/{id} | contract-service / TenantClient |
-| GET /api/contracts/{id} | billing-service / ContractClient |
-| GET /api/meters/rooms/{roomId}/latest | billing-service / MeterClient |
-
-Logic gia hạn/chấm dứt hợp đồng vẫn được giữ trong ContractService: các bước duyệt yêu cầu và hoàn tất quyết toán gọi trực tiếp logic này. Chỉ bỏ hai endpoint thao tác trực tiếp không có nơi sử dụng.
-
-## Các endpoint đã xóa
-
-| Method | Endpoint | Controller |
+| Method | Endpoint | Caller |
 |---|---|---|
-| `POST` | `/api/auth/change-password` | AuthController |
-| `GET` | `/api/boarding-houses/{id}` | BoardingHouseController |
-| `POST` | `/api/rooms/boarding-houses` | RoomController |
-| `GET` | `/api/rooms/boarding-houses` | RoomController |
-| `GET` | `/api/rooms/boarding-houses/{id}` | RoomController |
-| `PATCH` | `/api/rooms/buildings/{id}` | RoomStructureController |
-| `DELETE` | `/api/rooms/buildings/{id}` | RoomStructureController |
-| `PATCH` | `/api/rooms/floors/{id}` | RoomStructureController |
-| `DELETE` | `/api/rooms/floors/{id}` | RoomStructureController |
-| `POST` | `/api/tenants/ocr-preview` | TenantController |
-| `GET` | `/api/tenants/search` | TenantController |
-| `PATCH` | `/api/tenants/roommate-requests/{id}` | RoommateWorkflowController |
-| `DELETE` | `/api/tenants/roommate-requests/{id}` | RoommateWorkflowController |
-| `POST` | `/api/contracts/{id}/terminate` | ContractController |
-| `POST` | `/api/contracts/{id}/renew` | ContractController |
-| `PATCH` | `/api/contracts/settlements/{id}` | ContractWorkflowController |
-| `DELETE` | `/api/contracts/settlements/{id}` | ContractWorkflowController |
-| `POST` | `/api/meters` | MeterController |
-| `POST` | `/api/meters/readings/ai-scan` | MeterController |
-| `GET` | `/api/meters/rooms/{roomId}/devices` | MeterController |
-| `DELETE` | `/api/meters/disputes/{id}` | MeterDisputeController |
-| `POST` | `/api/invoices` | BillingController |
-| `GET` | `/api/invoices/{id}` | BillingController |
-| `PUT` | `/api/invoices/{id}/status` | BillingController |
-| `PATCH` | `/api/invoices/saas/{id}` | InvoiceWorkflowController |
-| `DELETE` | `/api/invoices/saas/{id}` | InvoiceWorkflowController |
-| `GET` | `/api/payments` | PaymentController |
-| `GET` | `/api/payments/{id}` | PaymentController |
-| `GET` | `/api/payments/invoice/{invoiceId}` | PaymentController |
-| `GET` | `/api/maintenance/{id}` | MaintenanceController |
-| `GET` | `/api/reports/revenue-chart` | ReportController |
+| GET | `/api/rooms/{id}` | contract-service: `RoomClient`, dùng trong tạo hợp đồng và duyệt yêu cầu |
+| GET | `/api/tenants/{id}` | contract-service: `TenantClient`, dùng trong tạo hợp đồng và rời phòng |
+| GET | `/api/contracts/{id}` | billing-service: `ContractClient`, dùng trong tạo hóa đơn |
+| GET | `/api/meters/rooms/{roomId}/latest` | billing-service: `MeterClient`, dùng trong tính điện nước hóa đơn |
 
-Các endpoint OCR trung gian không còn được dùng vì FE gọi AI Service trực tiếp. Alias báo cáo doanh thu và prefix nhà trọ dư cũng được bỏ; các endpoint hiện dùng được giữ lại. Các thao tác xem chi tiết/tìm kiếm đang lọc dữ liệu danh sách tại FE không được thêm request thừa chỉ để giữ endpoint.
+Một số endpoint được cả FE và service nội bộ gọi, ví dụ PATCH `/api/rooms/{id}/status`, PATCH `/api/tenants/members/{id}` và các API danh sách. Tất cả vẫn được giữ. Một số helper FE không còn màn hình gọi nhưng dùng chung endpoint với luồng đang hoạt động; chúng không phải căn cứ để xóa endpoint đó.
 
-## Kiểm tra
+## Phạm vi xác nhận
 
-- FE: build production thành công; 8 kiểm thử API client thành công, bao gồm refresh đồng thời, refresh thất bại và giới hạn retry.
-- Lint chạy thành công, còn cảnh báo trong mã hiện hữu.
-- Backend: lượt `test` toàn dự án báo BUILD SUCCESS; lượt `clean test` riêng 10 service có thay đổi cũng báo BUILD SUCCESS. Build sạch toàn dự án bị chặn bởi file đang khóa trong `discovery-server/target`.
-- Đã kiểm tra tĩnh: đủ 97 mapping được ghi trong API_LIST.md; cả 31 mapping đã xóa đều không còn trong controller.
-- Chưa kiểm thử tương tác đầu cuối trên trình duyệt với hệ thống đang chạy.
+Đã đối chiếu mã nguồn và review diff. Không thay đổi schema/database hoặc dữ liệu nghiệp vụ. Không khởi động lại hay triển khai các service đang chạy.
+
+Phần build/test cho thay đổi BE chưa hoàn tất và được để sau theo yêu cầu người dùng. Đối chiếu method/path không xác nhận payload, phân quyền, phản hồi từ nhà cung cấp OCR/thanh toán hay toàn bộ hành vi chạy thực tế.

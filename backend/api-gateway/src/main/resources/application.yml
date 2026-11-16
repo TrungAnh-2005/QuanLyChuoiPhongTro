@@ -39,7 +39,7 @@ spring:
         - id: room-service
           uri: lb://ROOM-SERVICE
           predicates:
-            - Path=/api/rooms/**, /api/boarding-houses/**, /api/properties/**
+            - Path=/api/rooms/**, /api/properties/**
 
         - id: tenant-service
           uri: lb://TENANT-SERVICE
