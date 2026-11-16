@@ -2,7 +2,6 @@ package com.rental.room.controller;
 
 import com.rental.room.dto.*;
 import com.rental.room.entity.RoomStatus;
-import com.rental.room.service.BoardingHouseService;
 import com.rental.room.service.RoomService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -17,29 +16,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class RoomController {
 
-    private final BoardingHouseService boardingHouseService;
     private final RoomService roomService;
-
-    @PostMapping("/boarding-houses")
-    public ResponseEntity<ApiResponse<BoardingHouseResponse>> createBoardingHouse(
-            @Valid @RequestBody CreateBoardingHouseRequest request, @RequestHeader("X-User-Id") Long userId
-    ) {
-        request.setOwnerId(userId);
-        BoardingHouseResponse response = boardingHouseService.createBoardingHouse(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response, "Boarding house created successfully"));
-    }
-
-    @GetMapping("/boarding-houses")
-    public ResponseEntity<ApiResponse<List<BoardingHouseResponse>>> getAllBoardingHouses() {
-        List<BoardingHouseResponse> response = boardingHouseService.getAllBoardingHouses();
-        return ResponseEntity.ok(ApiResponse.success(response, "Get all boarding houses successfully"));
-    }
-
-    @GetMapping("/boarding-houses/{id}")
-    public ResponseEntity<ApiResponse<BoardingHouseResponse>> getBoardingHouseById(@PathVariable Long id) {
-        BoardingHouseResponse response = boardingHouseService.getBoardingHouseById(id);
-        return ResponseEntity.ok(ApiResponse.success(response, "Get boarding house detail successfully"));
-    }
 
     @PostMapping
     public ResponseEntity<ApiResponse<RoomDetailResponse>> createRoom(@Valid @RequestBody CreateRoomRequest request) {

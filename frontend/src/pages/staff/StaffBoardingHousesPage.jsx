@@ -323,6 +323,11 @@ export default function BoardingHousesPage() {
 
       return {
         ...house,
+        features: Array.isArray(house.features)
+          ? house.features
+          : (Array.isArray(house.facilities)
+              ? house.facilities.map((facility) => facility?.facilityName).filter(Boolean)
+              : []),
         totalRooms,
         occupiedRooms,
         availableRooms,

@@ -1,7 +1,7 @@
 package com.rental.tenant.controller;
 
 import com.rental.tenant.dto.CreateTenantRequest;
-import com.rental.tenant.dto.TenantResponse;
+import com.rental.tenant.dto.TenantDetailResponse;
 import com.rental.tenant.entity.Gender;
 import com.rental.tenant.entity.RoomMember;
 import com.rental.tenant.entity.RoommateRequest;
@@ -9,6 +9,7 @@ import com.rental.tenant.repository.RoomMemberRepository;
 import com.rental.tenant.repository.RoommateRequestRepository;
 import com.rental.tenant.service.TenantService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -26,6 +27,57 @@ public class RoommateWorkflowController {
     private final RoommateRequestRepository roommateRequestRepository;
     private final RoomMemberRepository roomMemberRepository;
     private final TenantService tenantService;
+
+    public record RoommateRequestBody(
+            Long roomId,
+            Long requestedByTenantId,
+            String fullName,
+            String identityCard,
+            String phone,
+            LocalDate birthDate,
+            String gender,
+            String hometown,
+            String cccdFrontUrl,
+            String cccdBackUrl,
+            String note,
+            String status,
+            String rejectionReason
+    ) {}
+
+    private void requireManager(String roles) {
+        if (roles == null || (!roles.contains("ROLE_ADMIN") && !roles.contains("ROLE_STAFF"))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        }
+    }
+
+    @GetMapping
+    public Map<String, Object> list() {
+        return Map.of("success", true, "data", roommateRequestRepository.findAll(Sort.by(Sort.Direction.DESC, "id")));
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    @Transactional
+    public Map<String, Object> create(@RequestBody RoommateRequestBody req) {
+        if (req.roomId() == null || req.fullName() == null || req.identityCard() == null || req.phone() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "roomId, fullName, identityCard, and phone are required");
+        }
+        RoommateRequest saved = roommateRequestRepository.save(RoommateRequest.builder()
+                .roomId(req.roomId())
+                .requestedByTenantId(req.requestedByTenantId())
+                .fullName(req.fullName())
+                .identityCard(req.identityCard())
+                .phone(req.phone())
+                .birthDate(req.birthDate())
+                .gender(req.gender())
+                .hometown(req.hometown())
+                .cccdFrontUrl(req.cccdFrontUrl())
+                .cccdBackUrl(req.cccdBackUrl())
+                .note(req.note())
+                .status(req.status() != null ? req.status() : "PENDING")
+                .build());
+        return Map.of("success", true, "data", saved);
+    }
 
     @PostMapping("/{id}/review")
     @Transactional
@@ -53,7 +105,7 @@ public class RoommateWorkflowController {
             }
             Long contractId = Long.valueOf(body.get("contractId").toString());
 
-            TenantResponse newTenant = tenantService.createTenant(CreateTenantRequest.builder()
+            TenantDetailResponse newTenant = tenantService.createTenant(CreateTenantRequest.builder()
                     .fullName(request.getFullName())
                     .identityCard(request.getIdentityCard())
                     .phone(request.getPhone())
@@ -68,7 +120,7 @@ public class RoommateWorkflowController {
                     .roleInRoom("MEMBER")
                     .joinDate(LocalDate.now())
                     .status("ACTIVE")
-                    .temporaryResidenceStatus("NOT_REGISTERED")
+                    .tempResidenceStatus("NOT_REGISTERED")
                     .build();
             roomMemberRepository.save(newMember);
         }

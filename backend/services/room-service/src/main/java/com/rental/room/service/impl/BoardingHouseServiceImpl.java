@@ -71,15 +71,6 @@ public class BoardingHouseServiceImpl implements BoardingHouseService {
     }
 
     @Override
-    @Transactional(readOnly = true)
-    public BoardingHouseResponse getBoardingHouseById(Long id) {
-        BoardingHouse boardingHouse = boardingHouseRepository.findById(id)
-                .orElseThrow(() -> new AppException("Boarding house not found with id: " + id, HttpStatus.NOT_FOUND, "BOARDING_HOUSE_NOT_FOUND"));
-
-        return mapToResponse(boardingHouse);
-    }
-
-    @Override
     @Transactional
     public BoardingHouseResponse updateBoardingHouse(Long id, CreateBoardingHouseRequest request) {
         BoardingHouse boardingHouse = boardingHouseRepository.findById(id)

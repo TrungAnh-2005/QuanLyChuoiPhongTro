@@ -108,7 +108,7 @@ export default function AppLayout() {
         <Navbar onOpenMobileMenu={() => setMobileMenuOpen(true)} />
 
         {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto p-3.5 sm:p-6 lg:p-8 pb-24 lg:pb-8 bg-mesh-linear">
+        <main className="flex-1 overflow-y-auto p-3.5 sm:p-6 lg:p-8 pb-32 lg:pb-28 bg-mesh-linear">
           {isAdminRestricted ? (
             <div className="max-w-md mx-auto my-12 sm:my-16 bg-white border border-slate-200/80 rounded-3xl p-6 sm:p-8 text-center shadow-xl card-interactive page-enter">
               <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-4 border border-indigo-200">

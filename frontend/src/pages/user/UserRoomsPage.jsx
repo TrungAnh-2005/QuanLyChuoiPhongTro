@@ -173,7 +173,6 @@ export default function UserRoomsPage() {
     roomMembers = [],
     submitRoomRequest,
     cancelRoomHold,
-    signContractElectronically,
     voteRoommateRequest
   } = useData();
 
@@ -303,11 +302,8 @@ export default function UserRoomsPage() {
 
   const currentTenant = useMemo(() => {
     if (!user) return null;
-    const userName = (user.fullName || '').toLowerCase();
-    return (tenants || []).find((t) => {
-      const tName = (t?.fullName || '').toLowerCase();
-      return userName.includes(tName) || tName.includes(userName.split(' ')[0]);
-    });
+    return tenants.find(t => t.email && t.email === user.email)
+      || tenants.find(t => t.fullName && t.fullName === user.fullName);
   }, [user, tenants]);
 
   const isTenantNew = user?.username === 'tenant_new' || user?.fullName?.includes('Nam');
@@ -357,14 +353,16 @@ export default function UserRoomsPage() {
 
   const handleDepositClick = (room) => {
     setSelectedContractForModal({
-      id: `HD-DEPOSIT-${Date.now()}`,
+      roomId: room.id,
+      isBookingRequest: true,
       roomNumber: room.number,
       houseCode: room.houseCode,
       houseName: room.house || 'Nhà Trọ Cầu Giấy',
       tenantName: user?.fullName || 'Khách thuê',
       tenantPhone: user?.phone || '0900.000.000',
       price: room.price,
-      deposit: 1000000,
+      depositAmount: 1000000,
+      rentalPrice: room.price,
       status: 'PENDING_SIGN',
       createdDate: new Date().toLocaleDateString('vi-VN')
     });
@@ -880,18 +878,21 @@ export default function UserRoomsPage() {
       {/* Contract & Deposit Modal */}
       <ResidentContractModal
         isOpen={!!selectedContractForModal}
+        key={selectedContractForModal?.roomId || 'closed'}
         onClose={() => setSelectedContractForModal(null)}
         contract={selectedContractForModal}
-        onSignSuccess={async (contractId) => {
-try {
-
-          if (signContractElectronically) await signContractElectronically(contractId);
+        onSignSuccess={async () => {
+          await submitRoomRequest({
+            type: 'RENT',
+            targetRoomId: selectedContractForModal.roomId,
+            tenantId: currentTenant?.id,
+            durationMonths: 12,
+            note: 'Yêu cầu đặt cọc giữ chỗ 1.000.000 đ. Khách đã xác nhận điều khoản; chờ quản lý xét duyệt và xác nhận tiền cọc.'
+          });
           setSelectedContractForModal(null);
-          setActionToast('🎉 Đặt cọc giữ chỗ và ký hợp đồng điện tử thành công!');
+          setActionToast('Đã gửi yêu cầu đặt cọc. Vui lòng chờ quản lý xét duyệt và xác nhận tiền cọc.');
           setTimeout(() => setActionToast(null), 4000);
-
-} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
-}}
+        }}
       />
 
       {/* Roommate Modal */}
@@ -928,7 +929,7 @@ try {
                 roomRequests.map((req) => (
                   <div key={req.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
                     <div className="flex justify-between font-bold">
-                      <span>{req.type === 'RENTAL' ? 'Đơn Thuê Phòng' : req.type === 'TRANSFER' ? 'Đổi Phòng' : 'Ở Ghép'}</span>
+                      <span>{['RENT', 'RENTAL', 'NEW_RENT'].includes(req.type) ? 'Đơn Thuê Phòng / Đặt Cọc' : req.type === 'TRANSFER' ? 'Đổi Phòng' : 'Ở Ghép'}</span>
                       <span className={`px-2 py-0.5 rounded text-[10px] ${
                         req.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                       }`}>

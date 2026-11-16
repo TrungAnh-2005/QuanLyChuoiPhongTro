@@ -85,14 +85,6 @@ public class MaintenanceServiceImpl implements MaintenanceService {
     }
 
     @Override
-    @Transactional(readOnly = true)
-    public MaintenanceResponse getMaintenanceRequestById(Long id) {
-        MaintenanceRequest request = maintenanceRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Maintenance request not found with id: " + id));
-        return mapToResponse(request);
-    }
-
-    @Override
     @Transactional
     public MaintenanceResponse updateMaintenanceStatus(Long id, UpdateMaintenanceStatusRequest request) {
         MaintenanceRequest maintenanceRequest = maintenanceRepository.findById(id)
@@ -112,13 +104,13 @@ public class MaintenanceServiceImpl implements MaintenanceService {
             maintenanceRequest.setNote(request.getNote());
         }
 
-        if (request.getStatus() == MaintenanceStatus.COMPLETED) {
+        if (request.getStatus() == MaintenanceStatus.COMPLETED || request.getStatus() == MaintenanceStatus.RESOLVED) {
             maintenanceRequest.setResolvedAt(LocalDateTime.now());
         }
 
         MaintenanceRequest updated = maintenanceRepository.save(maintenanceRequest);
 
-        if (updated.getStatus() == MaintenanceStatus.COMPLETED) {
+        if (updated.getStatus() == MaintenanceStatus.COMPLETED || updated.getStatus() == MaintenanceStatus.RESOLVED) {
             MaintenanceEventDTO event = MaintenanceEventDTO.builder()
                     .requestId(updated.getId())
                     .roomId(updated.getRoomId())

@@ -95,14 +95,6 @@ public class TenantServiceImpl implements TenantService {
     }
 
     @Override
-    @Transactional(readOnly = true)
-    public List<TenantResponse> searchTenants(String keyword) {
-        return tenantRepository.searchByKeyword(keyword != null ? keyword.trim() : null).stream()
-                .map(this::mapToResponse)
-                .collect(Collectors.toList());
-    }
-
-    @Override
     @Transactional
     public TenantDetailResponse updateTenant(Long id, UpdateTenantRequest request) {
         Tenant tenant = tenantRepository.findById(id)

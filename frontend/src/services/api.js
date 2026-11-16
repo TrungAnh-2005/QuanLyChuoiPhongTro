@@ -5,6 +5,7 @@ export const clearSession = () => {
   }
 };
 const api = axios.create({ baseURL: import.meta.env?.VITE_API_BASE_URL || '/api', timeout: 30000 });
+let refreshPromise;
 api.interceptors.request.use(config => {
   const token = sessionStorage.getItem('rental_token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
@@ -13,8 +14,31 @@ api.interceptors.request.use(config => {
 api.interceptors.response.use(response => {
   if (response.data?.success === false) throw new Error(response.data.message || 'Yêu cầu không thành công');
   return response.data;
-}, error => {
-  if (error.response?.status === 401 && !error.config?.url?.startsWith('/auth/login')) {
+}, async error => {
+  const config = error.config;
+  const isAuthRequest = /^\/auth\/(login|register|refresh)(?:\?|$)/.test(config?.url || '');
+  const refreshToken = sessionStorage.getItem('rental_refresh_token');
+  if (error.response?.status === 401 && config && !isAuthRequest && !config._retried && refreshToken) {
+    config._retried = true;
+    try {
+      if (!refreshPromise) {
+        refreshPromise = api.post('/auth/refresh', { refreshToken }).then(response => {
+          const session = response.data;
+          if (!session?.accessToken || !session?.refreshToken) throw new Error('Invalid refresh response');
+          sessionStorage.setItem('rental_token', session.accessToken);
+          sessionStorage.setItem('rental_refresh_token', session.refreshToken);
+          return session.accessToken;
+        }).finally(() => { refreshPromise = null; });
+      }
+      config.headers.Authorization = `Bearer ${await refreshPromise}`;
+      return api(config);
+    } catch {
+      clearSession();
+      window.dispatchEvent(new Event('rental:unauthorized'));
+      return Promise.reject(error);
+    }
+  }
+  if (error.response?.status === 401 && !isAuthRequest) {
     clearSession(); window.dispatchEvent(new Event('rental:unauthorized'));
   }
   error.message = error.response?.data?.message || (error.response ? `Yêu cầu thất bại (${error.response.status})` : 'Không kết nối được máy chủ. Vui lòng thử lại.');

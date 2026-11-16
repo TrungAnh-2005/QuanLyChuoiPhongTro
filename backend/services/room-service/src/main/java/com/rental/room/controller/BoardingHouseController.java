@@ -34,12 +34,6 @@ public class BoardingHouseController {
         return ResponseEntity.ok(ApiResponse.success(response, "Get all boarding houses successfully"));
     }
 
-    @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<BoardingHouseResponse>> getBoardingHouseById(@PathVariable Long id) {
-        BoardingHouseResponse response = boardingHouseService.getBoardingHouseById(id);
-        return ResponseEntity.ok(ApiResponse.success(response, "Get boarding house detail successfully"));
-    }
-
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<BoardingHouseResponse>> updateBoardingHouse(
             @PathVariable Long id,

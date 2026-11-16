@@ -1,3 +1,4 @@
+import WorkflowReviewPanel from '../../components/staff/WorkflowReviewPanel';
 import React, { useState, useMemo } from 'react';
 import {
   Zap,
@@ -869,6 +870,7 @@ try {
 }}
         invoice={payingSaasInvoice || undefined}
       />
+      <WorkflowReviewPanel type="disputes" />
     </div>
   );
 }

@@ -76,6 +76,9 @@ public class MoveOutSettlement {
     @Column(length = 255)
     private String reason;
 
+    @Builder.Default
+    private boolean forfeitDeposit = false;
+
     @Column(length = 50)
     @Builder.Default
     private String status = "PENDING"; // PENDING, APPROVED, COMPLETED
@@ -86,4 +89,9 @@ public class MoveOutSettlement {
 
     @LastModifiedDate
     private LocalDateTime updatedAt;
+
+    @Transient
+    public BigDecimal getOriginalDeposit() {
+        return depositAmount;
+    }
 }

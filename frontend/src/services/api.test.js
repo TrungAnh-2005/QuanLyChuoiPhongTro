@@ -31,3 +31,56 @@ test('reports a network failure without returning fake success',async()=>{
  api.defaults.adapter=async config=>{throw new axios.AxiosError('Network Error','ERR_NETWORK',config);};
  await assert.rejects(api.post('/invoices',{}),/Không kết nối được máy chủ/);
 });
+
+test('shares one refresh across concurrent expired requests and retries with the new token', async () => {
+ sessionStorage.setItem('rental_token', 'expired');
+ sessionStorage.setItem('rental_refresh_token', 'refresh-one');
+ let refreshes = 0;
+ api.defaults.adapter = async config => {
+  if (config.url === '/auth/refresh') {
+   refreshes++;
+   assert.deepEqual(JSON.parse(config.data), {refreshToken:'refresh-one'});
+   await new Promise(resolve => setTimeout(resolve, 10));
+   return response(config, {success:true,data:{accessToken:'renewed',refreshToken:'refresh-two'}});
+  }
+  if (config.headers.Authorization === 'Bearer expired') {
+   throw new axios.AxiosError('Expired','ERR_BAD_REQUEST',config,null,{status:401,data:{}});
+  }
+  assert.equal(config.headers.Authorization, 'Bearer renewed');
+  return response(config, {success:true,data:config.url});
+ };
+ const results = await Promise.all([api.get('/rooms'),api.get('/tenants')]);
+ assert.equal(refreshes,1);
+ assert.equal(results.length,2);
+ assert.equal(sessionStorage.getItem('rental_refresh_token'),'refresh-two');
+});
+
+test('clears the session when refresh is rejected without retrying indefinitely', async () => {
+ sessionStorage.setItem('rental_token','expired');
+ sessionStorage.setItem('rental_refresh_token','invalid');
+ let refreshes=0;
+ api.defaults.adapter=async config=>{
+  if(config.url==='/auth/refresh') refreshes++;
+  throw new axios.AxiosError('Expired','ERR_BAD_REQUEST',config,null,{status:401,data:{}});
+ };
+ await assert.rejects(api.get('/rooms'));
+ assert.equal(refreshes,1);
+ assert.equal(sessionStorage.getItem('rental_token'),null);
+ assert.equal(sessionStorage.getItem('rental_refresh_token'),null);
+});
+
+test('does not refresh again when the retried request still returns 401', async () => {
+ sessionStorage.setItem('rental_token','expired');
+ sessionStorage.setItem('rental_refresh_token','refresh-one');
+ let refreshes=0;
+ api.defaults.adapter=async config=>{
+  if(config.url==='/auth/refresh') {
+   refreshes++;
+   return response(config,{success:true,data:{accessToken:'renewed',refreshToken:'refresh-two'}});
+  }
+  throw new axios.AxiosError('Unauthorized','ERR_BAD_REQUEST',config,null,{status:401,data:{}});
+ };
+ await assert.rejects(api.get('/rooms'));
+ assert.equal(refreshes,1);
+ assert.equal(sessionStorage.getItem('rental_token'),null);
+});

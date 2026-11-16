@@ -57,9 +57,10 @@ import RoommateRequestModal from '../../components/tenant/RoommateRequestModal';
 import PaymentModal from '../../components/payment/PaymentModal';
 
 export default function UserDashboard() {
-  const { user, tenantRooms } = useAuth();
+  const { user } = useAuth();
   const {
     invoices = [],
+    allInvoices = [],
     payInvoice,
     tickets = [],
     rooms = [],
@@ -72,7 +73,6 @@ export default function UserDashboard() {
     payDepositAndSignContract,
     leaveRoom,
     submitCheckoutRequest,
-    transferContractHolder,
     voteRoommateRequest,
     cancelRoomHold
   } = useData();
@@ -96,6 +96,8 @@ export default function UserDashboard() {
   const [checkoutReason, setCheckoutReason] = useState('');
   const [agreedForfeitDeposit, setAgreedForfeitDeposit] = useState(false);
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
+  const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
+  const [checkoutError, setCheckoutError] = useState('');
 
   // Trạng thái chuyển giao Hợp đồng khi Người đại diện rời phòng
   const [selectedSuccessor, setSelectedSuccessor] = useState('');
@@ -134,61 +136,19 @@ export default function UserDashboard() {
   }, [user, roomRequests]);
 
   // Tìm hợp đồng của khách thuê
+  const myTenant = useMemo(() =>
+    tenants.find(t => t.email && t.email === user?.email)
+      || tenants.find(t => t.fullName === user?.fullName), [tenants, user]);
+
+
   const myContract = useMemo(() => {
-    const list = contracts || [];
-    const uName = (user?.fullName || '').toLowerCase().trim();
-    const uPhone = (user?.phone || '').trim();
-
-    // 1. Ưu tiên số 1: Hợp đồng PENDING_DEPOSIT hoặc PENDING_SIGN
-    const pendingContract = list.find((c) =>
-      (c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN') &&
-      ((uName && c.tenantName?.toLowerCase().includes(uName)) ||
-       (uPhone && c.tenantPhone === uPhone) ||
-       (user?.username === 'tenant_new' && (c.tenantName?.toLowerCase().includes('nam') || c.contractCode === 'HD-2026-007')))
-    );
-    if (pendingContract) return pendingContract;
-
-    // 2. Nếu khách có đơn thuê phòng đã được Staff APPROVED, tự động sinh hợp đồng Onboarding nếu chưa có
-    if (hasApprovedRentalRequest) {
-      const matchApproved = list.find((c) =>
-        c.roomNumber === hasApprovedRentalRequest.targetRoom &&
-        ((uName && c.tenantName?.toLowerCase().includes(uName)) || (uPhone && c.tenantPhone === uPhone) || user?.username === 'tenant_new')
-      );
-      if (matchApproved) {
-        return {
-          ...matchApproved,
-          status: matchApproved.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING_DEPOSIT'
-        };
-      }
-
-      const targetRoomObj = (rooms || []).find(r => r.number === hasApprovedRentalRequest.targetRoom);
-      const price = targetRoomObj?.price || 2800000;
-      return {
-        id: Date.now(),
-        contractCode: user?.username === 'tenant_new' ? 'HD-2026-007' : `HD-2026-${String(Date.now()).slice(-4)}`,
-        roomNumber: hasApprovedRentalRequest.targetRoom || 'P.102',
-        houseCode: hasApprovedRentalRequest.houseCode || 'CS-02',
-        houseName: hasApprovedRentalRequest.house || 'Nhà Trọ Bách Khoa - Cơ Sở 2',
-        tenantName: user?.fullName || hasApprovedRentalRequest.tenant || 'Hoàng Văn Nam',
-        tenantPhone: user?.phone || hasApprovedRentalRequest.phone || '0966.123.456',
-        startDate: new Date().toLocaleDateString('vi-VN'),
-        endDate: '31/12/2026',
-        rentalPrice: price,
-        depositAmount: price,
-        status: 'PENDING_DEPOSIT',
-        depositPaid: false,
-        signedElectronically: false,
-        holdingUntil: Date.now() + 15 * 60 * 1000
-      };
-    }
-
-    // 3. Tìm hợp đồng thông thường
-    return (
-      list.find((c) => uName && c.tenantName?.toLowerCase().includes(uName)) ||
-      list.find((c) => uPhone && c.tenantPhone === uPhone) ||
-      (user?.username === 'tenant_new' ? list.find((c) => c.tenantName?.toLowerCase().includes('nam') || c.contractCode === 'HD-2026-007') : null)
-    );
-  }, [contracts, user, hasApprovedRentalRequest, rooms]);
+    if (!myTenant) return null;
+    const mine = contracts.filter(c => c.tenantId === myTenant.id || roomMembers.some(m =>
+      m.contractId === c.id && m.tenantId === myTenant.id && m.status === 'ACTIVE'
+    ));
+    return mine.find(c => c.status === 'PENDING_DEPOSIT' || c.status === 'PENDING_SIGN')
+      || mine.find(c => c.status === 'ACTIVE') || null;
+  }, [contracts, roomMembers, myTenant]);
 
   // Kiểm tra hợp đồng đang chờ nộp cọc hoặc chờ ký:
   const isContractPending = Boolean(
@@ -196,8 +156,7 @@ export default function UserDashboard() {
     myContract.status !== 'ACTIVE' &&
     myContract.status !== 'CANCELLED' && (
       myContract.status === 'PENDING_DEPOSIT' ||
-      myContract.status === 'PENDING_SIGN' ||
-      Boolean(hasApprovedRentalRequest)
+      myContract.status === 'PENDING_SIGN'
     ) &&
     (!myContract.depositPaid || !myContract.signedElectronically)
   );
@@ -266,88 +225,18 @@ try {
 } catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
 };
 
-  const isRepresentative = useMemo(() => {
-    const rNum = (user?.room || user?.rooms?.[0] || 'P.101');
-    const repMember = (roomMembers || []).find(
-      (m) => (m.roomNumber === rNum || (contracts || []).some(c => c.roomNumber === m.roomNumber)) && m.roleInRoom === 'REPRESENTATIVE'
-    );
-    if (!repMember) return true;
-    const uName = (user?.fullName || '').toLowerCase().trim();
-    const uPhone = (user?.phone || '').trim();
-    return (
-      (repMember.fullName && repMember.fullName.toLowerCase().includes(uName)) ||
-      (uPhone && repMember.phone === uPhone) ||
-      (user?.username === 'tenant' || user?.username === 'tenant1')
-    );
-  }, [user, roomMembers, contracts]);
 
-  const myRoomNumber = useMemo(() => {
-    if (isContractPending) return null;
+  const myMembership = useMemo(() => roomMembers.find(m =>
+    m.tenantId === myTenant?.id && m.status === 'ACTIVE'
+      && contracts.some(c => c.id === m.contractId && c.status === 'ACTIVE')
+  ), [roomMembers, myTenant, contracts]);
 
-    const uName = (user?.fullName || '').toLowerCase().trim();
-    const userContracts = (contracts || []).filter((c) => {
-      const cName = (c.tenantName || '').toLowerCase().trim();
-      return (
-        cName.includes(uName) ||
-        uName.includes(cName) ||
-        (uName.includes('an') && cName.includes('an')) ||
-        (uName.includes('cường') && cName.includes('cường')) ||
-        (uName.includes('nam') && cName.includes('nam'))
-      );
-    });
-    const hasActiveContract = userContracts.some((c) => c.status === 'ACTIVE');
-    const allContractsEnded = userContracts.length > 0 && userContracts.every((c) => c.status === 'TERMINATED' || c.status === 'COMPLETED');
+  const myRentalContract = useMemo(() => contracts.find(c => c.status === 'ACTIVE'
+    && (c.tenantId === myTenant?.id || c.id === myMembership?.contractId)
+  ), [contracts, myTenant, myMembership]);
 
-    if (allContractsEnded && !hasActiveContract) {
-      return null;
-    }
-
-    if (user?.username === 'tenant2' || uName.includes('cường')) {
-      const stored = tenantRooms?.tenant2 !== undefined ? tenantRooms?.tenant2 : tenantRooms?.['Phạm Minh Cường'];
-      if (Array.isArray(stored)) return stored[0] || null;
-      if (typeof stored === 'string') return stored || null;
-      if (user?.rooms && user.rooms.length === 0 && !user?.room) return null;
-      if (user?.room) return user.room;
-      if (user?.rooms && user.rooms.length > 0) return user.rooms[0];
-      const matchContract = (contracts || []).find((c) => c.status === 'ACTIVE' && c.tenantName?.includes('Cường'));
-      return matchContract?.roomNumber || null;
-    }
-
-    if (user?.username === 'tenant' || user?.username === 'tenant1' || uName.includes('an')) {
-      const stored = tenantRooms?.tenant1 !== undefined ? tenantRooms?.tenant1 : tenantRooms?.['Nguyễn Văn An'];
-      if (Array.isArray(stored)) return stored[0] || null;
-      if (typeof stored === 'string') return stored || null;
-      if (user?.rooms && user.rooms.length === 0 && !user?.room) return null;
-      if (user?.room) return user.room;
-      if (user?.rooms && user.rooms.length > 0) return user.rooms[0];
-      const matchContract = (contracts || []).find((c) => c.status === 'ACTIVE' && c.tenantName?.includes('An'));
-      return matchContract?.roomNumber || null;
-    }
-
-    if (user?.username === 'tenant_new' || uName.includes('nam')) {
-      const stored = tenantRooms?.tenant_new !== undefined ? tenantRooms?.tenant_new : tenantRooms?.['Hoàng Văn Nam'];
-      if (Array.isArray(stored)) return stored[0] || null;
-      if (typeof stored === 'string' && stored) return stored;
-      if (user?.room) return user.room;
-      if (user?.rooms && user.rooms.length > 0) return user.rooms[0];
-      const matchContract = (contracts || []).find((c) => c.status === 'ACTIVE' && c.tenantName?.includes('Nam'));
-      return matchContract?.roomNumber || null;
-    }
-
-    const stored = tenantRooms?.[user?.username] || tenantRooms?.[user?.fullName];
-    if (Array.isArray(stored)) return stored[0] || null;
-    if (user?.rooms && user.rooms.length === 0 && !user?.room) return null;
-    if (user?.room) return user.room;
-    if (user?.rooms && user.rooms.length > 0) return user.rooms[0];
-
-    const found = tenants.find(
-      (t) =>
-        (user?.fullName && t.fullName?.toLowerCase().includes(user.fullName.toLowerCase())) ||
-        (user?.phone && t.phone === user.phone)
-    );
-    if (found?.status === 'INACTIVE' || (found?.rooms && found.rooms.length === 0)) return null;
-    return found?.room || found?.rooms?.[0] || null;
-  }, [user, tenants, tenantRooms, isContractPending, contracts]);
+  const myRoomNumber = isContractPending ? null : myRentalContract?.roomNumber || null;
+  const isRepresentative = Boolean(myRentalContract && myRentalContract.tenantId === myTenant?.id);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -381,78 +270,42 @@ try {
   const selectedCheckoutRoomObj = useMemo(() => {
     if (!checkoutModal) return null;
     const num = typeof checkoutModal === 'string' ? checkoutModal : checkoutModal?.number;
-    return (rooms || []).find((r) => r.number === num);
-  }, [checkoutModal, rooms]);
+    return rooms.find(r => r.id === myRentalContract?.roomId && r.number === num);
+  }, [checkoutModal, rooms, myRentalContract]);
 
   const isCheckoutRoomMulti = (selectedCheckoutRoomObj?.occupants || 1) > 1;
 
   const unpaidInvoicesForLeave = useMemo(() => {
     if (!leaveModal) return [];
-    const roomNum = typeof leaveModal === 'string' ? leaveModal : leaveModal?.number;
-    const uName = (user?.fullName || '').toLowerCase().trim();
-    return (invoices || []).filter((inv) => {
-      if (inv.room !== roomNum || inv.status === 'PAID') return false;
-      const invTenant = (inv.tenant || '').toLowerCase().trim();
-      return (
-        invTenant.includes(uName) ||
-        uName.includes(invTenant) ||
-        (uName.includes('an') && invTenant.includes('an')) ||
-        (uName.includes('cường') && invTenant.includes('cường')) ||
-        (uName.includes('nam') && invTenant.includes('nam')) ||
-        !invTenant
-      );
-    });
-  }, [leaveModal, invoices, user]);
+    return (allInvoices || []).filter(inv =>
+      inv.roomId === myRentalContract?.roomId && inv.tenantId === myTenant?.id
+        && inv.status !== 'PAID' && inv.status !== 'CANCELLED'
+    );
+  }, [leaveModal, allInvoices, myRentalContract, myTenant]);
 
   const hasUnpaidBillsForLeave = unpaidInvoicesForLeave.length > 0;
-  const totalUnpaidForLeave = unpaidInvoicesForLeave.reduce((sum, inv) => sum + (inv.total || 0), 0);
+  const totalUnpaidForLeave = unpaidInvoicesForLeave.reduce((sum, inv) => sum + (Number(inv.totalAmount ?? inv.total) || 0), 0);
 
-  const hasUnpaidBillsForCheckout = useMemo(() => {
-    if (!myRoomNumber) return false;
-    return (invoices || []).some((inv) => inv.room === myRoomNumber && inv.status !== 'PAID');
-  }, [myRoomNumber, invoices]);
+  const hasUnpaidBillsForCheckout = useMemo(() => allInvoices.some(inv =>
+    inv.roomId === myRentalContract?.roomId && !['PAID', 'CANCELLED'].includes(inv.status)
+  ), [allInvoices, myRentalContract]);
 
-  const myActiveContract = useMemo(() => {
-    if (myContract && myContract.status === 'ACTIVE') return myContract;
-    return (
-      contracts.find((c) => c.roomNumber === myRoomNumber && c.status === 'ACTIVE') ||
-      myContract || {
-        id: 'HD-2026-001',
-        contractCode: 'HD-2026-001',
-        roomNumber: myRoomNumber || 'P.101',
-        tenantName: user?.fullName || 'Nguyễn Văn An',
-        status: 'ACTIVE',
-        startDate: '01/01/2026',
-        endDate: '31/12/2026',
-        deposit: 3500000,
-        depositAmount: 3500000,
-        monthlyRent: 3500000
-      }
-    );
-  }, [contracts, myRoomNumber, myContract, user]);
+  const myActiveContract = myRentalContract || myContract;
 
   const isContractExpired = useMemo(() => {
-    if (!myActiveContract || !myActiveContract.endDate) return false;
-    try {
-      const parts = myActiveContract.endDate.split('/');
-      if (parts.length === 3) {
-        const endD = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-        return endD <= new Date();
-      }
-    } catch {}
-    return false;
+    const value = myActiveContract?.endDate;
+    if (!value) return false;
+    const iso = value.includes('/') ? value.split('/').reverse().join('-') : value.slice(0, 10);
+    const end = new Date(`${iso}T00:00:00`);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return !Number.isNaN(end.getTime()) && end <= today;
   }, [myActiveContract]);
 
-  const otherRoommates = useMemo(() => {
-    if (!myRoomNumber) return [];
-    const uName = (user?.fullName || '').toLowerCase().trim();
-    return (roomMembers || []).filter(
-      (m) =>
-        m.roomNumber === myRoomNumber &&
-        m.status !== 'MOVED_OUT' &&
-        !(m.fullName || '').toLowerCase().trim().includes(uName)
-    );
-  }, [myRoomNumber, roomMembers, user]);
+  const otherRoommates = useMemo(() => (roomMembers || []).filter(m =>
+    m.contractId === myRentalContract?.id && m.roomId === myRentalContract?.roomId
+      && m.status === 'ACTIVE' && m.tenantId !== myTenant?.id
+  ), [roomMembers, myRentalContract, myTenant]);
 
   const pendingRoommateRequests = useMemo(() => {
     if (!myRoomNumber) return [];
@@ -473,7 +326,12 @@ try {
     e.preventDefault();
     if (!leaveModal || !agreedForfeitLeave || hasUnpaidBillsForLeave) return;
     const roomNumber = typeof leaveModal === 'string' ? leaveModal : leaveModal.number;
-    const res = await leaveRoom(roomNumber, user?.fullName);
+    if (isRepresentative && otherRoommates.length > 0 && !selectedSuccessor) return;
+    const res = await leaveRoom(roomNumber, user?.fullName, {
+      roomId: myRentalContract?.roomId,
+      successorTenantId: selectedSuccessor ? Number(selectedSuccessor) : null,
+      reason: leaveReason
+    });
     if (res?.success) {
       setLeaveSuccess(true);
     } else {
@@ -484,26 +342,36 @@ try {
 };
 
   const handleSendCheckout = async (e) => {
-try {
-
     e.preventDefault();
-    if (!checkoutModal || (!isContractExpired && !agreedForfeitDeposit)) return;
-    const roomNumber = typeof checkoutModal === 'string' ? checkoutModal : checkoutModal.number;
-    await submitCheckoutRequest({
-      room: roomNumber,
-      reason: checkoutReason,
-      forfeitDeposit: !isContractExpired,
-      tenantName: user?.fullName || 'Khách thuê',
-      phone: user?.phone || '0901234567',
-      refundBank,
-      refundAccountNumber,
-      refundAccountName: refundAccountName || user?.fullName || 'Khách thuê',
-      isContractExpired
-    });
-    setCheckoutSuccess(true);
-
-} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
-};
+    if (!checkoutModal || checkoutSubmitting || (!isContractExpired && !agreedForfeitDeposit)) return;
+    setCheckoutError('');
+    if (!myRentalContract || !isRepresentative) {
+      setCheckoutError('Chỉ người đại diện hợp đồng đang thuê được yêu cầu trả toàn bộ phòng.');
+      return;
+    }
+    if (hasUnpaidBillsForCheckout) {
+      setCheckoutError('Vui lòng thanh toán các hóa đơn còn nợ trước khi trả phòng.');
+      return;
+    }
+    if (isContractExpired && (!refundBank.trim() || !refundAccountNumber.trim())) {
+      setCheckoutError('Vui lòng nhập ngân hàng và số tài khoản nhận hoàn cọc.');
+      return;
+    }
+    setCheckoutSubmitting(true);
+    try {
+      await submitCheckoutRequest({
+        room: myRentalContract.roomNumber, roomId: myRentalContract.roomId,
+        contractId: myRentalContract.id, tenantId: myTenant.id,
+        reason: checkoutReason, forfeitDeposit: !isContractExpired,
+        refundBank, refundAccountNumber, refundAccountName: refundAccountName || user?.fullName,
+      });
+      setCheckoutSuccess(true);
+    } catch (error) {
+      setCheckoutError(error.message || 'Không thể gửi yêu cầu trả phòng.');
+    } finally {
+      setCheckoutSubmitting(false);
+    }
+  };
 
   const currentTenant = useMemo(() => {
     const userFullName = user?.fullName || '';
@@ -540,6 +408,8 @@ try {
   }, [tenants, user]);
 
   const currentRoomObj = useMemo(() => {
+    const rentedRoom = rooms.find(r => r.id === myRentalContract?.roomId);
+    if (rentedRoom) return rentedRoom;
     const targetHouse = myContract?.houseCode || currentTenant?.houseCode || user?.houseCode || (user?.username === 'tenant_new' ? 'CS-02' : 'CS-01');
     if (targetHouse && myRoomNumber) {
       const match = rooms.find((r) => r.number === myRoomNumber && r.houseCode === targetHouse);
@@ -565,7 +435,7 @@ try {
         status: 'OCCUPIED'
       }
     );
-  }, [rooms, myRoomNumber, myContract, currentTenant, user, roomMembers]);
+  }, [rooms, myRoomNumber, myContract, currentTenant, user, roomMembers, myRentalContract]);
 
   const roommates = useMemo(() => {
     const myNameNorm = (currentTenant?.fullName || user?.fullName || '').toLowerCase().trim();
@@ -1002,9 +872,11 @@ try {
             ...myContract,
             status: isDepositPaid ? 'PENDING_SIGN' : (myContract.status || 'PENDING_DEPOSIT')
           }}
-          onSignSuccess={(contractId, cccdData) => {
+          onSignSuccess={async (contractId, cccdData) => {
+            const result = await handleConfirmDepositAndSign(cccdData);
+            if (result?.success === false) return result;
             setShowContractModal(false);
-            handleConfirmDepositAndSign(cccdData);
+            return result;
           }}
         />
 
@@ -1839,7 +1711,7 @@ try {
                           <div>
                             <div className="font-bold text-slate-800">{inv.code} - {inv.title || 'Hóa đơn tiền phòng'}</div>
                             <div className="text-[11px] text-slate-500 font-mono font-bold text-rose-600">
-                              {(inv.total || 0).toLocaleString('vi-VN')} đ
+                              {(Number(inv.totalAmount ?? inv.total) || 0).toLocaleString('vi-VN')} đ
                             </div>
                           </div>
                           <button
@@ -1871,25 +1743,7 @@ try {
                   </div>
                 )}
 
-                <form onSubmit={async (e) => {
-try {
-
-                  e.preventDefault();
-                  if (isRepresentative && otherRoommates.length > 0) {
-                    if (!selectedSuccessor) {
-                      alert('Vui lòng chọn 1 bạn cùng phòng để bàn giao quyền đại diện Hợp đồng trước khi rời phòng!');
-                      return;
-                    }
-                    if (transferContractHolder) {
-                      await transferContractHolder(myRoomNumber, user?.fullName, selectedSuccessor);
-                      setLeaveSuccess(true);
-                    }
-                  } else {
-                    handleSendLeave(e);
-                  }
-
-} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
-}} className="space-y-4 text-xs">
+                <form onSubmit={handleSendLeave} className="space-y-4 text-xs">
                   {isRepresentative && otherRoommates.length > 0 ? (
                     <div className="p-3.5 bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-300 rounded-2xl space-y-2">
                       <div className="flex items-center gap-2 font-bold text-purple-950">
@@ -1911,7 +1765,7 @@ try {
                         >
                           <option value="">-- Chọn thành viên tiếp quản hợp đồng --</option>
                           {otherRoommates.map((m) => (
-                            <option key={m.id || m.fullName} value={m.fullName}>
+                            <option key={m.id || m.fullName} value={m.tenantId}>
                               {m.fullName} ({m.phone || 'Thành viên phòng'})
                             </option>
                           ))}
@@ -2140,6 +1994,7 @@ try {
                 )}
 
                 <form onSubmit={handleSendCheckout} className="space-y-4 text-xs">
+                  {checkoutError && <p role="alert" className="text-rose-700">{checkoutError}</p>}
                   <div>
                     <label className="block font-bold text-slate-700 mb-1">
                       Lý do bạn muốn trả phòng:
@@ -2153,6 +2008,7 @@ try {
                     />
                   </div>
 
+                  {!isContractExpired && (
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
                     <label className="flex items-start gap-2.5 cursor-pointer">
                       <input
@@ -2171,6 +2027,8 @@ try {
                     </label>
                   </div>
 
+                  )}
+
                   <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
                     <button
                       type="button"
@@ -2181,15 +2039,15 @@ try {
                     </button>
                     <button
                       type="submit"
-                      disabled={!agreedForfeitDeposit}
+                      disabled={checkoutSubmitting || (!isContractExpired && !agreedForfeitDeposit)}
                       className={`px-5 py-2.5 font-bold rounded-xl shadow-md transition-all btn-press flex items-center gap-1.5 cursor-pointer ${
-                        agreedForfeitDeposit
+                        (isContractExpired || agreedForfeitDeposit) && !checkoutSubmitting
                           ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/30'
                           : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                       }`}
                     >
                       <span>
-                        {isCheckoutRoomMulti
+                        {checkoutSubmitting ? 'Đang gửi yêu cầu...' : isContractExpired ? 'Xác Nhận Trả Phòng' : isCheckoutRoomMulti
                           ? 'Gửi Lấy Ý Kiến Bạn Cùng Phòng'
                           : 'Xác Nhận Trả Phòng (Mất Cọc)'}
                       </span>

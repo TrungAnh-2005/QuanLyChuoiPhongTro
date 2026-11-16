@@ -146,91 +146,11 @@ public class BillingServiceImpl implements BillingService {
     }
 
     @Override
-    @Transactional
-    public InvoiceResponse createInvoice(CreateInvoiceRequest request) {
-        BigDecimal totalAmount = request.getRoomFee()
-                .add(request.getElectricityFee())
-                .add(request.getWaterFee())
-                .add(request.getInternetFee())
-                .add(request.getServiceFee())
-                .add(request.getParkingFee())
-                .add(request.getOtherFee())
-                .subtract(request.getDiscount());
-
-        if (totalAmount.compareTo(BigDecimal.ZERO) < 0) {
-            totalAmount = BigDecimal.ZERO;
-        }
-
-        String invoiceCode = String.format("INV-%d%02d-%s", request.getYear(), request.getMonth(),
-                UUID.randomUUID().toString().substring(0, 6).toUpperCase());
-
-        LocalDate dueDate = request.getDueDate() != null ? request.getDueDate() : LocalDate.of(request.getYear(), request.getMonth(), 15);
-
-        Invoice invoice = Invoice.builder()
-                .invoiceCode(invoiceCode)
-                .contractId(request.getContractId())
-                .tenantId(request.getTenantId())
-                .roomId(request.getRoomId())
-                .month(request.getMonth())
-                .year(request.getYear())
-                .roomFee(request.getRoomFee())
-                .electricityFee(request.getElectricityFee())
-                .waterFee(request.getWaterFee())
-                .internetFee(request.getInternetFee())
-                .serviceFee(request.getServiceFee())
-                .parkingFee(request.getParkingFee())
-                .otherFee(request.getOtherFee())
-                .discount(request.getDiscount())
-                .totalAmount(totalAmount)
-                .status(InvoiceStatus.UNPAID)
-                .dueDate(dueDate)
-                .items(new ArrayList<>())
-                .build();
-
-        if (request.getItems() != null) {
-            for (InvoiceItemDto itemDto : request.getItems()) {
-                BigDecimal itemAmount = itemDto.getUnitPrice().multiply(BigDecimal.valueOf(itemDto.getQuantity()));
-                InvoiceItem item = InvoiceItem.builder()
-                        .invoice(invoice)
-                        .itemName(itemDto.getItemName())
-                        .quantity(itemDto.getQuantity())
-                        .unitPrice(itemDto.getUnitPrice())
-                        .amount(itemAmount)
-                        .build();
-                invoice.getItems().add(item);
-            }
-        }
-
-        Invoice saved = invoiceRepository.save(invoice);
-        return mapToResponse(saved);
-    }
-
-    @Override
     @Transactional(readOnly = true)
     public List<InvoiceResponse> getInvoices(InvoiceStatus status, Long tenantId, Integer month, Integer year) {
         return invoiceRepository.findByFilter(status, tenantId, month, year).stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public InvoiceResponse getInvoiceById(Long id) {
-        Invoice invoice = invoiceRepository.findById(id)
-                .orElseThrow(() -> new AppException("Invoice not found with id: " + id, HttpStatus.NOT_FOUND, "INVOICE_NOT_FOUND"));
-
-        return mapToResponse(invoice);
-    }
-
-    @Override
-    @Transactional
-    public InvoiceResponse updateInvoiceStatus(Long id, InvoiceStatus status) {
-        Invoice invoice = invoiceRepository.findById(id)
-                .orElseThrow(() -> new AppException("Invoice not found with id: " + id, HttpStatus.NOT_FOUND, "INVOICE_NOT_FOUND"));
-
-        invoice.setStatus(status);
-        Invoice updated = invoiceRepository.save(invoice);
-        return mapToResponse(updated);
     }
 
     private void addInvoiceItem(Invoice invoice, String name, int quantity, BigDecimal unitPrice) {

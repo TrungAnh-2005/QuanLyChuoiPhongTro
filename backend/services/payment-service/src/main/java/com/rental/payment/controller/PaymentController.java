@@ -25,20 +25,4 @@ public class PaymentController {
         return ResponseEntity.status(HttpStatus.CREATED).body(paymentService.createPayment(request));
     }
 
-    @GetMapping
-    public ResponseEntity<List<PaymentResponse>> getPayments(
-            @RequestParam(required = false) Long invoiceId,
-            @RequestParam(required = false) PaymentStatus status) {
-        return ResponseEntity.ok(paymentService.getPayments(invoiceId, status));
-    }
-
-    @GetMapping("/{id}")
-    public ResponseEntity<PaymentResponse> getPaymentById(@PathVariable Long id) {
-        return ResponseEntity.ok(paymentService.getPaymentById(id));
-    }
-
-    @GetMapping("/invoice/{invoiceId}")
-    public ResponseEntity<List<PaymentResponse>> getPaymentsByInvoiceId(@PathVariable Long invoiceId) {
-        return ResponseEntity.ok(paymentService.getPaymentsByInvoiceId(invoiceId));
-    }
 }

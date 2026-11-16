@@ -1,3 +1,5 @@
+import RoomMemberActions from '../../components/staff/RoomMemberActions';
+import WorkflowReviewPanel from '../../components/staff/WorkflowReviewPanel';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import {
@@ -204,9 +206,6 @@ export default function StaffRoomsPage() {
     approveRoomRequest,
     rejectRoomRequest,
     roomMembers = [],
-    addRoomMember,
-    removeRoomMember,
-    updateTemporaryResidence,
     contracts = [],
     moveOutSettlements = [],
     landlords = []
@@ -892,7 +891,9 @@ try {
 try {
 
                             if (approveRoomRequest) await approveRoomRequest(req.id);
-                            setActionToast('Đã phê duyệt đơn thành công!');
+                            setActionToast(req.type === 'CHECKOUT'
+                              ? 'Đã duyệt trả phòng. Hoàn tất hồ sơ trong mục Yêu cầu trả phòng và quyết toán để kết thúc hợp đồng.'
+                              : 'Đã phê duyệt đơn thành công!');
                             setTimeout(() => setActionToast(null), 3000);
 
 } catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
@@ -922,28 +923,7 @@ try {
               </button>
             </div>
 
-            <div className="space-y-2">
-              {roomMembers.filter((m) => m.roomNumber === selectedRoomForMembers.number && m.status !== 'MOVED_OUT').length === 0 ? (
-                <p className="text-center py-6 text-slate-400">Phòng hiện chưa có thông tin thành viên nào</p>
-              ) : (
-                roomMembers
-                  .filter((m) => m.roomNumber === selectedRoomForMembers.number && m.status !== 'MOVED_OUT')
-                  .map((mem) => (
-                    <div key={mem.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-900">{mem.fullName}</span>
-                        <span className="text-[10px] px-2 py-0.5 rounded bg-purple-100 text-purple-800 font-bold">
-                          {mem.role === 'HOST' ? 'Chủ hợp đồng' : 'Ở ghép'}
-                        </span>
-                      </div>
-                      <div className="text-slate-500">SĐT: {mem.phone} • CCCD: {mem.cccd || 'Chưa cung cấp'}</div>
-                      <div className="text-[11px] text-slate-600">
-                        Tạm trú: {mem.temporaryResidenceStatus === 'REGISTERED' ? '🟢 Đã ĐK tạm trú' : '🟡 Chưa đăng ký'}
-                      </div>
-                    </div>
-                  ))
-              )}
-            </div>
+            <RoomMemberActions key={selectedRoomForMembers.id} room={selectedRoomForMembers} />
           </div>
         </Modal>
       )}
@@ -971,10 +951,21 @@ try {
       )}
       <section className="p-4 border rounded-xl bg-white space-y-3">
         <h2 className="font-bold">Yêu cầu trả phòng và quyết toán</h2>
+        {roomRequests.filter(req => req.type === 'CHECKOUT' && req.status === 'APPROVED'
+          && !moveOutSettlements.some(item => item.contractId === req.contractId)).map(req => (
+          <div key={`checkout-${req.id}`} className="flex justify-between gap-4 border-t pt-3">
+            <span>Phòng {req.targetRoom} · Đã duyệt trả phòng, chưa có hồ sơ quyết toán</span>
+            <button className="px-3 py-1 border rounded" onClick={async () => {
+              try { await approveRoomRequest(req.id); setActionToast('Đã tạo hồ sơ quyết toán.'); }
+              catch (error) { window.dispatchEvent(new CustomEvent('rental:api-error', { detail: error.message })); }
+            }}>Tạo hồ sơ quyết toán</button>
+          </div>
+        ))}
         {moveOutSettlements.filter(item=>item.refundStatus!=='COMPLETED').map(item=><div key={item.id} className="flex justify-between gap-4 border-t pt-3"><span>{item.roomNumber} · {item.tenantName} · {item.moveOutDate}</span><button className="px-3 py-1 border rounded" onClick={()=>setActiveSettlementModal(item)}>Quyết toán</button></div>)}
         {!moveOutSettlements.some(item=>item.refundStatus!=='COMPLETED') && <p className="text-sm text-slate-500">Chưa có yêu cầu chờ quyết toán.</p>}
       </section>
       <MoveOutSettlementModal isOpen={!!activeSettlementModal} onClose={()=>setActiveSettlementModal(null)} settlement={activeSettlementModal} room={rooms.find(item=>item.id===activeSettlementModal?.roomId)} contract={contracts.find(item=>item.id===activeSettlementModal?.contractId)} />
+      <WorkflowReviewPanel type="roommates" />
     </div>
   );
 }

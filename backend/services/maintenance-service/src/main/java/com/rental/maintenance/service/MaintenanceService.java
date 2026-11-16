@@ -11,6 +11,5 @@ import java.util.List;
 public interface MaintenanceService {
     MaintenanceResponse createMaintenanceRequest(CreateMaintenanceRequest request);
     List<MaintenanceResponse> getMaintenanceRequests(Long roomId, Long tenantId, MaintenanceStatus status, MaintenancePriority priority);
-    MaintenanceResponse getMaintenanceRequestById(Long id);
     MaintenanceResponse updateMaintenanceStatus(Long id, UpdateMaintenanceStatusRequest request);
 }

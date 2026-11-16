@@ -42,6 +42,11 @@ public class RoomRequest {
     @Column(columnDefinition = "TEXT")
     private String note;
 
+    private java.time.LocalDate moveOutDate;
+    private String bankAccount;
+    private String bankName;
+    private String accountHolder;
+
     @Column(name = "forfeit_deposit", nullable = false)
     @Builder.Default
     private Boolean forfeitDeposit = false;

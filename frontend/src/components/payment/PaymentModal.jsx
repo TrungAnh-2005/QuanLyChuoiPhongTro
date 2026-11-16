@@ -296,12 +296,11 @@ export default function PaymentModal({
     if (isProcessing) return;
     setIsProcessing(true); setApiError(null);
     try {
-      const finalMethod = selectedMethod || method;
-      if (finalMethod !== 'CASH') {
-        const result = await checkSePayTransaction({invoiceId:invoice.id});
-        if (!result.success) throw new Error('Chưa có giao dịch đã được máy chủ xác minh');
+      const finalMethod = selectedMethod || method || 'CASH';
+      if (onSuccess) {
+        const result = await onSuccess(invoice, finalMethod);
+        if (result?.success === false) throw new Error(result.error || 'Chưa ghi nhận được thanh toán');
       }
-      if (onSuccess) { const result=await onSuccess(invoice, finalMethod === 'CASH' ? 'CASH' : 'SEPAY'); if(result?.success===false) throw new Error(result.error || 'Chưa ghi nhận được thanh toán'); }
       setIsDone(true);
     } catch(error) { setApiError(error.message); }
     finally { setIsProcessing(false); }

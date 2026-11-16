@@ -36,7 +36,6 @@ export default function StaffInvoicesPage({ forcedTab }) {
     payInvoice,
     saasInvoices = [],
     paySaasInvoice,
-    resetSaasInvoiceStatus,
     updateLandlordPackage,
     landlords = []
   } = useData();

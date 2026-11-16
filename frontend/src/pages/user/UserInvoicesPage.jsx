@@ -17,7 +17,10 @@ import Modal from '../../components/common/Modal';
 
 export default function UserInvoicesPage() {
   const { user, tenantRooms } = useAuth();
-  const { invoices = [], payInvoice, tenants = [] } = useData();
+  const { invoices = [], allInvoices = [], payInvoice, tenants = [] } = useData();
+  const sourceInvoices = useMemo(() => {
+    return allInvoices && allInvoices.length > 0 ? allInvoices : invoices;
+  }, [allInvoices, invoices]);
 
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -51,9 +54,10 @@ export default function UserInvoicesPage() {
   }, [isTenantNew, currentTenant, userRoom]);
 
   const displayedInvoices = useMemo(() => {
-    return (invoices || []).filter((inv) => {
+    return sourceInvoices.filter((inv) => {
       const matchesRoom =
-        myRentedRooms.includes(inv.room) ||
+        (inv.room && myRentedRooms.includes(inv.room)) ||
+        (inv.tenantId && currentTenant?.id && inv.tenantId === currentTenant.id) ||
         (user?.fullName && inv.tenant && inv.tenant.toLowerCase().includes(user.fullName.toLowerCase())) ||
         (user?.phone && inv.phone && inv.phone.replace(/\D/g, '') === user.phone.replace(/\D/g, ''));
 
@@ -68,7 +72,8 @@ export default function UserInvoicesPage() {
       if (searchTerm) {
         const q = searchTerm.toLowerCase();
         return (
-          (inv.id && inv.id.toLowerCase().includes(q)) ||
+          (inv.code && inv.code.toLowerCase().includes(q)) ||
+          (String(inv.id).toLowerCase().includes(q)) ||
           (inv.room && inv.room.toLowerCase().includes(q)) ||
           (inv.month && inv.month.toLowerCase().includes(q))
         );
@@ -76,30 +81,46 @@ export default function UserInvoicesPage() {
 
       return true;
     });
-  }, [invoices, myRentedRooms, user, filterStatus, searchTerm]);
+  }, [sourceInvoices, myRentedRooms, currentTenant, user, filterStatus, searchTerm]);
 
   const unpaidTotal = useMemo(() => {
-    return (invoices || [])
+    return sourceInvoices
       .filter((inv) => {
         const matchesRoom =
-          myRentedRooms.includes(inv.room) ||
+          (inv.room && myRentedRooms.includes(inv.room)) ||
+          (inv.tenantId && currentTenant?.id && inv.tenantId === currentTenant.id) ||
           (user?.fullName && inv.tenant && inv.tenant.toLowerCase().includes(user.fullName.toLowerCase()));
         return matchesRoom && (inv.status === 'UNPAID' || inv.status === 'OVERDUE');
       })
-      .reduce((sum, inv) => sum + (inv.total || 0), 0);
-  }, [invoices, myRentedRooms, user]);
+      .reduce((sum, inv) => sum + (Number(inv.total ?? inv.totalAmount) || 0), 0);
+  }, [sourceInvoices, myRentedRooms, currentTenant, user]);
+
+  const [payingId, setPayingId] = useState(null);
+  const [successToast, setSuccessToast] = useState(null);
 
   const handlePaymentSuccess = async (invoiceId) => {
-try {
-
-    await payInvoice(invoiceId, 'ONLINE_GATEWAY');
-    setPaymentModalInvoice(null);
-
-} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
-};
+    try {
+      setPayingId(invoiceId);
+      await payInvoice(invoiceId, 'CASH');
+      setPaymentModalInvoice(null);
+      setSuccessToast('Thanh toán hóa đơn thành công!');
+      setTimeout(() => setSuccessToast(null), 3500);
+    } catch (error) {
+      window.dispatchEvent(new CustomEvent("rental:api-error", { detail: error.message }));
+      return { success: false, error: error.message };
+    } finally {
+      setPayingId(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
+      {successToast && (
+        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2 shadow-sm animate-in fade-in">
+          <CheckCircle className="w-4 h-4 text-emerald-600" />
+          <span>{successToast}</span>
+        </div>
+      )}
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -170,13 +191,13 @@ try {
               <div className="space-y-1.5 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                    {inv.id}
+                    {inv.code || inv.invoiceCode || inv.id}
                   </span>
                   <span className="font-extrabold text-sm text-indigo-700 px-2.5 py-0.5 rounded-lg bg-indigo-50 border border-indigo-200">
-                    {inv.room}
+                    {inv.room || (inv.roomId ? `P.${inv.roomId}` : 'Phòng')}
                   </span>
                   <span className="text-xs font-bold text-slate-600">
-                    {inv.month || 'Tháng 09/2026'}
+                    {inv.month || (inv.year && inv.month ? `Tháng ${inv.month}/${inv.year}` : 'Kỳ thanh toán')}
                   </span>
                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                     inv.status === 'PAID'
@@ -188,9 +209,9 @@ try {
                 </div>
 
                 <div className="text-xs text-slate-500 flex flex-wrap gap-x-4 gap-y-1 font-medium">
-                  <span>Tiền phòng: <strong className="text-slate-800">{(inv.roomFee || inv.rent || 0).toLocaleString('vi-VN')} đ</strong></span>
-                  <span>Điện & Nước: <strong className="text-slate-800">{((inv.electricFee || 0) + (inv.waterFee || 0)).toLocaleString('vi-VN')} đ</strong></span>
-                  {inv.serviceFee > 0 && <span>Dịch vụ: <strong className="text-slate-800">{inv.serviceFee.toLocaleString('vi-VN')} đ</strong></span>}
+                  <span>Tiền phòng: <strong className="text-slate-800">{(Number(inv.roomFee || inv.rent) || 0).toLocaleString('vi-VN')} đ</strong></span>
+                  <span>Điện & Nước: <strong className="text-slate-800">{((Number(inv.electricFee || inv.electricityFee || inv.elec) || 0) + (Number(inv.waterFee || inv.water) || 0)).toLocaleString('vi-VN')} đ</strong></span>
+                  {(Number(inv.serviceFee || inv.service) || 0) > 0 && <span>Dịch vụ: <strong className="text-slate-800">{(Number(inv.serviceFee || inv.service) || 0).toLocaleString('vi-VN')} đ</strong></span>}
                 </div>
               </div>
 
@@ -198,7 +219,7 @@ try {
                 <div className="text-left sm:text-right">
                   <div className="text-[10px] text-slate-400 font-bold uppercase">Tổng thanh toán</div>
                   <div className="text-lg font-black text-slate-900">
-                    {(inv.total || 0).toLocaleString('vi-VN')} đ
+                    {(Number(inv.total ?? inv.totalAmount) || 0).toLocaleString('vi-VN')} đ
                   </div>
                 </div>
 
@@ -212,11 +233,12 @@ try {
 
                   {inv.status !== 'PAID' && (
                     <button
-                      onClick={() => setPaymentModalInvoice(inv)}
-                      className="px-4 py-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all btn-press cursor-pointer flex items-center gap-1.5"
+                      onClick={() => handlePaymentSuccess(inv.id)}
+                      disabled={payingId === inv.id}
+                      className="px-4 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all btn-press cursor-pointer flex items-center gap-1.5"
                     >
                       <CreditCard className="w-3.5 h-3.5" />
-                      <span>Thanh toán ngay</span>
+                      <span>{payingId === inv.id ? 'Đang thanh toán…' : 'Thanh toán ngay'}</span>
                     </button>
                   )}
                 </div>

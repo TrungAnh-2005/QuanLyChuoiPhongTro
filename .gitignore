@@ -82,6 +82,7 @@ docs/test-results/
 .DS_Store
 Thumbs.db
 *.log
+.logs/
 hs_err_pid*
 replay_pid*
 

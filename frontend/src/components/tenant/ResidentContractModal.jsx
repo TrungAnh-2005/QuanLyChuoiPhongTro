@@ -73,6 +73,7 @@ export default function ResidentContractModal({
   const [otpSent, setOtpSent] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [signedSuccess, setSignedSuccess] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const [pdfNotice, setPdfNotice] = useState(null);
   const isHolding = contract?.status === 'HOLDING' || contract?.status === 'PENDING_DEPOSIT' || contract?.status === 'PENDING';
   const isActive = contract?.status === 'ACTIVE' || signedSuccess;
@@ -83,11 +84,12 @@ export default function ResidentContractModal({
     setOtpSent(true);
   };
 
-  const handleConfirmSign = (e) => {
+  const handleConfirmSign = async (e) => {
     e.preventDefault();
-    if (!agreedTerms) return;
+    if (!agreedTerms || isSubmitting) return;
 
     setIsSubmitting(true);
+    setSubmitError('');
     const cccdData = {
       cccdNumber: cccdNumber.trim(),
       issueDate: issueDate.trim(),
@@ -98,13 +100,16 @@ export default function ResidentContractModal({
       consentTemporaryResidence: agreedTemporaryResidence
     };
 
-    setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      if (!onSignSuccess) throw new Error('Không thể gửi xác nhận lúc này.');
+      const result = await onSignSuccess(contract.id, cccdData);
+      if (result?.success === false) throw new Error(result.error || result.message || 'Không thể lưu xác nhận.');
       setSignedSuccess(true);
-      if (onSignSuccess) {
-        onSignSuccess(contract.id, cccdData);
-      }
-    }, 700);
+    } catch (error) {
+      setSubmitError(error.message || 'Không thể lưu xác nhận. Vui lòng thử lại.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Hàm tạo và tải file Hợp đồng PDF chuẩn pháp lý
@@ -585,9 +590,10 @@ export default function ResidentContractModal({
                 disabled={!agreedTerms || isSubmitting}
                 className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold shadow-md disabled:opacity-50 flex items-center gap-2"
               >
-                {isSubmitting ? 'Đang xác thực e-Sign...' : 'Ký Xác Nhận Điện Tử'}
+                {isSubmitting ? 'Đang gửi xác nhận...' : contract.isBookingRequest ? 'Ký & Gửi Yêu Cầu Đặt Cọc' : 'Ký Xác Nhận Điện Tử'}
               </button>
             </div>
+            {submitError && <p role="alert" className="text-sm text-rose-700">{submitError}</p>}
           </form>
         )}
       </div>

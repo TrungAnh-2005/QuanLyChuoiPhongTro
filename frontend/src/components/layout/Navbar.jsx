@@ -689,7 +689,7 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const unreadCount = dataContext.unreadNotificationCount ?? 0;
 
   const markAllAsRead = () => dataContext.markAllNotificationsRead();
   const markSingleAsRead = id => dataContext.markNotificationRead(id);
@@ -763,30 +763,34 @@ export default function Navbar({ onOpenMobileMenu = () => {} }) {
 
       {/* Phải: Chuyển đổi vai trò + Thông báo + Thông tin tài khoản */}
       <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-        {/* Quick Role & Multi-Tenant Switcher - Bản đầy đủ trên Desktop lớn */}
-        <div className="hidden xl:flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 text-xs shadow-inner gap-1">
-          {false}
-          {false}
-          {false}
-
-          <span className="h-4 w-px bg-slate-300 mx-0.5" />
-
-          {false}
-
-          {false}
-
-          {false}
-        </div>
-
-        {/* Nút Reset Về 0 Để Test Từ Đầu */}
-        {false}
-
-        {/* Nút Khôi Phục Gốc - Làm sạch dữ liệu demo */}
-        {false}
-
-        {/* Chuyển đổi vai trò rút gọn trên Di động & Tablet (Dạng Select tiện lợi) */}
-        <div className="xl:hidden flex items-center bg-slate-100/90 px-2 py-1 rounded-xl border border-slate-200/90 text-xs font-bold shadow-2xs">
-          {false}
+        {/* Quick Role Switcher trực tiếp trên Navbar */}
+        <div className="hidden sm:flex items-center gap-1.5 bg-amber-50/90 border border-amber-300/80 px-2.5 py-1 rounded-xl text-xs shadow-2xs">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-[11px] font-bold text-amber-900 hidden md:inline">Vai trò:</span>
+          <select
+            value={role}
+            onChange={(e) => {
+              const r = e.target.value;
+              const defaultTenant = (dataContext.tenants || [])[0];
+              switchRole(
+                r,
+                r === 'TENANT' && defaultTenant
+                  ? {
+                      id: defaultTenant.id,
+                      fullName: defaultTenant.fullName,
+                      email: defaultTenant.email,
+                      room: defaultTenant.room,
+                      rooms: defaultTenant.rooms
+                    }
+                  : {}
+              );
+            }}
+            className="bg-transparent font-bold text-slate-800 text-xs focus:outline-none cursor-pointer"
+          >
+            <option value="STAFF">Quản lý (Staff)</option>
+            <option value="TENANT">Khách thuê (Tenant)</option>
+            <option value="ADMIN">Quản trị (Admin)</option>
+          </select>
         </div>
 
         {/* Notification bell & Dropdown */}

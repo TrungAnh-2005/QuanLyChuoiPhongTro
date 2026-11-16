@@ -90,9 +90,7 @@ export default function MoveOutSettlementModal({ isOpen, onClose, settlement, ro
 
   useEffect(() => {
     if (settlement) {
-      const reasonLower = (settlement.reason || '').toLowerCase();
-      const isEarly = settlement.forfeitDeposit || reasonLower.includes('trước hạn') || reasonLower.includes('mất cọc') || reasonLower.includes('đột xuất');
-      setIsEarlyTermination(Boolean(isEarly));
+      setIsEarlyTermination(Boolean(settlement.forfeitDeposit));
 
       setFormData({
         damageFee: settlement.damageFee || 0,
@@ -160,7 +158,7 @@ export default function MoveOutSettlementModal({ isOpen, onClose, settlement, ro
 
 
 
-  const originalDeposit = settlement?.originalDeposit || contract?.deposit || 3000000;
+  const originalDeposit = Number(settlement?.originalDeposit ?? settlement?.depositAmount ?? contract?.depositAmount ?? contract?.deposit ?? 0);
   // Nếu trả trước hạn -> Tịch thu 100% tiền cọc (effectiveDeposit = 0)
   const effectiveDeposit = isEarlyTermination ? 0 : originalDeposit;
   const damageFee = Number(formData.damageFee) || 0;
@@ -280,7 +278,7 @@ return (
           {success && (
             <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs rounded-xl flex items-center gap-2 font-medium">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Đã hoàn tất nghiệm thu & quyết toán trả phòng! Phòng được chuyển sang trạng thái "🧹 Chờ dọn dẹp". Hợp đồng kết thúc.</span>
+              <span>Đã hoàn tất nghiệm thu & quyết toán trả phòng! Phòng đã chuyển về trạng thái trống. Hợp đồng kết thúc.</span>
             </div>
           )}
 
@@ -397,7 +395,7 @@ return (
                           <input
                             type="number"
                             min="0"
-                            step="10000"
+                            step="1"
                             value={item.fee}
                             onChange={(e) => handleEquipmentFeeChange(item.id, e.target.value)}
                             className="w-24 px-1.5 py-0.5 text-right font-mono font-bold text-xs text-rose-700 bg-white border border-rose-300 rounded focus:outline-none"
@@ -535,7 +533,7 @@ return (
                 <input
                   type="number"
                   min="0"
-                  step="5000"
+                  step="1"
                   value={formData.unpaidUtilitiesFee}
                   onChange={(e) => setFormData({ ...formData, unpaidUtilitiesFee: Number(e.target.value) })}
                   className="w-28 px-2 py-0.5 text-right font-mono font-bold border border-slate-200 rounded-lg text-xs"

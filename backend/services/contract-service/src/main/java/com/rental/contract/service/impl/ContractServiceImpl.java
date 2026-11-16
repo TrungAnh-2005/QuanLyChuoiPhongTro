@@ -121,6 +121,7 @@ public class ContractServiceImpl implements ContractService {
             roomClient.updateRoomStatus(contract.getRoomId(), new UpdateRoomStatusDto("AVAILABLE"));
         } catch (Exception e) {
             log.error("Failed to release room status back to AVAILABLE", e);
+            throw new AppException("Không thể cập nhật phòng về trạng thái trống. Vui lòng thử lại.", HttpStatus.BAD_GATEWAY, "ROOM_UPDATE_FAILED");
         }
 
         ContractEventDTO event = ContractEventDTO.builder()

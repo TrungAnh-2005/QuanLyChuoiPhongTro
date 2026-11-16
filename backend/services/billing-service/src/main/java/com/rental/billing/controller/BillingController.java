@@ -23,11 +23,6 @@ public class BillingController {
         return ResponseEntity.status(HttpStatus.CREATED).body(billingService.generateMonthlyInvoice(request));
     }
 
-    @PostMapping
-    public ResponseEntity<InvoiceResponse> createInvoice(@Valid @RequestBody CreateInvoiceRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(billingService.createInvoice(request));
-    }
-
     @GetMapping
     public ResponseEntity<List<InvoiceResponse>> getInvoices(
             @RequestParam(required = false) InvoiceStatus status,
@@ -37,15 +32,4 @@ public class BillingController {
         return ResponseEntity.ok(billingService.getInvoices(status, tenantId, month, year));
     }
 
-    @GetMapping("/{id}")
-    public ResponseEntity<InvoiceResponse> getInvoiceById(@PathVariable Long id) {
-        return ResponseEntity.ok(billingService.getInvoiceById(id));
-    }
-
-    @PutMapping("/{id}/status")
-    public ResponseEntity<InvoiceResponse> updateInvoiceStatus(
-            @PathVariable Long id,
-            @Valid @RequestBody UpdateInvoiceStatusRequest request) {
-        return ResponseEntity.ok(billingService.updateInvoiceStatus(id, request.getStatus()));
-    }
 }

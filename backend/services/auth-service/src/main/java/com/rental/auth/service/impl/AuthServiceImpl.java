@@ -142,20 +142,6 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    @Transactional
-    public void changePassword(String username, ChangePasswordRequest request) {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new AppException("User not found", HttpStatus.NOT_FOUND, "USER_NOT_FOUND"));
-
-        if (!passwordEncoder.matches(request.getOldPassword(), user.getPassword())) {
-            throw new AppException("Current password is incorrect", HttpStatus.BAD_REQUEST, "INVALID_CURRENT_PASSWORD");
-        }
-
-        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
-        userRepository.save(user);
-    }
-
-    @Override
     @Transactional(readOnly = true)
     public UserResponse getCurrentUser(String username) {
         User user = userRepository.findByUsername(username)

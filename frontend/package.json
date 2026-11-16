@@ -8,7 +8,9 @@
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "node src/services/api.test.js"
+    "test": "node src/services/api.test.js",
+    "test:deposit": "node --test tests/deposit-flow.test.mjs",
+    "test:checkout": "node --test tests/checkout-flow.test.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

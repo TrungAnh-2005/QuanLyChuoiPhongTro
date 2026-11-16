@@ -35,11 +35,6 @@ public class MaintenanceController {
         return ResponseEntity.ok(maintenanceService.getMaintenanceRequests(roomId, tenantId, status, priority));
     }
 
-    @GetMapping("/{id}")
-    public ResponseEntity<MaintenanceResponse> getMaintenanceRequestById(@PathVariable Long id) {
-        return ResponseEntity.ok(maintenanceService.getMaintenanceRequestById(id));
-    }
-
     @PutMapping("/{id}/status")
     public ResponseEntity<MaintenanceResponse> updateMaintenanceStatus(
             @PathVariable Long id,

@@ -1,4 +1,9 @@
 {
+  "scripts": {
+    "be": "powershell -ExecutionPolicy Bypass -File ./start-be.ps1",
+    "be:fast": "powershell -ExecutionPolicy Bypass -File ./start-be.ps1 -SkipBuild",
+    "be:stop": "powershell -ExecutionPolicy Bypass -File ./start-be.ps1 -Stop"
+  },
   "devDependencies": {
     "playwright": "^1.64.0"
   }
