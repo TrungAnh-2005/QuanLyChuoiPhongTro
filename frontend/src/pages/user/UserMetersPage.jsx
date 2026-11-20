@@ -123,8 +123,6 @@ export default function UserMetersPage() {
       recorded: true,
       paid: false
     };
-
-    let startYear = 2026;
     let startMonthNum = 1;
     if (joinDateStr && joinDateStr.includes('/')) {
       const parts = joinDateStr.split('/');

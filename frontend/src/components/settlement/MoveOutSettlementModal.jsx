@@ -10,12 +10,6 @@ import {
   Wrench,
   Zap,
   Droplets,
-  DollarSign,
-  FileText,
-  Calendar,
-  User,
-  Building,
-  Home,
   CreditCard,
   X
 } from 'lucide-react';
@@ -52,7 +46,7 @@ const getBankId = (name) => {
 };
 
 export default function MoveOutSettlementModal({ isOpen, onClose, settlement, room, contract }) {
-  const { settleMoveOut, rooms, contracts, utilityPrices, invoices = [] } = useData();
+  const { settleMoveOut, utilityPrices, invoices = [] } = useData();
 
   // Khởi tạo checklist trang thiết bị
   const [equipmentList, setEquipmentList] = useState(

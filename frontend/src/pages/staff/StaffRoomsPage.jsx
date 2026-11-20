@@ -1,11 +1,9 @@
 import RoomMemberActions from '../../components/staff/RoomMemberActions';
 import WorkflowReviewPanel from '../../components/staff/WorkflowReviewPanel';
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
-  Home,
   Plus,
-  Filter,
   Search,
   Users,
   Edit3,
@@ -13,15 +11,9 @@ import {
   Lock,
   Unlock,
   Building2,
-  DollarSign,
   FileText,
-  ShieldCheck,
   ShieldAlert,
-  ChevronRight,
   X,
-  UserPlus,
-  Sparkles,
-  Camera,
   CheckCircle2
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -76,7 +68,7 @@ export function normalizeRoomNumber(number) {
     .trim()
     .toLowerCase()
     .replace(/^phòng\s*/i, '')
-    .replace(/^p[\.\s_-]*/i, '')
+    .replace(/^p[.\s_-]*/i, '')
     .trim();
 }
 
@@ -192,7 +184,7 @@ export default function StaffRoomsPage() {
   const {boardingHouses:apiBoardingHouses=[]}=useData() || {};
 
   const { user } = useAuth();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const rawParam = searchParams.get('house') || 'ALL';
 
   const {
@@ -201,7 +193,6 @@ export default function StaffRoomsPage() {
     updateRoom,
     deleteRoom,
     updateRoomStatus,
-    updateRoomPrice,
     roomRequests = [],
     approveRoomRequest,
     rejectRoomRequest,
@@ -283,12 +274,23 @@ export default function StaffRoomsPage() {
   // Modals state
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingRoom, setEditingRoom] = useState(null);
-  const [showPriceEditModal, setShowPriceEditModal] = useState(false);
   const [showRequestsManager, setShowRequestsManager] = useState(false);
   const [selectedRoomForMembers, setSelectedRoomForMembers] = useState(null);
   const [activeSettlementModal, setActiveSettlementModal] = useState(null);
   const [quotaExceededModal, setQuotaExceededModal] = useState(false);
   const [actionToast, setActionToast] = useState(null);
+  const [reviewingRequest, setReviewingRequest] = useState(null);
+  const reviewInFlight = useRef(false);
+  const reviewResidentRequest = async (req, approved) => {
+    if (reviewInFlight.current) return;
+    reviewInFlight.current = true;
+    setReviewingRequest(req.id);
+    try {
+      if (approved) await approveRoomRequest(req.id);
+      else await rejectRoomRequest(req.id);
+    } catch { /* ApiStatus shows the failed mutation and its server message. */ }
+    finally { reviewInFlight.current = false; setReviewingRequest(null); }
+  };
 
   // Form thêm / sửa phòng
   const [roomFormData, setRoomFormData] = useState({
@@ -304,8 +306,6 @@ export default function StaffRoomsPage() {
   });
 
   useEffect(()=>{ if(staffHouseCodes.length && !staffHouseCodes.includes(roomFormData.houseCode)) setRoomFormData(previous=>({...previous,houseCode:staffHouseCodes[0]})); },[staffHouseCodes,roomFormData.houseCode]);
-  const [newRoomPriceInput, setNewRoomPriceInput] = useState('');
-  const [roomToEditPrice, setRoomToEditPrice] = useState(null);
 
   // Lọc phòng thuộc quyền quản lý
   const staffRooms = useMemo(() => {
@@ -853,12 +853,12 @@ try {
                   <div key={req.id} className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-slate-900">
-                        {req.type === 'RENTAL' ? 'Đơn Thuê / Đặt Cọc' : req.type === 'ROOMMATE' ? 'Tìm Ở Ghép' : 'Báo Trả Phòng'}
+                        {{ RENT: 'Đơn Thuê / Đặt Cọc', RENTAL: 'Đơn Thuê / Đặt Cọc', ROOMMATE: 'Tìm Ở Ghép', TRANSFER: 'Đơn Chuyển Phòng', RENEW_CONTRACT: 'Gia Hạn Hợp Đồng', CHECKOUT: 'Báo Trả Phòng' }[req.type] || 'Đơn Yêu Cầu'}
                       </span>
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                         req.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                       }`}>
-                        {req.status === 'APPROVED' ? 'Đã duyệt' : 'Chờ duyệt'}
+                        {{ APPROVED: 'Đã duyệt', REJECTED: 'Đã từ chối', WAITING_ROOMMATES: 'Chờ ý kiến ở ghép', PENDING: 'Chờ duyệt' }[req.status] || req.status}
                       </span>
                     </div>
 
@@ -872,33 +872,13 @@ try {
                       <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
                         <button
                           type="button"
-                          onClick={async () => {
-try {
-
-                            if (rejectRoomRequest) await rejectRoomRequest(req.id);
-                            setActionToast('Đã từ chối đơn!');
-                            setTimeout(() => setActionToast(null), 3000);
-
-} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
-}}
-                          className="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg cursor-pointer"
+                          disabled={reviewingRequest !== null} onClick={() => reviewResidentRequest(req, false)} className="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg cursor-pointer"
                         >
                           Từ chối
                         </button>
                         <button
                           type="button"
-                          onClick={async () => {
-try {
-
-                            if (approveRoomRequest) await approveRoomRequest(req.id);
-                            setActionToast(req.type === 'CHECKOUT'
-                              ? 'Đã duyệt trả phòng. Hoàn tất hồ sơ trong mục Yêu cầu trả phòng và quyết toán để kết thúc hợp đồng.'
-                              : 'Đã phê duyệt đơn thành công!');
-                            setTimeout(() => setActionToast(null), 3000);
-
-} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
-}}
-                          className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer"
+                          disabled={reviewingRequest !== null} onClick={() => reviewResidentRequest(req, true)} className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer"
                         >
                           Phê duyệt
                         </button>
@@ -965,7 +945,7 @@ try {
         {!moveOutSettlements.some(item=>item.refundStatus!=='COMPLETED') && <p className="text-sm text-slate-500">Chưa có yêu cầu chờ quyết toán.</p>}
       </section>
       <MoveOutSettlementModal isOpen={!!activeSettlementModal} onClose={()=>setActiveSettlementModal(null)} settlement={activeSettlementModal} room={rooms.find(item=>item.id===activeSettlementModal?.roomId)} contract={contracts.find(item=>item.id===activeSettlementModal?.contractId)} />
-      <WorkflowReviewPanel type="roommates" />
+      <WorkflowReviewPanel type="roommates" onOpenRentalRequests={() => setShowRequestsManager(true)} />
     </div>
   );
 }

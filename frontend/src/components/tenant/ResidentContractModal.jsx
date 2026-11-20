@@ -1,24 +1,12 @@
 import React, { useState, useRef } from 'react';
 import {
   Upload,
-  Sparkles,
-
-  Eye,
-
-  Camera,
-
   FileText,
   CheckCircle2,
   AlertTriangle,
-  PenTool,
   ShieldCheck,
-  Building2,
-  Calendar,
-  DollarSign,
   X,
-  Lock,
-  Download,
-  Printer
+  Download
 } from 'lucide-react';
 import Modal from '../common/Modal';
 
@@ -68,21 +56,13 @@ export default function ResidentContractModal({
       reader.readAsDataURL(file);
     }
   };
-  const [signatureType, setSignatureType] = useState('OTP'); // 'OTP' | 'DRAW'
-  const [otpCode, setOtpCode] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [signedSuccess, setSignedSuccess] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [pdfNotice, setPdfNotice] = useState(null);
   const isHolding = contract?.status === 'HOLDING' || contract?.status === 'PENDING_DEPOSIT' || contract?.status === 'PENDING';
-  const isActive = contract?.status === 'ACTIVE' || signedSuccess;
 
   if (!contract) return null;
-
-  const handleSendOtp = () => {
-    setOtpSent(true);
-  };
 
   const handleConfirmSign = async (e) => {
     e.preventDefault();

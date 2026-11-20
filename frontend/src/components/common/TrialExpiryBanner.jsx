@@ -1,18 +1,15 @@
 import React, { useState } from 'react';
 import {
-  Clock,
   AlertOctagon,
   Sparkles,
   ArrowRight,
-  RotateCcw,
-  ShieldAlert,
-  CheckCircle2
+  RotateCcw
 } from 'lucide-react';
 import { getTrialStatus } from '../../utils/packagePermissions';
 
 export default function TrialExpiryBanner({ currentLandlord, onUpgradeClick }) {
   const trial = getTrialStatus(currentLandlord);
-  const [toggleState, setToggleState] = useState(0);
+  const [, setToggleState] = useState(0);
 
   if (!trial.isTrial) return null;
 

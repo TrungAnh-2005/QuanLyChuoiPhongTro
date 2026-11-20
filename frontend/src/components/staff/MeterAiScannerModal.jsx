@@ -16,12 +16,10 @@ import {
   Coins,
   FileCheck,
   Check,
-  SlidersHorizontal,
   Building2,
-  Filter,
   ArrowLeftRight
 } from 'lucide-react';
-import { scanMeterReading, classifyMeterSubmission, classifyMeterImage } from '../../services/aiService';
+import { scanMeterReading, classifyMeterSubmission } from '../../services/aiService';
 
 export default function MeterAiScannerModal({
   isOpen,
@@ -44,7 +42,7 @@ export default function MeterAiScannerModal({
   // Bộ lọc cơ sở và trạng thái trong modal
   const [modalHouseFilter, setModalHouseFilter] = useState('ALL'); // 'ALL' | 'CS-01' | 'CS-02' | 'CS-03'
   const [modalStatusFilter, setModalStatusFilter] = useState('UNRECORDED');
-  const [scanError, setScanError] = useState(null); // 'UNRECORDED' | 'ALL'
+  const [, setScanError] = useState(null);
 
   // Chuẩn hóa danh sách phòng đầy đủ
   const fullRoomsList = useMemo(() => {

@@ -11,7 +11,6 @@ import {
   Settings,
   DollarSign,
   X,
-  AlertCircle,
   Building2,
   Search,
   ShieldCheck,
@@ -33,8 +32,6 @@ export default function StaffMetersPage() {
   const {boardingHouses:apiBoardingHouses=[]}=useData() || {};
 
   const { user } = useAuth();
-  const role = user?.role || 'STAFF';
-  const isAdmin = role === 'ADMIN';
 
   const {
     billingMonth, availableBillingMonths = [],

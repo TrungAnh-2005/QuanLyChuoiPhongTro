@@ -6,8 +6,6 @@ import {
   X,
   Zap,
   Droplets,
-  Image as ImageIcon,
-  Upload,
   Send
 } from 'lucide-react';
 import Modal from '../common/Modal';

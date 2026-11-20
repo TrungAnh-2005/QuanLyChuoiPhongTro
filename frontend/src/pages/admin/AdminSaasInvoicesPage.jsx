@@ -9,13 +9,8 @@ import {
   Send,
   Check,
   FileText,
-  Building2,
-  Phone,
-  Mail,
   X,
-  Award,
-  Crown,
-  Download
+  Crown
 } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 import Modal from '../../components/common/Modal';

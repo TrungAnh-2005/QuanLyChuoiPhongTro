@@ -28,6 +28,18 @@ public class MeterServiceImpl implements MeterService {
     private final MeterReadingRepository readingRepository;
 
     @Override
+    @Transactional(readOnly = true)
+    public List<MeterReadingResponse> getAllReadings() {
+        return readingRepository.findAll().stream()
+                .sorted((a, b) -> {
+                    int dateCmp = b.getReadingDate().compareTo(a.getReadingDate());
+                    return dateCmp != 0 ? dateCmp : Long.compare(b.getId(), a.getId());
+                })
+                .map(this::mapToReadingResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
     @Transactional
     public MeterReadingResponse recordReading(RecordMeterReadingRequest request) {
         Meter meter = meterRepository.findByRoomIdAndMeterType(request.getRoomId(), request.getMeterType())

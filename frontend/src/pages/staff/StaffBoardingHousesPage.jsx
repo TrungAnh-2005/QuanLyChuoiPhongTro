@@ -5,20 +5,12 @@ import {
   Building2,
   Plus,
   MapPin,
-  Phone,
-  Home,
-  Users,
-  DollarSign,
-  ShieldCheck,
   Search,
   ExternalLink,
   CheckCircle2,
   Clock,
   AlertCircle,
-  TrendingUp,
-  Sparkles,
   Receipt,
-  Settings,
   Edit3,
   Trash2,
   X,
@@ -196,7 +188,6 @@ export default function BoardingHousesPage() {
   const {
     rooms = [],
     tenants = [],
-    invoices = [],
     landlords = [],
     landlordProfiles = [],
     createSaasInvoice,
@@ -389,7 +380,7 @@ export default function BoardingHousesPage() {
   const [selectedHouseForConfig, setSelectedHouseForConfig] = useState(() => {
     return isStaff ? (user?.houseCode || (user?.username === 'staff2' ? 'CS-02' : 'CS-01')) : 'CS-01';
   });
-  const [loading, setLoading] = useState(false);
+  const [, setLoading] = useState(false);
   const [newHouse, setNewHouse] = useState({
     code: '',
     name: '',
@@ -1804,7 +1795,7 @@ try {
         featureDescription={`Gói hiện tại (${landlordPackage}) chỉ cho phép tối đa ${maxHousesAllowed} cơ sở nhà trọ (Hiện bạn đã có ${houses.length} cơ sở). Để quản lý chuỗi không giới hạn tòa nhà trọ, vui lòng nâng cấp lên Gói Chuyên Nghiệp (PRO) hoặc Gói Doanh Nghiệp (ENTERPRISE).`}
         currentPackageCode={landlordPackage}
         requiredPackageCode="PRO"
-        onUpgradeClick={(reqCode) => {
+        onUpgradeClick={() => {
           setShowUpgradeModal(false);
           setShowBuyPackageModal(true);
         }}

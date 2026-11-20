@@ -18,6 +18,12 @@ public class MeterController {
 
     private final MeterService meterService;
 
+    @GetMapping({ "", "/readings" })
+    public ResponseEntity<ApiResponse<List<MeterReadingResponse>>> getAllReadings() {
+        List<MeterReadingResponse> response = meterService.getAllReadings();
+        return ResponseEntity.ok(ApiResponse.success(response, "Get all meter readings successfully"));
+    }
+
     @PostMapping("/readings")
     public ResponseEntity<ApiResponse<MeterReadingResponse>> recordReading(@Valid @RequestBody RecordMeterReadingRequest request) {
         MeterReadingResponse response = meterService.recordReading(request);

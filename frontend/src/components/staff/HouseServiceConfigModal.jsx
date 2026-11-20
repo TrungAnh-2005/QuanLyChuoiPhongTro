@@ -12,8 +12,7 @@ import {
   Trash2,
   Bike,
   Sparkles,
-  Lock,
-  AlertTriangle
+  Lock
 } from 'lucide-react';
 import Modal from '../common/Modal';
 import { useData } from '../../contexts/DataContext';

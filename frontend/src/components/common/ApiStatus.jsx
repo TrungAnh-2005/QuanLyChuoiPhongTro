@@ -1,12 +1,31 @@
 import React, { useEffect, useState } from 'react';
 import { useData } from '../../contexts/DataContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { ChevronDown, ChevronUp, AlertCircle, RefreshCw, X } from 'lucide-react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
+import MutationToasts from './MutationToasts';
 
 export default function ApiStatus() {
-  const { error, loading, refreshData, tenants = [] } = useData();
+  const { error, loading, tenants = [], mutationNotifications = [], dismissMutationNotification } = useData();
   const { testMode, user, switchRole } = useAuth();
   const [message, setMessage] = useState('');
+  const [dismissedError, setDismissedError] = useState('');
+  const notifications = [...mutationNotifications];
+  const externalError = message || (error !== dismissedError ? error : '');
+  if (externalError && !notifications.some(row => row.state === 'error' && row.message === externalError)) {
+    notifications.unshift({ id: 'api-error', state: 'error', message: externalError });
+  }
+  if (!testMode && loading && !notifications.some(row => row.state === 'pending')) notifications.push({ id: 'data-loading', state: 'pending', message: 'Đang tải dữ liệu…' });
+  const dismissNotification = id => {
+    if (id === 'api-error') { setMessage(''); setDismissedError(error); }
+    else {
+      const mutation = mutationNotifications.find(row => row.id === id);
+      if (mutation?.state === 'error') {
+        if (message === mutation.message) setMessage('');
+        if (error === mutation.message) setDismissedError(error);
+      }
+      dismissMutationNotification(id);
+    }
+  };
   const [isMinimized, setIsMinimized] = useState(() => {
     try {
       return localStorage.getItem('rental_test_banner_minimized') === 'true';
@@ -26,10 +45,10 @@ export default function ApiStatus() {
   };
 
   useEffect(() => {
-    const listener = (e) => setMessage(e.detail);
+    const listener = (e) => { if (!mutationNotifications.some(row => row.state === 'pending')) setMessage(e.detail); };
     window.addEventListener('rental:api-error', listener);
     return () => window.removeEventListener('rental:api-error', listener);
-  }, []);
+  }, [mutationNotifications]);
 
   const roleLabel =
     user?.role === 'ADMIN'
@@ -100,54 +119,7 @@ export default function ApiStatus() {
         </div>
       )}
 
-      {/* Loading state indicator for non-testMode */}
-      {!testMode && loading && (
-        <div
-          role="status"
-          className="fixed bottom-20 lg:bottom-4 right-4 z-30 inline-flex items-center gap-2 rounded-full bg-white/95 border border-slate-200 px-3.5 py-2 shadow-lg text-xs font-medium text-slate-700 backdrop-blur-md"
-        >
-          <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />
-          <span>Đang tải dữ liệu…</span>
-        </div>
-      )}
-
-      {/* Error alert toast */}
-      {(message || error) && (
-        <div
-          role="alert"
-          className="fixed bottom-24 lg:bottom-6 right-4 sm:right-6 z-40 max-w-md rounded-2xl bg-rose-50/95 border border-rose-300 p-4 shadow-2xl text-xs backdrop-blur-md animate-in fade-in slide-in-from-bottom-2"
-        >
-          <div className="flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="font-semibold text-rose-900 leading-relaxed">{message || error}</p>
-              <div className="mt-2.5 flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    setMessage('');
-                    refreshData();
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-rose-600 text-white font-bold hover:bg-rose-700 transition-colors shadow-2xs cursor-pointer"
-                >
-                  Thử lại
-                </button>
-                <button
-                  onClick={() => setMessage('')}
-                  className="px-2.5 py-1 rounded-lg bg-white border border-rose-200 text-rose-700 font-semibold hover:bg-rose-100/50 transition-colors cursor-pointer"
-                >
-                  Đóng
-                </button>
-              </div>
-            </div>
-            <button
-              onClick={() => setMessage('')}
-              className="text-rose-400 hover:text-rose-700 p-1 rounded-lg transition-colors cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      )}
+      <MutationToasts notifications={notifications} onDismiss={dismissNotification} />
     </>
   );
 }

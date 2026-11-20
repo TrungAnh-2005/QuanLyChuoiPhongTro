@@ -2,39 +2,26 @@ import React, { useState, useEffect } from 'react';
 import {
   Users,
   Plus,
-  Receipt,
-  FileText,
-  Send,
-  Check,
-  Shield,
   ShieldCheck,
-  ShieldAlert,
   Search,
   Lock,
-  Unlock,
   Key,
   Building2,
   Mail,
   Phone,
   CheckCircle2,
   Clock,
-  AlertCircle,
   Sparkles,
-  ArrowUpRight,
-  TrendingUp,
   Award,
   Crown,
-  Eye,
   X,
-  ChevronRight,
   Filter
 } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 import Modal from '../../components/common/Modal';
 import CreateLandlordAiModal from '../../components/admin/CreateLandlordAiModal';
-import { checkKycTrialAbuse, registerKycTrial, getTrialStatus } from '../../utils/packagePermissions';
+import { checkKycTrialAbuse, registerKycTrial } from '../../utils/packagePermissions';
 
-const isZeroSandbox = true;
 
 export default function AdminLandlordsPage() {
   const {boardingHouses:apiBoardingHouses=[]}=useData() || {};

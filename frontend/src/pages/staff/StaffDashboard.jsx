@@ -32,17 +32,6 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 
-const revenueData = [
-  { month: 'T1', revenue: 42000000, target: 40000000 },
-  { month: 'T2', revenue: 45500000, target: 42000000 },
-  { month: 'T3', revenue: 48000000, target: 45000000 },
-  { month: 'T4', revenue: 47200000, target: 46000000 },
-  { month: 'T5', revenue: 51800000, target: 48000000 },
-  { month: 'T6', revenue: 54000000, target: 50000000 },
-  { month: 'T7', revenue: 53200000, target: 52000000 },
-  { month: 'T8', revenue: 58600000, target: 54000000 },
-  { month: 'T9', revenue: 62400000, target: 56000000 },
-];
 
 const CustomChartTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
@@ -75,8 +64,6 @@ export default function StaffDashboard() {
 
   const { user } = useAuth();
   const { invoices = [], tickets = [], rooms = [], tenants = [], revenueReport } = useData();
-
-  const role = user?.role || 'STAFF';
 
   const staffManageableHouses = useMemo(() => {
     try {

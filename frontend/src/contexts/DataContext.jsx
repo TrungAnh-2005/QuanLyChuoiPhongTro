@@ -1,9 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../services/api';
 import { useAuth } from './AuthContext';
+import useMutationFeedback from '../hooks/useMutationFeedback';
+import { findRoommateSponsor, missingSponsorMessage } from '../services/roommateWorkflow';
 const DataContext = createContext(null);
-// Retained export names for consumers; application data always comes from Gateway.
-export const ALL_ROOMS = [], DEFAULT_ROOM_MEMBERS = [], DEFAULT_CONTRACTS = [];
 const normalizeGender = value => { const normalized=String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase(); return ['MALE','NAM','M'].includes(normalized)?'MALE':['FEMALE','NU','F'].includes(normalized)?'FEMALE':'OTHER'; };
 const today = () => new Date().toISOString().slice(0, 10);
 const isoDate = value => value?.includes('/') ? value.split('/').reverse().join('-') : value || today();
@@ -13,6 +13,7 @@ const initial = { rooms: [], tenants: [], contracts: [], invoices: [], tickets: 
 const resources = { roomRequests: '/contracts/requests', roomMembers: '/tenants/members', roommateRequestsV2: '/tenants/roommate-requests', moveOutSettlements: '/contracts/settlements', meterDisputes: '/meters/disputes', houseServiceConfigs: '/rooms/service-configs', saasInvoices: '/invoices/saas' };
 export function DataProvider({ children }) {
   const { user, testMode, loading: authLoading } = useAuth();
+  const { notifications: mutationNotifications, dismiss: dismissMutationNotification, run: runMutation } = useMutationFeedback(`${user?.id}:${user?.role}`);
   const [state, setState] = useState(initial);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -23,22 +24,67 @@ export function DataProvider({ children }) {
     if (!user) return;
     const version = ++generation.current;
     setLoading(true); setError('');
-    const endpoints = { rooms: '/rooms', tenants: '/tenants', contracts: '/contracts', invoices: '/invoices', tickets: '/maintenance', boardingHouses: '/properties', ...resources,
-      notifications: '/notifications', unreadNotificationCount: '/notifications/unread-count', ...(user.role==='ADMIN'?{microservices:'/reports/system-status'}:{}), ...(user.role!=='TENANT'?{revenueReport:'/reports/revenue',dashboardSummary:'/reports/dashboard-summary',debtReport:'/reports/debt',occupancyReport:'/reports/occupancy',expiringContracts:'/reports/contracts-expiring'}:{}), ...(!testMode && user.role==='STAFF'?{landlords:'/auth/accounts/me',landlordProfiles:'/auth/profiles'}:{}), ...(!testMode && user.role === 'ADMIN' ? { landlords: '/auth/accounts', landlordProfiles: '/auth/profiles', auditLogs: '/auth/audit-logs', systemIntegrations: '/auth/integrations',microservices:'/reports/system-status' } : {}) };
+    const isTenant = user.role === 'TENANT';
+    const baseResources = isTenant
+      ? { roomRequests: '/contracts/requests', roomMembers: '/tenants/members', roommateRequestsV2: '/tenants/roommate-requests', moveOutSettlements: '/contracts/settlements', meterDisputes: '/meters/disputes', houseServiceConfigs: '/rooms/service-configs' }
+      : resources;
+    const endpoints = {
+      rooms: '/rooms',
+      tenants: '/tenants',
+      contracts: '/contracts',
+      invoices: '/invoices',
+      tickets: '/maintenance',
+      boardingHouses: '/properties',
+      ...baseResources,
+      readings: '/meters/readings',
+      notifications: '/notifications',
+      ...(user.role === 'ADMIN' ? { microservices: '/reports/system-status' } : {}),
+      ...(!isTenant ? { revenueReport: '/reports/revenue' } : {}),
+      ...(!testMode && user.role === 'STAFF' ? { landlords: '/auth/accounts/me', landlordProfiles: '/auth/profiles' } : {}),
+      ...(!testMode && user.role === 'ADMIN' ? { landlords: '/auth/accounts', landlordProfiles: '/auth/profiles', auditLogs: '/auth/audit-logs', systemIntegrations: '/auth/integrations', microservices: '/reports/system-status' } : {})
+    };
     const results = await Promise.allSettled(Object.entries(endpoints).map(async ([key, url]) => {
       const result = data(await api.get(url));
       return [key, Array.isArray(result) ? result.map(camel) : result?.content || result];
     }));
     if (version !== generation.current) return;
     const next = { ...initial }; const failures = [];
-    results.forEach((result, index) => { if (result.status === 'fulfilled') next[result.value[0]] = result.value[1]; else failures.push(`${Object.keys(endpoints)[index]}: ${result.reason.message}`); });
+    let readingsBatchLoaded = false;
+    results.forEach((result, index) => {
+      const key = Object.keys(endpoints)[index];
+      if (result.status === 'fulfilled') {
+        next[key] = result.value[1];
+        if (key === 'readings') readingsBatchLoaded = true;
+      } else if (key !== 'readings') {
+        failures.push(`${key}: ${result.reason.message}`);
+      }
+    });
+    next.unreadNotificationCount = Array.isArray(next.notifications)
+      ? next.notifications.filter(n => !n.isRead && !n.read).length
+      : 0;
     setState(next);
     setLoading(false); setError(failures.join('; '));
     // One-way compatibility cache for existing display-only selectors. Never read as authoritative data.
     localStorage.setItem('rental_boarding_houses', JSON.stringify(next.boardingHouses.map(h => ({ ...h, code: h.code || `CS-${h.id}`, manager: h.managerName, floors: h.totalFloors || 1, status: h.status || 'ACTIVE' }))));
     window.dispatchEvent(new Event('rental:data-loaded'));
-    const readingResults = await Promise.allSettled(next.rooms.map(async room => [room.id, data(await api.get(`/meters/rooms/${room.id}`))]));
-    if (version === generation.current) setState(prev => ({ ...prev, readings: readingResults.filter(r => r.status === 'fulfilled').flatMap(r => r.value[1].map(reading => ({ ...reading, roomId: r.value[0] }))) }));
+    if (!readingsBatchLoaded) {
+      let targetRooms = next.rooms;
+      if (isTenant) {
+        const myTenant = next.tenants.find(t => (t.email && t.email === user?.email) || t.fullName === user?.fullName);
+        const myRoomIds = new Set(
+          next.contracts
+            .filter(c => c.status === 'ACTIVE' && (c.tenantId === myTenant?.id || next.roomMembers.some(m => m.contractId === c.id && m.tenantId === myTenant?.id && m.status !== 'MOVED_OUT')))
+            .map(c => c.roomId)
+        );
+        targetRooms = next.rooms.filter(r => myRoomIds.has(r.id));
+      } else {
+        targetRooms = next.rooms.filter(r => r.status === 'OCCUPIED');
+      }
+      if (targetRooms.length > 0) {
+        const readingResults = await Promise.allSettled(targetRooms.map(async room => [room.id, data(await api.get(`/meters/rooms/${room.id}`))]));
+        if (version === generation.current) setState(prev => ({ ...prev, readings: readingResults.filter(r => r.status === 'fulfilled').flatMap(r => r.value[1].map(reading => ({ ...camel(reading), roomId: r.value[0] }))) }));
+      }
+    }
   }, [user?.id, user?.role, testMode]);
   useEffect(() => { localStorage.setItem('rental_boarding_houses','[]'); window.dispatchEvent(new Event('rental:data-loaded')); setState(initial); setDrafts({}); if (user) refreshData(); else { generation.current++; setLoading(false); } }, [refreshData]);
   const view = useMemo(() => {
@@ -85,7 +131,7 @@ export function DataProvider({ children }) {
       const e = readings.find(m => m.meterType === 'ELECTRICITY'), w = readings.find(m => m.meterType === 'WATER');
       return { ...r, id: r.id, roomId: r.id, room: r.number, tenant: tenants.find(t => t.room === r.number && t.houseCode === r.houseCode)?.fullName, oldElec: e?.oldReading ?? 0, newElec: e?.newReading ?? 0, oldWater: w?.oldReading ?? 0, newWater: w?.newReading ?? 0, elecPrice: Number(e?.unitPrice ?? 3500), waterPrice: Number(w?.unitPrice ?? 25000), recorded: !!e && !!w, paid: invoices.some(i => i.roomId === r.id && i.status === 'PAID'), ...drafts[r.id] };
     });
-    return { ...state, allInvoices: allInvoices, landlordProfiles:state.landlordProfiles.map(p=>({...p,username:p.userId===user?.id?user.username:state.landlords.find(l=>l.id===p.userId)?.username})), boardingHouses: houses, rooms, tenants, contracts, invoices, tickets, meters, roomMembers: enrich(state.roomMembers).map(m => ({ ...m, fullName: tenants.find(t => t.id === m.tenantId)?.fullName, cccd: tenants.find(t => t.id === m.tenantId)?.cccd, temporaryResidenceStatus: m.temporaryResidenceStatus || m.tempResidenceStatus })), roomRequests: state.roomRequests.map(q => ({ ...q, tenant: tenants.find(t => t.id === q.tenantId)?.fullName, targetRoom: rooms.find(r => r.id === q.targetRoomId)?.number, currentRoom: rooms.find(r => r.id === q.currentRoomId)?.number })), roommateRequestsV2: enrich(state.roommateRequestsV2), moveOutSettlements: enrich(state.moveOutSettlements), meterDisputes: enrich(state.meterDisputes), houseServiceConfigs: state.houseServiceConfigs.map(c => ({ ...c, houseCode: houses.find(h => h.id === c.boardingHouseId)?.code })), landlords: (testMode ? [{...user,packageCode:'ENTERPRISE',status:'ACTIVE'}] : state.landlords).map(l => ({ ...l, isLocked: l.status === 'LOCKED' })) };
+    return { ...state, allInvoices: allInvoices, landlordProfiles:state.landlordProfiles.map(p=>({...p,username:p.userId===user?.id?user.username:state.landlords.find(l=>l.id===p.userId)?.username})), boardingHouses: houses, rooms, tenants, contracts, invoices, tickets, meters, roomMembers: enrich(state.roomMembers).map(m => ({ ...m, fullName: tenants.find(t => t.id === m.tenantId)?.fullName, cccd: tenants.find(t => t.id === m.tenantId)?.cccd, temporaryResidenceStatus: m.temporaryResidenceStatus || m.tempResidenceStatus })), roomRequests: state.roomRequests.map(q => ({ ...q, tenant: tenants.find(t => t.id === q.tenantId)?.fullName, tenantName: tenants.find(t => t.id === q.tenantId)?.fullName, phone: tenants.find(t => t.id === q.tenantId)?.phone, houseCode: rooms.find(r => r.id === q.targetRoomId)?.houseCode, roomNumber: rooms.find(r => r.id === q.targetRoomId)?.number, targetRoom: rooms.find(r => r.id === q.targetRoomId)?.number, currentRoom: rooms.find(r => r.id === q.currentRoomId)?.number })), roommateRequestsV2: enrich(state.roommateRequestsV2), moveOutSettlements: enrich(state.moveOutSettlements), meterDisputes: enrich(state.meterDisputes), houseServiceConfigs: state.houseServiceConfigs.map(c => ({ ...c, houseCode: houses.find(h => h.id === c.boardingHouseId)?.code })), landlords: (testMode ? [{...user,packageCode:'ENTERPRISE',status:'ACTIVE'}] : state.landlords).map(l => ({ ...l, isLocked: l.status === 'LOCKED' })) };
   }, [state, billingMonth, drafts]);
   const find = (rows, id, label = 'dữ liệu') => {
     const row = rows?.find(r => [r.id, r.number, r.code, r.contractCode].some(v => v != null && String(v) === String(id)));
@@ -123,11 +169,9 @@ export function DataProvider({ children }) {
       await refreshData(); return {success:true};
     },
     addMaintenanceFeeToInvoice: (number,amount) => request('post',`/invoices/${view.invoices.find(i=>i.roomId===room(number).id && i.status!=='PAID')?.id}/maintenance-fee`,{amount:Number(amount)}),
-    inspectAndApproveCheckout: id => actions.approveRoomRequest(id),
     voteRoommateRequest: (id,_name,approved) => request('post',`/contracts/requests/${id}/vote`,{approved}),
     sendSaasReminder: invoice => request('post','/notifications',{userId:invoice.landlordId,title:`Nhắc thanh toán ${invoice.code}`,content:`Vui lòng thanh toán hóa đơn ${invoice.code}`,type:'INVOICE'}),
     recordHouseDeletion: input => actions.addAuditLog({action:'DELETE_HOUSE',target:input.houseCode,details:input.houseName}),
-    recordPackagePurchase: input => actions.addAuditLog({action:'PACKAGE_PURCHASE',target:input.invoiceCode || input.packageCode,details:input.packageName}),
     switchBillingMonth: setMonth,
     updateMeterReading: (id, field, value) => setDrafts(prev => ({ ...prev, [id]: { ...prev[id], [field]: Number(value) } })),
     addTenant: async input => {
@@ -155,7 +199,7 @@ export function DataProvider({ children }) {
       const inv = find(view.allInvoices || view.invoices, targetId, 'hóa đơn');
       try {
         await api.post(`/invoices/${inv.id}/confirm-payment`, { paymentMethod: method });
-      } catch (err) {
+      } catch {
         try {
           await api.post('/payments', {
             invoiceId: inv.id,
@@ -164,7 +208,7 @@ export function DataProvider({ children }) {
             payerName: payerName || user?.fullName || 'Khách thuê',
             note: method
           });
-        } catch (e) {}
+        } catch { /* fallback handled locally */ }
       }
       setState(prev => ({
         ...prev,
@@ -202,10 +246,19 @@ export function DataProvider({ children }) {
         bankAccount:input.refundAccountNumber || input.bankAccount,bankName:input.refundBank || input.bankName,
         accountHolder:input.refundAccountName || input.accountHolder});
     },
-    submitContractRenewalRequest: input => actions.submitRoomRequest({ ...input, type:'RENEW_CONTRACT',targetRoom:input.room }),
     cancelRoomHold: number => { const q = view.roomRequests.find(q => q.targetRoom === number && q.status === 'PENDING'); return remove('roomRequests',q.id); },
-    submitRoommateRequest: input => create('roommateRequestsV2', { roomId: input.roomId || room(input.room || input.roomNumber).id, requestedByTenantId: tenantId(input), fullName:input.fullName, identityCard: input.identityCard || input.cccd, phone:input.phone, birthDate:isoDate(input.birthDate),gender:normalizeGender(input.gender),hometown:input.hometown }),
-    reviewRoommateRequest: (id, approved, reason = '') => request('post',`/tenants/roommate-requests/${id}/review`,{approved,rejectionReason:reason,contractId:view.contracts.find(c=>c.roomId===find(view.roommateRequestsV2,id).roomId && c.status==='ACTIVE')?.id}),
+    submitRoommateRequest: input => {
+      const targetRoomId = input.roomId || room(input.room || input.roomNumber).id;
+      const ownerId = input.requestedByTenantId || tenantId(input);
+      if (!findRoommateSponsor(view.contracts, view.roomMembers, { roomId: targetRoomId, requestedByTenantId: ownerId })) throw new Error(missingSponsorMessage);
+      return create('roommateRequestsV2', { roomId: targetRoomId, requestedByTenantId: ownerId, fullName:input.fullName, identityCard: input.identityCard || input.cccd, phone:input.phone, birthDate:isoDate(input.birthDate),gender:normalizeGender(input.gender),hometown:input.hometown });
+    },
+    reviewRoommateRequest: (id, approved, reason = '') => {
+      const row = find(view.roommateRequestsV2, id);
+      const sponsor = findRoommateSponsor(view.contracts, view.roomMembers, row);
+      if (approved && !sponsor) throw new Error(missingSponsorMessage);
+      return request('post', `/tenants/roommate-requests/${id}/review`, { approved, rejectionReason: reason, ...(approved ? { contractId: sponsor.id } : {}) });
+    },
     addRoomMember: input => create('roomMembers',{ roomId: input.roomId || room(input.room || input.roomNumber).id, tenantId:tenantId(input),contractId: input.contractId || view.contracts.find(c=>c.roomId === (input.roomId || room(input.room || input.roomNumber).id) && c.status === 'ACTIVE')?.id,joinDate:today(),roleInRoom:input.roleInRoom || 'MEMBER',temporaryResidenceStatus:input.temporaryResidenceStatus || 'NOT_REGISTERED' }),
     removeRoomMember: id => remove('roomMembers',id),
     updateTemporaryResidence: (id,status) => patch('roomMembers',id,{temporaryResidenceStatus:status}),
@@ -228,7 +281,6 @@ export function DataProvider({ children }) {
       if (!contract) throw new Error('Không tìm thấy hợp đồng đang thuê của bạn');
       return request('post', `/contracts/${contract.id}/leave`, { tenantId: tenant.id, successorTenantId: input.successorTenantId || null, reason: input.reason || '' });
     },
-    transferRoom: input => actions.submitRoomRequest({...input,type:'TRANSFER',currentRoom:input.oldRoom,targetRoom:input.newRoom,tenant:input.tenantName}),
     createSaasInvoice: input => create('saasInvoices',{code:input.code || `SAAS-${Date.now()}`,landlordId:input.landlordId,packageName:input.packageName,packageCode:input.packageCode,billingCycle:input.billingCycle || '12 tháng',period:input.period || billingMonth,amount:input.amount,dueDate:isoDate(input.dueDate)}),
     paySaasInvoice: (id,method='CASH') => request('post',`/invoices/saas/${find(view.saasInvoices,id).id}/confirm-payment`,{paymentMethod:method}),
     createLandlord: input => request('post','/auth/accounts',{...input,role:'STAFF'}),
@@ -249,8 +301,8 @@ export function DataProvider({ children }) {
   };
   // Every exported mutation completes its request before reporting success to a screen.
   const wrapped = Object.fromEntries(Object.entries(actions).map(([name,fn]) => [name, ['switchBillingMonth','updateMeterReading','unlockMeterReading','refreshData'].includes(name) ? fn : async (...args) => {
-    try { return await fn(...args); } catch (e) { setError(e.message); window.dispatchEvent(new CustomEvent('rental:api-error',{detail:e.message})); throw e; }
+    return runMutation(name, () => fn(...args));
   }]));
-  return <DataContext.Provider value={{...view,...wrapped,billingMonth,availableBillingMonths:[...new Set([billingMonth,new Date().toISOString().slice(0,7),...state.invoices.map(i=>`${i.year}-${String(i.month).padStart(2,'0')}`),...state.readings.map(r=>r.readingDate?.slice(0,7)).filter(Boolean)])].sort().reverse(),loading,error,metersHistory:{[billingMonth]:view.meters},invoicesHistory:{[billingMonth]:view.invoices},utilityPrices:{elecPrice:Number(view.houseServiceConfigs.find(c=>c.serviceName==='Điện')?.unitPrice || 3500),waterPrice:Number(view.houseServiceConfigs.find(c=>c.serviceName==='Nước')?.unitPrice || 25000)},systemNotices:state.notifications,roomPaymentNotices:[],roommateLeaveNotices:[],houseDeleteNotices:[],packagePurchaseNotices:[],saasReminders:[]}}>{authLoading ? <div role="status">Đang xác thực…</div> : children}</DataContext.Provider>;
+  return <DataContext.Provider value={{...view,...wrapped,mutationNotifications,dismissMutationNotification,billingMonth,availableBillingMonths:[...new Set([billingMonth,new Date().toISOString().slice(0,7),...state.invoices.map(i=>`${i.year}-${String(i.month).padStart(2,'0')}`),...state.readings.map(r=>r.readingDate?.slice(0,7)).filter(Boolean)])].sort().reverse(),loading,error,metersHistory:{[billingMonth]:view.meters},utilityPrices:{elecPrice:Number(view.houseServiceConfigs.find(c=>c.serviceName==='Điện')?.unitPrice || 3500),waterPrice:Number(view.houseServiceConfigs.find(c=>c.serviceName==='Nước')?.unitPrice || 25000)},systemNotices:state.notifications}}>{authLoading ? <div role="status">Đang xác thực…</div> : children}</DataContext.Provider>;
 }
 export const useData = () => useContext(DataContext);

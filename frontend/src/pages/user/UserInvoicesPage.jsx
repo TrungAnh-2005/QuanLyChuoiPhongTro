@@ -3,12 +3,8 @@ import {
   Receipt,
   CreditCard,
   Search,
-  Printer,
   CheckCircle,
-  Clock,
-  AlertTriangle,
-  FileText,
-  X
+  AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';

@@ -1,21 +1,13 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+
 import {
-  Home,
   MapPin,
   Building2,
   ChevronRight,
-  ShieldCheck,
   Search,
-  Filter,
   Users,
-  CheckCircle,
-  Clock,
-  Sparkles,
   FileText,
-  X,
-  Phone,
-  DollarSign
+  X
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
@@ -163,17 +155,13 @@ export default function UserRoomsPage() {
   const {boardingHouses:apiBoardingHouses=[]}=useData() || {};
 
   const { user, tenantRooms } = useAuth();
-  const [searchParams, setSearchParams] = useSearchParams();
 
   const {
     rooms = [],
     contracts = [],
     roomRequests = [],
     tenants = [],
-    roomMembers = [],
-    submitRoomRequest,
-    cancelRoomHold,
-    voteRoommateRequest
+    submitRoomRequest
   } = useData();
 
   const [storedBoardingHouses, setStoredBoardingHouses] = useState(() => {
@@ -221,46 +209,6 @@ export default function UserRoomsPage() {
   const [showRequestsHistory, setShowRequestsHistory] = useState(false);
   const [actionToast, setActionToast] = useState(null);
 
-  const getLandlordKeyFromHouse = useCallback((h) => {
-    if (!h) return null;
-    const code = (h.code || '').toUpperCase();
-    const c = (h.createdBy || '').toLowerCase();
-    const mU = (h.managerUsername || '').toLowerCase();
-    const m = (h.manager || '').toLowerCase();
-    if (c === 'staff' || c === 'staff1' || mU === 'staff' || m.includes('ngân') || code === 'CS-01' || code.startsWith('S1-')) return 'staff';
-    if (c === 'staff2' || mU === 'staff2' || m.includes('táo') || code === 'CS-02' || code.startsWith('S2-')) return 'staff2';
-    if (c === 'admin' || mU === 'admin' || m.includes('hùng') || code === 'CS-03' || code.startsWith('S3-')) return 'admin';
-    return c || mU || 'other';
-  }, []);
-
-  const tenantAssociatedLandlordKey = useMemo(() => {
-    const uName = (user?.fullName || '').toLowerCase().trim();
-    const uPhone = (user?.phone || '').trim();
-
-    const uRoom = user?.room || (user?.rooms && user.rooms[0]) || (tenantRooms && Object.values(tenantRooms).flat()[0]);
-    if (uRoom) {
-      const matchR = (rooms || []).find((r) => r.number === uRoom);
-      if (matchR?.houseCode) {
-        const h = storedBoardingHouses.find((h) => h.code === matchR.houseCode);
-        if (h) return getLandlordKeyFromHouse(h);
-      }
-    }
-
-    const matchContract = (contracts || []).find((c) => {
-      const cName = (c.tenantName || '').toLowerCase().trim();
-      const cPhone = (c.tenantPhone || '').trim();
-      return (
-        (uName && (cName.includes(uName) || uName.includes(cName))) ||
-        (uPhone && cPhone === uPhone)
-      );
-    });
-    if (matchContract?.houseCode) {
-      const h = storedBoardingHouses.find((h) => h.code === matchContract.houseCode);
-      if (h) return getLandlordKeyFromHouse(h);
-    }
-
-    return null;
-  }, [user, tenantRooms, rooms, storedBoardingHouses, contracts, getLandlordKeyFromHouse]);
 
   const visibleHousesForUser = useMemo(() => {
     return storedBoardingHouses.filter((h) => h.status === 'ACTIVE');

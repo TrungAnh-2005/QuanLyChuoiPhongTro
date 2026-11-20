@@ -1,8 +1,5 @@
 import api from './api';
 export const SEPAY_PORTAL_URL = 'https://my.sepay.vn';
-export const SEPAY_DOCS_URL = 'https://docs.sepay.vn';
-export const getProcessedSepayTxIds = () => [];
-export const markSepayTxAsProcessed = () => {};
 export const getSePayConfig = () => ({configuredOnServer:true,accountNumber:import.meta.env.VITE_BANK_ACCOUNT || '',bank:import.meta.env.VITE_BANK_CODE || '',accountName:import.meta.env.VITE_BANK_ACCOUNT_NAME || '',autoCheckInterval:10000});
 export const saveSePayConfig = config => api.put('/auth/integrations/sepay',config);
 export const syncBankAccountsFromSePay = () => api.get('/payments/sepay/accounts');

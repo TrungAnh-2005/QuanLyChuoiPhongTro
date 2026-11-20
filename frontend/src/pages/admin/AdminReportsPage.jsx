@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import {
   BarChart3,
-  TrendingUp,
   Download,
   ArrowUpRight,
   Calendar,

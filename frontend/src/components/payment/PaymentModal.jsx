@@ -1,25 +1,19 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+
 import {
   X,
   CreditCard,
   QrCode,
   CheckCircle2,
   Copy,
-  Building2,
   Smartphone,
-  ShieldCheck,
-  Receipt,
-  Download,
   Check,
   ExternalLink,
   Sparkles,
-  AlertCircle,
   AlertTriangle,
   Settings,
   HelpCircle,
-  ArrowRight,
   Loader2
 } from 'lucide-react';
 import {
@@ -31,7 +25,6 @@ import {
 } from '../../services/vnpayService';
 import {
   createMoMoPaymentUrl,
-  MOMO_TEST_ACCOUNT,
   getMoMoConfig,
   saveMoMoConfig,
   MOMO_DEVELOPERS_URL
@@ -42,8 +35,7 @@ import {
   getSePayConfig,
   saveSePayConfig,
   checkSePayTransaction,
-  SEPAY_PORTAL_URL,
-  SEPAY_DOCS_URL
+  SEPAY_PORTAL_URL
 } from '../../services/sepayService';
 
 export default function PaymentModal({
@@ -52,15 +44,11 @@ export default function PaymentModal({
   onSuccess,
   invoice = {}
 }) {
-
-
-  const navigate = useNavigate();
   const [method, setMethod] = useState('SEPAY'); // 'SEPAY' | 'VNPAY' | 'MOMO'
   const [sepayApiKey, setSepayApiKey] = useState(() => getSePayConfig().apiKey);
   const [sepayBank, setSepayBank] = useState(() => getSePayConfig().bank);
   const [sepayAcc, setSepayAcc] = useState(() => getSePayConfig().accountNumber);
-  const [isCheckingSepay, setIsCheckingSepay] = useState(false);
-  const [sepayStatusMsg, setSepayStatusMsg] = useState(null);
+  const [sepayStatusMsg] = useState(null);
   const [detectedTx, setDetectedTx] = useState(null);
   const [copiedField, setCopiedField] = useState(null);
   const [copyToast, setCopyToast] = useState(null);
@@ -101,7 +89,6 @@ export default function PaymentModal({
     }, 2500);
   };
 
-  const [isProcessing, setIsProcessing] = useState(false);
   const [apiError, setApiError] = useState(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [isDone, setIsDone] = useState(false);
@@ -155,8 +142,7 @@ export default function PaymentModal({
     const checkPayment = async () => {
       try {
         const res = await checkSePayTransaction({
-        invoiceId:invoice.id,
-          invoiceId:invoice.id,
+          invoiceId: invoice.id,
           invoiceCode,
           amount: invoiceTotal,
           accountNumber: bankInfo.accountNumber,
@@ -170,7 +156,7 @@ export default function PaymentModal({
             await onSuccess(invoice, 'SEPAY');
           }
         }
-      } catch (err) {
+      } catch {
         // silent
       }
     };
@@ -258,53 +244,6 @@ export default function PaymentModal({
     }
   };
 
-  // Kiểm tra giao dịch qua SePay API
-  const handleCheckSepay = async () => {
-    setIsCheckingSepay(true);
-    setSepayStatusMsg(null);
-    try {
-      const res = await checkSePayTransaction({
-        invoiceId:invoice.id,
-        invoiceCode,
-        amount: invoiceTotal,
-        accountNumber: bankInfo.accountNumber
-      });
-      if (res.success) {
-        setSepayStatusMsg('Đã phát hiện giao dịch thành công trên SePay!');
-        setTimeout(() => handleConfirmSimulation('SEPAY'), 800);
-      } else {
-        setSepayStatusMsg('Chưa phát hiện giao dịch mới trên SePay. Vui lòng chuyển khoản đúng nội dung hoặc bấm "Mô Phỏng SePay Webhook" để kiểm tra.');
-      }
-    } catch {
-      setSepayStatusMsg('Không thể kết nối máy chủ SePay.');
-    } finally {
-      setIsCheckingSepay(false);
-    }
-  };
-
-  // Giả lập SePay Webhook bắn sang hệ thống gạch nợ tự động
-  const handleSimulateSepayWebhook = () => {
-    setIsProcessing(true);
-    setSepayStatusMsg('Đang nhận SePay Webhook và đối soát tự động...');
-    setTimeout(() => {
-      handleConfirmSimulation('SEPAY');
-    }, 900);
-  };
-
-  // Xác nhận thanh toán (Mô phỏng tức thì cho VNPay / MoMo / VietQR)
-  const handleConfirmSimulation = async (selectedMethod) => {
-    if (isProcessing) return;
-    setIsProcessing(true); setApiError(null);
-    try {
-      const finalMethod = selectedMethod || method || 'CASH';
-      if (onSuccess) {
-        const result = await onSuccess(invoice, finalMethod);
-        if (result?.success === false) throw new Error(result.error || 'Chưa ghi nhận được thanh toán');
-      }
-      setIsDone(true);
-    } catch(error) { setApiError(error.message); }
-    finally { setIsProcessing(false); }
-  };
 
   if (!isOpen) return null;
   return createPortal(

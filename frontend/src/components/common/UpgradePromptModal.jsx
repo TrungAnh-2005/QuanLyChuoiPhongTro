@@ -6,7 +6,6 @@ import {
   ArrowRight,
   CheckCircle2,
   X,
-  ShieldCheck,
   Zap
 } from 'lucide-react';
 import Modal from './Modal';

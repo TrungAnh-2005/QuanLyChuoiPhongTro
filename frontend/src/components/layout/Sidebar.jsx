@@ -5,7 +5,6 @@ import {
   Building2,
   Home,
   Users,
-  FileText,
   Zap,
   Receipt,
   Wrench,
@@ -13,7 +12,6 @@ import {
   Layers,
   Cpu,
   ShieldCheck,
-  CreditCard,
   X
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';

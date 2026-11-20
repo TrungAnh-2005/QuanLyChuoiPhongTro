@@ -6,24 +6,17 @@ import {
   Sparkles,
   CheckCircle2,
   AlertCircle,
-  FileText,
   User,
   CreditCard,
-  Calendar,
-  MapPin,
   Home,
-  Phone,
-  Mail,
   Loader2,
   Trash2,
-  Settings,
-  HelpCircle,
   Copy,
   AlertTriangle,
   Building2,
   ArrowLeftRight
 } from 'lucide-react';
-import { ocrIdCard, classifyCccdImage, validateCccdMatch, decodeCccdQrCode, parseCccdQrData } from '../../services/aiService';
+import { ocrIdCard, validateCccdMatch } from '../../services/aiService';
 import { useData } from '../../contexts/DataContext';
 
 const FACILITIES = [
@@ -99,7 +92,7 @@ const SAMPLE_CCCDS = [
 ];
 
 export default function CreateTenantModal({ isOpen, onClose, onSaveTenant }) {
-  const { rooms = [], tenants = [] } = useData();
+  const { rooms = [] } = useData();
   const [selectedHouseCode, setSelectedHouseCode] = useState('CS-01');
 
   useEffect(() => {

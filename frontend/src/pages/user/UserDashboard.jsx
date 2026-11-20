@@ -8,18 +8,14 @@ import {
   Zap,
   CheckCircle2,
   Clock,
-  Phone,
-  Droplets,
   CreditCard,
   Wrench,
-  ExternalLink,
   ShieldCheck,
   AlertCircle,
   X,
   LogOut,
   UserPlus,
   FileText,
-  QrCode,
   Sparkles,
   ChevronRight,
   Check,
@@ -33,8 +29,7 @@ import {
   getSePayConfig,
   saveSePayConfig,
   checkSePayTransaction,
-  syncBankAccountsFromSePay,
-  SEPAY_PORTAL_URL
+  syncBankAccountsFromSePay
 } from '../../services/sepayService';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
@@ -62,7 +57,6 @@ export default function UserDashboard() {
     invoices = [],
     allInvoices = [],
     payInvoice,
-    tickets = [],
     rooms = [],
     tenants = [],
     contracts = [],
@@ -123,17 +117,6 @@ export default function UserDashboard() {
   const [sepayDepositStatusMsg, setSepayDepositStatusMsg] = useState(null);
   const [isSyncingSepay, setIsSyncingSepay] = useState(false);
   const [isDepositPaid, setIsDepositPaid] = useState(false);
-
-  // Đơn đăng ký thuê phòng của khách đã được Quản lý/Staff phê duyệt
-  const hasApprovedRentalRequest = useMemo(() => {
-    const uName = (user?.fullName || '').toLowerCase().trim();
-    const uPhone = (user?.phone || '').trim();
-    return (roomRequests || []).find((r) =>
-      (r.type === 'RENT' || r.type === 'NEW_RENT') &&
-      r.status === 'APPROVED' &&
-      ((uName && r.tenant?.toLowerCase().includes(uName)) || (uPhone && r.phone === uPhone) || (user?.username === 'tenant_new'))
-    );
-  }, [user, roomRequests]);
 
   // Tìm hợp đồng của khách thuê
   const myTenant = useMemo(() =>
@@ -260,12 +243,6 @@ try {
       setLeaveSuccess(false);
     }
   }, [myRoomNumber, isRepresentative]);
-
-  const selectedLeaveRoomObj = useMemo(() => {
-    if (!leaveModal) return null;
-    const num = typeof leaveModal === 'string' ? leaveModal : leaveModal?.number;
-    return (rooms || []).find((r) => r.number === num);
-  }, [leaveModal, rooms]);
 
   const selectedCheckoutRoomObj = useMemo(() => {
     if (!checkoutModal) return null;

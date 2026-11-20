@@ -30,7 +30,7 @@ import {
   Pie,
   Cell
 } from 'recharts';
-import { useAuth } from '../../contexts/AuthContext';
+
 import { useData } from '../../contexts/DataContext';
 
 const CustomChartTooltip = ({ active, payload, label }) => {
@@ -49,7 +49,6 @@ const CustomChartTooltip = ({ active, payload, label }) => {
 };
 
 export default function AdminDashboard() {
-  const { user } = useAuth();
   const {
     landlords = [],
     landlordProfiles = [],

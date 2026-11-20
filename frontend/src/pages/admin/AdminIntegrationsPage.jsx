@@ -4,24 +4,17 @@ import {
   Zap,
   Mail,
   MessageSquare,
-  ShieldCheck,
   CheckCircle2,
-  AlertTriangle,
   RefreshCw,
-  Key,
   Server,
-  Sparkles,
-  ExternalLink,
-  Save,
-  Check
+  Save
 } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 
 export default function AdminIntegrationsPage() {
   const {
     systemIntegrations = {},
-    updateSystemIntegration,
-    testIntegrationConnection
+    updateSystemIntegration
   } = useData();
 
   const [activeTab, setActiveTab] = useState('vnpay'); // vnpay | momo | aiOcr | smtp | smsOtp

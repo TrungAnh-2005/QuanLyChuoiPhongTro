@@ -101,53 +101,11 @@ export const PACKAGE_TIERS = {
 /**
  * Lấy mã gói cước chuẩn của chủ trọ hiện tại
  */
-export function getLandlordPackageCode(landlord) {
+function getLandlordPackageCode(landlord) {
   const isZero = typeof window !== 'undefined' && localStorage.getItem('rental_is_zero_sandbox') === 'true';
   if (!landlord) return isZero ? 'NONE' : 'PRO';
   if (isZero && (landlord.packageCode === 'NONE' || landlord.status === 'TRIAL')) return 'NONE';
   return landlord.packageCode || (isZero ? 'NONE' : 'BASIC');
-}
-
-/**
- * Lấy hạn mức tối đa số phòng theo gói
- */
-export function getMaxRoomsAllowed(packageCode) {
-  const code = (packageCode || 'NONE').toUpperCase();
-  if (code === 'ENTERPRISE') return 99999;
-  if (code === 'PRO') return 100;
-  if (code === 'BASIC') return 30;
-  return 10; // TRIAL / NONE
-}
-
-/**
- * Lấy hạn mức tối đa số cơ sở theo gói
- */
-export function getMaxHousesAllowed(packageCode) {
-  const code = (packageCode || 'NONE').toUpperCase();
-  if (code === 'ENTERPRISE' || code === 'PRO') return 999;
-  if (code === 'BASIC') return 2;
-  return 1; // TRIAL / NONE
-}
-
-/**
- * Kiểm tra xem gói có quyền dùng tính năng hay không
- * @returns { allowed: boolean, requiredPackage: 'PRO' | 'ENTERPRISE' }
- */
-export function checkPackageFeatureAccess(packageCode, featureKey) {
-  const code = (packageCode || 'NONE').toUpperCase();
-  const tier = PACKAGE_TIERS[code] || PACKAGE_TIERS.NONE;
-  const isAllowed = Boolean(tier.features[featureKey]);
-
-  if (isAllowed) {
-    return { allowed: true, requiredPackage: code };
-  }
-
-  // Nếu không được phép, tìm gói tối thiểu yêu cầu tính năng này
-  if (featureKey === 'aiMeterOcr' || featureKey === 'aiCccdOcr' || featureKey === 'smsZaloNotification') {
-    return { allowed: false, requiredPackage: 'ENTERPRISE' };
-  }
-
-  return { allowed: false, requiredPackage: 'PRO' };
 }
 
 /**

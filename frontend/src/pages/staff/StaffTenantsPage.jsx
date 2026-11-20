@@ -10,7 +10,6 @@ import {
   ShieldCheck,
   UserCheck,
   Key,
-  Calendar,
   X,
   FileText,
   CheckCircle2,
@@ -53,7 +52,6 @@ export default function TenantsPage() {
     contracts = [],
     addRoomMember,
     updateTemporaryResidence,
-    updateResidentCccd,
     landlords = [],
     createSaasInvoice,
     paySaasInvoice,
@@ -129,236 +127,18 @@ export default function TenantsPage() {
   const [showBuyPackageModal, setShowBuyPackageModal] = useState(false);
 
     const [activeTab, setActiveTab] = useState('CONTRACTS'); // 'CONTRACTS' | 'RESIDENTS'
-    // HÀM XUẤT FILE EXCEL / CSV CHUẨN UTF-8 CÓ BOM (TASK 6)
-  const handleExportCsv = () => {
-    if (filteredResidents.length === 0) {
-      setPwdResetToast({ type: 'WARNING', title: 'Thông Báo', message: 'Không có dữ liệu cư dân phù hợp để xuất file!' }); setTimeout(() => setPwdResetToast(null), 4000);
-      return;
-    }
-    const headers = [
-      'STT',
-      'Họ Và Tên Cư Dân',
-      'Số CCCD Định Danh',
-      'Số Điện Thoại',
-      'Số Phòng',
-      'Cơ Sở Nhà Trọ',
-      'Vai Trò Trong Phòng',
-      'Nơi Thường Trú (Quê Quán)',
-      'Ngày Cấp CCCD',
-      'Nơi Cấp CCCD',
-      'Trạng Thái Tạm Trú'
-    ];
-
-    const rows = filteredResidents.map((r, i) => [
-      i + 1,
-      `"${(r.fullName || '').replace(/"/g, '""')}"`,
-      `"${r.cccd || ''}"`,
-      `"${r.phone || ''}"`,
-      `"${r.roomNumber || ''}"`,
-      `"${(r.house || r.houseCode || '').replace(/"/g, '""')}"`,
-      `"${r.roleInRoom === 'REPRESENTATIVE' ? 'Chủ hợp đồng (Đại diện)' : 'Thành viên ở ghép'}"`,
-      `"${(r.permanentAddress || '').replace(/"/g, '""')}"`,
-      `"${r.issueDate || ''}"`,
-      `"${(r.issuePlace || '').replace(/"/g, '""')}"`,
-      `"${
-        r.temporaryResidenceStatus === 'REGISTERED' || r.temporaryResidenceStatus === 'APPROVED'
-          ? 'Đã cấp tạm trú'
-          : r.temporaryResidenceStatus === 'PENDING_REGISTRATION' || r.temporaryResidenceStatus === 'SUBMITTED'
-          ? 'Chờ DVC duyệt'
-          : 'Chưa khai báo'
-      }"`
-    ]);
-
-    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    const facilityTag = residentFacilityFilter === 'ALL' ? 'Toan_Bo_Co_So' : residentFacilityFilter;
-    link.setAttribute('download', `Danh_Sach_Nhan_Khau_Tam_Tru_${facilityTag}_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    setPwdResetToast(`✅ Đã xuất thành công file Excel cho ${filteredResidents.length} cư dân!`);
-    setTimeout(() => setPwdResetToast(null), 5000);
-  };
-
-  // HÀM IN BẢNG KÊ KHAI BÁO CƯ TRÚ THEO CHUẨN CÔNG AN / KHỔ A4 (TASK 6)
-  const handlePrintCt01 = () => {
-    if (filteredResidents.length === 0) {
-      setPwdResetToast({ type: 'WARNING', title: 'Thông Báo', message: 'Không có dữ liệu cư dân để in bảng kê!' }); setTimeout(() => setPwdResetToast(null), 4000);
-      return;
-    }
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      setPwdResetToast({ type: 'WARNING', title: 'Trình Duyệt Chặn Popup', message: 'Vui lòng cho phép mở popup trên trình duyệt để in bảng kê khai báo!' }); setTimeout(() => setPwdResetToast(null), 5000);
-      return;
-    }
-
-    const facilityName = residentFacilityFilter === 'CS-02' ? 'Nhà Trọ Bách Khoa - Cơ Sở 2' : residentFacilityFilter === 'CS-03' ? 'Nhà Trọ Đống Đa - Cơ Sở 3' : 'Nhà Trọ Cầu Giấy - Cơ Sở 1';
-    const now = new Date();
-    const dateStr = `Ngày ${now.getDate()} tháng ${now.getMonth() + 1} năm ${now.getFullYear()}`;
-
-    const printHtml = `
-      <!DOCTYPE html>
-      <html lang="vi">
-      <head>
-        <meta charset="UTF-8">
-        <title>Bang_Ke_Nhan_Khau_Tam_Tru_${residentFacilityFilter}.pdf</title>
-        <style>
-          @page { size: A4 landscape; margin: 15mm; }
-          body {
-            font-family: 'Times New Roman', Times, serif;
-            font-size: 11pt;
-            line-height: 1.4;
-            color: #000;
-            margin: 0;
-            padding: 10px;
-          }
-          .text-center { text-align: center; }
-          .text-right { text-align: right; }
-          .font-bold { font-weight: bold; }
-          .uppercase { text-transform: uppercase; }
-          .header-grid {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 20px;
-          }
-          .title {
-            font-size: 14pt;
-            font-weight: bold;
-            margin: 15px 0 5px 0;
-            text-align: center;
-          }
-          .subtitle {
-            font-size: 10.5pt;
-            font-style: italic;
-            text-align: center;
-            margin-bottom: 20px;
-          }
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-            font-size: 10pt;
-          }
-          th, td {
-            border: 1px solid #000;
-            padding: 6px 8px;
-          }
-          th {
-            background-color: #f0f0f0;
-            font-weight: bold;
-            text-align: center;
-          }
-          .sign-grid {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 40px;
-            page-break-inside: avoid;
-          }
-          .sign-col {
-            width: 45%;
-            text-align: center;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header-grid">
-          <div class="text-center" style="width: 45%;">
-            <div class="font-bold uppercase">CƠ SỞ CHO THUÊ LƯU TRÚ</div>
-            <div>${facilityName}</div>
-            <div style="font-size: 9pt;">Hệ Thống Trọ Việt Microservices SaaS</div>
-          </div>
-          <div class="text-center" style="width: 50%;">
-            <div class="font-bold uppercase">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
-            <div class="font-bold">Độc lập - Tự do - Hạnh phúc</div>
-            <div style="font-size: 10pt; margin-top: 2px;">***</div>
-          </div>
-        </div>
-
-        <div class="title uppercase">BẢNG KÊ KHAI BÁO NHÂN KHẨU CƯ TRÚ & TẠM TRÚ</div>
-        <div class="subtitle">(Phục vụ đối soát Cảnh sát khu vực và nộp hồ sơ Cổng Dịch Vụ Công Quốc Gia theo Luật Cư Trú 2020)</div>
-
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 35px;">STT</th>
-              <th>Họ và Tên Nhân Khẩu</th>
-              <th style="width: 60px;">Phòng</th>
-              <th style="width: 110px;">Số CCCD</th>
-              <th style="width: 90px;">Số ĐT</th>
-              <th>Nơi Thường Trú (Quê Quán)</th>
-              <th style="width: 95px;">Vai Trò</th>
-              <th style="width: 110px;">Tình Trạng Tạm Trú</th>
-              <th style="width: 90px;">Ký Xác Nhận</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${filteredResidents.map((r, i) => `
-              <tr>
-                <td class="text-center">${i + 1}</td>
-                <td class="font-bold">${r.fullName || ''}</td>
-                <td class="text-center font-bold">${r.roomNumber || ''}</td>
-                <td class="text-center font-bold">${r.cccd || ''}</td>
-                <td class="text-center">${r.phone || ''}</td>
-                <td>${r.permanentAddress || 'Hà Nội'}</td>
-                <td class="text-center">${r.roleInRoom === 'REPRESENTATIVE' ? 'Chủ HĐ (Đại diện)' : 'Ở ghép'}</td>
-                <td class="text-center">${
-                  r.temporaryResidenceStatus === 'REGISTERED' || r.temporaryResidenceStatus === 'APPROVED'
-                    ? 'Đã cấp tạm trú'
-                    : r.temporaryResidenceStatus === 'PENDING_REGISTRATION' || r.temporaryResidenceStatus === 'SUBMITTED'
-                    ? 'Chờ DVC duyệt'
-                    : 'Chưa khai báo'
-                }</td>
-                <td></td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-
-        <div class="sign-grid">
-          <div class="sign-col">
-            <div class="font-bold uppercase">CẢNH SÁT KHU VỰC TIẾP NHẬN</div>
-            <div style="font-size: 9.5pt; font-style: italic;">(Ký, ghi rõ họ tên và đóng dấu)</div>
-            <div style="height: 70px;"></div>
-          </div>
-          <div class="sign-col">
-            <div style="font-style: italic;">${dateStr}</div>
-            <div class="font-bold uppercase">ĐẠI DIỆN CƠ SỞ NHÀ TRỌ / CHỦ TRỌ</div>
-            <div style="font-size: 9.5pt; font-style: italic;">(Ký, ghi rõ họ tên)</div>
-            <div style="height: 70px;"></div>
-          </div>
-        </div>
-
-        <script>
-          window.onload = function() {
-            window.print();
-          };
-        </script>
-      </body>
-      </html>
-    `;
-
-    printWindow.document.open();
-    printWindow.document.write(printHtml);
-    printWindow.document.close();
-  };
-
   const [residentSearch, setResidentSearch] = useState('');
   const [residentFacilityFilter, setResidentFacilityFilter] = useState('ALL'); // 'ALL' | 'CS-01' | 'CS-02' | 'CS-03'
   const [residentStatusFilter, setResidentStatusFilter] = useState('ALL');
-  const [selectedResidentCccd, setSelectedResidentCccd] = useState(null);
-  const [isEditingCccd, setIsEditingCccd] = useState(false);
-  const [cccdFormData, setCccdFormData] = useState({});
-  const [previewZoomImage, setPreviewZoomImage] = useState(null);
+  const [, setSelectedResidentCccd] = useState(null);
+  const [, setIsEditingCccd] = useState(false);
+  const [, setCccdFormData] = useState({});
   const [statusChangeModal, setStatusChangeModal] = useState(null);
   const [statusChangeSelected, setStatusChangeSelected] = useState('REGISTERED');
-  const [statusChangeNotes, setStatusChangeNotes] = useState('');
+  const [, setStatusChangeNotes] = useState('');
   const [savingResidence, setSavingResidence] = useState(false);
   const [residenceError, setResidenceError] = useState('');
-  const [showExportModal, setShowExportModal] = useState(false); // 'ALL' | 'REGISTERED' | 'PENDING_REGISTRATION' | 'NOT_REGISTERED'
+  const [, setShowExportModal] = useState(false);
 
   // Hợp nhất danh sách nhân khẩu: Cả Người đại diện hợp đồng + Người ở ghép (Rule 1: Full Resident Inclusion)
   const combinedResidents = useMemo(() => {
@@ -960,7 +740,6 @@ return (
                     ? t.rooms
                     : (t.room ? [t.room] : []);
                   const roomCount = tenantRoomsList.length;
-                  const canDelete = t.status === 'INACTIVE' && (t.daysSinceLeave || 0) >= 30;
 
                   return (
                     <tr

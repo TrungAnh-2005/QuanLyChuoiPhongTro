@@ -1,17 +1,10 @@
 import React, { useState } from 'react';
 import {
-  Crown,
   Sparkles,
   Check,
-  ShieldCheck,
   X,
-  Building2,
-  Zap,
   CreditCard,
-  QrCode,
   ArrowRight,
-  Award,
-  Layers,
   CheckCircle2
 } from 'lucide-react';
 import Modal from '../common/Modal';

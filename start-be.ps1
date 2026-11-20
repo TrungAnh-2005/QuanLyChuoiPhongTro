@@ -2,6 +2,7 @@ param(
     [switch]$Stop,
     [switch]$SkipBuild,
     [switch]$IncludeAuth,
+    [switch]$Hidden,
     [string[]]$Services = @()
 )
 
@@ -20,29 +21,36 @@ function Stop-PortProcesses {
             $p = Get-Process -Id $pidToKill -ErrorAction SilentlyContinue
             if ($p -and $p.ProcessName -eq 'java') {
                 Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue
-                Write-Host "Stopped process on port (PID $pidToKill)"
+                Write-Host "Stopped java process on port (PID $pidToKill)"
             }
         }
     }
 }
 
 if ($Stop) {
+    Stop-PortProcesses
     if (Test-Path $PidFile) {
         Get-Content $PidFile | ForEach-Object {
             if ($_ -match '^(\S+)\s+(\d+)$') {
                 $name = $Matches[1]
                 $procId = [int]$Matches[2]
+                $children = Get-CimInstance Win32_Process -Filter "ParentProcessId = $procId" -ErrorAction SilentlyContinue
+                foreach ($child in $children) {
+                    Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
+                }
                 $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
                 if ($proc) {
                     Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
-                    Write-Host "Stopped $name (PID $procId)"
+                    Write-Host "Stopped $name window/process (PID $procId)"
                 }
             }
         }
         Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
     }
-    Stop-PortProcesses
-    Write-Host "Da dung toan bo Backend." -ForegroundColor Green
+    if (Test-Path $LogDir) {
+        Get-ChildItem -Path $LogDir -Filter "*.exit" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+    }
+    Write-Host "Da dung toan bo Backend va dong cac cua so service." -ForegroundColor Green
     exit 0
 }
 
@@ -113,7 +121,23 @@ $defaultServices = @(
 # IncludeAuth is retained for compatibility; a normal startup includes authentication.
 $selectedServices = if ($Services.Count -gt 0) { $Services } else { $defaultServices }
 
-$jvmOpts = @("-Xms32m", "-Xmx128m", "-XX:MaxMetaspaceSize=128m", "-XX:+UseSerialGC", "-XX:ActiveProcessorCount=2")
+$ports = @{
+    'discovery-server'     = 8761
+    'api-gateway'          = 8080
+    'auth-service'         = 8081
+    'room-service'         = 8082
+    'tenant-service'       = 8083
+    'contract-service'     = 8084
+    'meter-service'        = 8085
+    'billing-service'      = 8086
+    'payment-service'      = 8087
+    'maintenance-service'  = 8088
+    'notification-service' = 8089
+    'report-service'       = 8090
+    'ai-service'           = 8091
+}
+
+$jvmOpts = @("-Dfile.encoding=UTF-8", "-Xms32m", "-Xmx128m", "-XX:MaxMetaspaceSize=128m", "-XX:+UseSerialGC", "-XX:ActiveProcessorCount=2")
 
 function Start-ServiceJar([string]$Name, [string]$ModuleDir) {
     $targetDir = Join-Path $Root "$ModuleDir\target"
@@ -123,50 +147,90 @@ function Start-ServiceJar([string]$Name, [string]$ModuleDir) {
     if (-not $jar) {
         throw "Khong tim thay JAR cho $Name trong $targetDir"
     }
+    $svcPort = $ports[$Name]
     $outLog = Join-Path $LogDir "$Name.out.log"
     $errLog = Join-Path $LogDir "$Name.err.log"
-    $argList = $jvmOpts + @("-jar", $jar.FullName)
-    $proc = Start-Process -FilePath "java" -ArgumentList $argList -WorkingDirectory $Root `
-        -RedirectStandardOutput $outLog -RedirectStandardError $errLog -WindowStyle Hidden -PassThru
+    $exitFile = Join-Path $LogDir "$Name.exit"
+    Remove-Item $exitFile -Force -ErrorAction SilentlyContinue
+
+    if ($Hidden) {
+        $argList = $jvmOpts + @("-jar", $jar.FullName)
+        $proc = Start-Process -FilePath "java" -ArgumentList $argList -WorkingDirectory $Root `
+            -RedirectStandardOutput $outLog -RedirectStandardError $errLog -WindowStyle Hidden -PassThru
+        Add-Content -Path $PidFile -Value "$Name $($proc.Id)"
+        Write-Host ("  [+] Started {0,-22} PID={1} (Hidden, log: .logs/{0}.out.log)" -f $Name, $proc.Id)
+        return
+    }
+
+    $runnerScript = Join-Path $LogDir "run-$Name.ps1"
+    $jvmArgsLine = ($jvmOpts | ForEach-Object { "`"$_`"" }) -join " "
+    $scriptContent = @"
+`$Host.UI.RawUI.WindowTitle = "[$Name] - Port $svcPort"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Set-Location -LiteralPath "$Root"
+Write-Host "=========================================================" -ForegroundColor Cyan
+Write-Host "  SERVICE : $Name" -ForegroundColor Green
+Write-Host "  PORT    : $svcPort" -ForegroundColor Yellow
+Write-Host "  JAR     : $($jar.FullName)" -ForegroundColor DarkGray
+Write-Host "  LOG     : $outLog" -ForegroundColor DarkGray
+Write-Host "=========================================================" -ForegroundColor Cyan
+Write-Host ""
+& java $jvmArgsLine -jar "$($jar.FullName)" 2>&1 | Tee-Object -FilePath "$outLog"
+`$code = `$LASTEXITCODE
+Set-Content -Path "$exitFile" -Value "`$code"
+Write-Host ""
+Write-Host "[!] Service $Name da dung (Exit Code: `$code). Cua so duoc giu lai de doc log." -ForegroundColor Red
+"@
+    Set-Content -Path $runnerScript -Value $scriptContent -Encoding UTF8
+
+    $psArgs = @("-NoLogo", "-NoExit", "-ExecutionPolicy", "Bypass", "-File", "`"$runnerScript`"")
+    $proc = Start-Process -FilePath "powershell.exe" -ArgumentList $psArgs -WorkingDirectory $Root -WindowStyle Normal -PassThru
     Add-Content -Path $PidFile -Value "$Name $($proc.Id)"
-    Write-Host ("  [+] Started {0,-22} PID={1} (log: .logs/{0}.out.log)" -f $Name, $proc.Id)
+    Write-Host ("  [+] Opened PowerShell window for {0,-22} (Port {1}, PID={2})" -f $Name, $svcPort, $proc.Id)
 }
 
 Write-Host "==> Khoi dong discovery-server (8761)..." -ForegroundColor Cyan
 Start-ServiceJar "discovery-server" "backend\discovery-server"
 
 $waited = 0
-while (-not (Test-PortOpen "127.0.0.1" 8761) -and $waited -lt 30) {
+while (-not (Test-PortOpen "127.0.0.1" 8761) -and $waited -lt 45) {
+    if (Test-Path (Join-Path $LogDir "discovery-server.exit")) {
+        throw "discovery-server da dung dot ngot. Hay xem log tren cua so PowerShell [discovery-server] hoac .logs/discovery-server.out.log."
+    }
     Start-Sleep -Seconds 1
     $waited++
 }
 if (-not (Test-PortOpen "127.0.0.1" 8761)) {
-    throw "discovery-server khong khoi dong. Xem .logs/discovery-server.out.log va .err.log."
+    throw "discovery-server khong khoi dong. Hay xem log tren cua so PowerShell [discovery-server] hoac .logs/discovery-server.out.log."
 }
 
 Write-Host "==> Khoi dong api-gateway (8080)..." -ForegroundColor Cyan
 Start-ServiceJar "api-gateway" "backend\api-gateway"
 
-Write-Host "==> Khoi dong cac microservices..." -ForegroundColor Cyan
+Write-Host "==> Khoi dong cac microservices (moi service 1 cua so PowerShell)..." -ForegroundColor Cyan
 foreach ($svc in $selectedServices) {
     Start-ServiceJar $svc "backend\services\$svc"
 }
 
 # Launching java does not mean that Spring Boot is ready to accept requests.
-$ports = @{ 'api-gateway'=8080; 'auth-service'=8081; 'room-service'=8082; 'tenant-service'=8083; 'contract-service'=8084; 'meter-service'=8085; 'billing-service'=8086; 'payment-service'=8087; 'maintenance-service'=8088; 'notification-service'=8089; 'report-service'=8090; 'ai-service'=8091 }
 $pending = @('api-gateway') + @($selectedServices)
 $deadline = (Get-Date).AddSeconds(300)
 Write-Host "==> Cho Spring Boot khoi dong (co the mat 2-3 phut)..." -ForegroundColor Cyan
 while ($pending.Count -gt 0 -and (Get-Date) -lt $deadline) {
     $pending = @($pending | Where-Object { -not (Test-PortOpen '127.0.0.1' $ports[$_]) })
     foreach ($entry in Get-Content $PidFile) {
-        if ($entry -match '^(\S+)\s+(\d+)$' -and -not (Get-Process -Id ([int]$Matches[2]) -ErrorAction SilentlyContinue)) {
-            throw "$($Matches[1]) da dung dot ngot. Xem .logs/$($Matches[1]).out.log va .err.log."
+        if ($entry -match '^(\S+)\s+(\d+)$') {
+            $svcName = $Matches[1]
+            $svcPid = [int]$Matches[2]
+            $exitMarker = Join-Path $LogDir "$svcName.exit"
+            if ((Test-Path $exitMarker) -or (-not (Get-Process -Id $svcPid -ErrorAction SilentlyContinue))) {
+                throw "$svcName da dung dot ngot. Hay xem log truc tiep tren cua so PowerShell [$svcName] hoac .logs/$svcName.out.log."
+            }
         }
     }
     if ($pending.Count -gt 0) { Start-Sleep -Seconds 2 }
 }
-if ($pending.Count -gt 0) { throw "Cac service chua san sang: $($pending -join ', '). Xem .logs/." }
+if ($pending.Count -gt 0) { throw "Cac service chua san sang: $($pending -join ', '). Hay kiem tra cua so PowerShell cua service do." }
 
 # Gateway refreshes its Eureka registry after services open their ports.
 Write-Host "==> Cho Gateway nhan du danh sach service tu Eureka..." -ForegroundColor Cyan

@@ -5,18 +5,12 @@ import {
   Clock,
   AlertTriangle,
   Printer,
-  CreditCard,
   Search,
-  DollarSign,
-  Download,
   X,
-  Building2,
-  ShieldCheck,
   QrCode,
   Send,
   Sparkles,
   Crown,
-  FileText,
   Check
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';

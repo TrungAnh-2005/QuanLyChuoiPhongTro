@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useData } from '../../contexts/DataContext';
-import { useAuth } from '../../contexts/AuthContext';
 
-export default function RoommateRequestModal({ isOpen, onClose, userRoom, activeContract }) {
+export default function RoommateRequestModal({ isOpen, onClose, userRoom }) {
   const { submitRoommateRequest } = useData();
-  const { user } = useAuth();
+  const inFlight = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const [formData, setFormData] = useState({
     fullName: '',
@@ -33,6 +33,7 @@ export default function RoommateRequestModal({ isOpen, onClose, userRoom, active
 try {
 
     e.preventDefault();
+    if (inFlight.current) return;
     setError('');
 
     // Validation per UC-T07 & SO_DO_USECASE_VA_THUC_THE_CSDL.md
@@ -58,10 +59,10 @@ try {
     }
 
     try {
+      inFlight.current = true;
+      setSubmitting(true);
       await submitRoommateRequest({
-        requestedByTenantId: user?.id || 'KH-001',
-        roomId: userRoom?.id || 'P101',
-        contractId: activeContract?.id || 'HD-2026-001',
+        roomId: userRoom?.id,
         ...formData,
       });
 
@@ -72,6 +73,9 @@ try {
       }, 1500);
     } catch (err) {
       setError(err.message || 'Không thể gửi đăng ký ở ghép.');
+    } finally {
+      inFlight.current = false;
+      setSubmitting(false);
     }
 
 } catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
@@ -242,9 +246,10 @@ try {
             </button>
             <button
               type="submit"
+              disabled={submitting || success}
               className="px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 rounded-lg shadow-sm shadow-teal-500/30 transition"
             >
-              Gửi yêu cầu đăng ký (UC-T07)
+              {submitting ? 'Đang gửi yêu cầu…' : 'Gửi yêu cầu đăng ký (UC-T07)'}
             </button>
           </div>
         </form>

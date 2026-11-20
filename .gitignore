@@ -92,4 +92,7 @@ replay_pid*
 # ==========================================
 docs/
 tests/
-    
+!frontend/tests/
+frontend/tests/*
+!frontend/tests/staff-review-flow.test.mjs
+

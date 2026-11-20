@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Layers, Lock, User, Shield, CheckCircle2, ArrowRight, Building2, UserCheck, CreditCard, Sparkles, Phone, Mail } from 'lucide-react';
+import { Layers, Lock, User, CheckCircle2, ArrowRight, Building2, UserCheck, CreditCard, Sparkles, Phone, Mail } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
