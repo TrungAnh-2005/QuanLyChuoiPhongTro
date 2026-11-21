@@ -5,6 +5,7 @@ import com.rental.room.dto.CreateBoardingHouseRequest;
 import com.rental.room.entity.BoardingHouse;
 import com.rental.room.entity.Building;
 import com.rental.room.entity.Floor;
+import com.rental.room.entity.RoomStatus;
 import com.rental.room.exception.AppException;
 import com.rental.room.repository.BoardingHouseRepository;
 import com.rental.room.service.BoardingHouseService;
@@ -76,6 +77,7 @@ public class BoardingHouseServiceImpl implements BoardingHouseService {
         BoardingHouse boardingHouse = boardingHouseRepository.findById(id)
                 .orElseThrow(() -> new AppException("Boarding house not found with id: " + id, HttpStatus.NOT_FOUND, "BOARDING_HOUSE_NOT_FOUND"));
 
+        if ("LOCKED".equalsIgnoreCase(request.getStatus())) requireVacantHouse(boardingHouse);
         boardingHouse.setName(request.getName().trim());
         boardingHouse.setAddress(request.getAddress().trim());
         boardingHouse.setManagerPhone(request.getManagerPhone() != null ? request.getManagerPhone().trim() : null);
@@ -98,7 +100,19 @@ public class BoardingHouseServiceImpl implements BoardingHouseService {
         BoardingHouse boardingHouse = boardingHouseRepository.findById(id)
                 .orElseThrow(() -> new AppException("Boarding house not found with id: " + id, HttpStatus.NOT_FOUND, "BOARDING_HOUSE_NOT_FOUND"));
 
+        requireVacantHouse(boardingHouse);
         boardingHouseRepository.delete(boardingHouse);
+    }
+
+    private void requireVacantHouse(BoardingHouse house) {
+        boolean occupied = house.getBuildings().stream()
+                .flatMap(building -> building.getFloors().stream())
+                .flatMap(floor -> floor.getRooms().stream())
+                .anyMatch(room -> room.getStatus() == RoomStatus.OCCUPIED);
+        if (occupied) {
+            throw new AppException("Cơ sở còn người thuê. Vui lòng trả hết phòng trước khi khóa hoặc xóa cơ sở.",
+                    HttpStatus.CONFLICT, "HOUSE_OCCUPIED");
+        }
     }
 
     private BoardingHouseResponse mapToResponse(BoardingHouse entity) {

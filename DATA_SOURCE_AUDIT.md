@@ -75,7 +75,7 @@ Vì vậy UI có thể hiển thị phòng đang thuê dựa vào bảng rooms, 
 - Phòng ID 102 (P.102, cơ sở 1) có hợp đồng ACTIVE và thành viên ACTIVE nhưng bị đánh dấu AVAILABLE. Đã đồng bộ lại OCCUPIED.
 - Sau sửa: **36 phòng = 5 đang thuê + 29 trống + 2 bảo trì**. Không còn phòng OCCUPIED thiếu hợp đồng ACTIVE; không còn hợp đồng ACTIVE có phòng khác trạng thái OCCUPIED.
 - Thay đổi được thực hiện trong một transaction, có khóa và kiểm tra lại dữ liệu liên quan trước khi cập nhật.
-- Bản sao trạng thái cũ, danh sách thay đổi và SQL khôi phục có điều kiện nằm ở `.logs/room-reconciliation-2026-11-15T19-08-04.408128900/`.
+- Các bản sao trạng thái, danh sách thay đổi và SQL khôi phục tạm của đợt kiểm tra này đã được xóa theo yêu cầu dọn file kiểm thử.
 - Đã sửa trạng thái tương ứng trong `init-scripts/full_microservices_database_setup.sql` để lần nạp lại bộ dữ liệu này không tái tạo sai lệch.
 - Việc đối soát này sửa trạng thái phòng; các phát hiện khác về tài khoản test và dữ liệu mặc định trong UI vẫn còn hiệu lực.
 

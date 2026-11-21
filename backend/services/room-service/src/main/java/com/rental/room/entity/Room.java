@@ -38,6 +38,9 @@ public class Room {
     @Column(nullable = false)
     private Double area;
 
+    @Column(name = "image_url", length = 1000)
+    private String imageUrl;
+
     @Column(name = "max_occupants", nullable = false)
     @Builder.Default
     private Integer maxOccupants = 2;

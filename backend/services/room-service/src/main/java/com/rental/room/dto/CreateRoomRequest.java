@@ -37,4 +37,7 @@ public class CreateRoomRequest {
     private Integer maxOccupants = 2;
 
     private Set<Long> amenityIds;
+
+    private Set<String> amenities;
+    private String imageUrl;
 }

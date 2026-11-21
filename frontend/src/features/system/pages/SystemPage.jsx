@@ -1,0 +1,9 @@
+import { useState } from 'react';
+import {useData} from '../../../shared/data/RentalDataContext';
+export default function AdminSystemPage() {
+ const {microservices=[],auditLogs=[],refreshData,loading}=useData();const [search,setSearch]=useState('');
+ const logs=auditLogs.filter(log=>JSON.stringify(log).toLowerCase().includes(search.toLowerCase()));
+ return <div className="space-y-6"><div className="flex justify-between items-center"><h1 className="text-2xl font-bold">Giám sát hệ thống</h1><button className="px-4 py-2 rounded border bg-white" disabled={loading} onClick={refreshData}>Làm mới</button></div>
+ <section className="p-5 rounded-xl border bg-white"><h2 className="font-bold mb-4">Microservice trong Eureka</h2><p className="text-sm text-slate-500 mb-4">Trạng thái lấy từ registry. Chưa thu thập số liệu CPU, RAM và tải HTTP.</p><table className="w-full text-sm text-left"><thead><tr><th className="p-2">Dịch vụ</th><th>Trạng thái</th></tr></thead><tbody>{microservices.map(service=><tr className="border-t" key={service.id}><td className="p-2">{service.name}</td><td>{service.status}</td></tr>)}</tbody></table>{microservices.length===0&&<p>Chưa có dữ liệu registry.</p>}</section>
+ <section className="p-5 rounded-xl border bg-white"><h2 className="font-bold mb-4">Nhật ký hệ thống</h2><input className="border rounded p-2 mb-4" placeholder="Tìm nhật ký" value={search} onChange={event=>setSearch(event.target.value)}/><div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead><tr><th>Thời gian</th><th>Tài khoản</th><th>Thao tác</th><th>Đối tượng</th><th>Chi tiết</th></tr></thead><tbody>{logs.map(log=><tr className="border-t" key={log.id}><td className="py-3">{log.timestamp}</td><td>{log.username}</td><td>{log.action}</td><td>{log.target}</td><td>{log.details}</td></tr>)}</tbody></table></div>{logs.length===0&&<p>Chưa có nhật ký phù hợp.</p>}</section></div>;
+}

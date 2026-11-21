@@ -9,7 +9,7 @@ Ngày kiểm tra: 15/11/2026. Phạm vi: 5 màn hình tenant, các modal, DataCo
 - Frontend đang bật `VITE_TEST_MODE=true`; Gateway có chế độ test gán đồng thời quyền Admin/Staff/Tenant. Do đó chuyển sang giao diện Tenant chưa chứng minh phân quyền Tenant thật hoạt động đúng.
 - Khi kiểm tra lỗi ghi nhận thanh toán và khiếu nại, các yêu cầu ghi bị chặn ở trình duyệt, trả lỗi 503 giả lập. Không thanh toán, gửi khiếu nại hoặc thay đổi dữ liệu nghiệp vụ thật trong đợt rà soát này.
 - Chạy lại: 8 kiểm thử API đạt; 3 kiểm thử trình duyệt hồi quy đặt cọc/quyết toán đạt. Bài test tạo đơn thật qua Gateway được bỏ qua trong lần này.
-- Kết quả kiểm tra trình duyệt: `.logs/tenant-business-audit/results.json`.
+- File kết quả kiểm tra trình duyệt tạm đã được xóa theo yêu cầu dọn file kiểm thử.
 
 Quy ước: **Đạt bước đã thử** = chỉ xác nhận phạm vi đã thử; **Lỗi** = phát hiện sai hành vi/dữ liệu; **Thiếu** = có một phần nhưng chưa khép kín; **Chưa có UI** = chưa tìm thấy thao tác tenant gọi luồng đó.
 

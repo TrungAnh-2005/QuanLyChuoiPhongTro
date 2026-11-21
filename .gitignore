@@ -82,7 +82,6 @@ docs/test-results/
 .DS_Store
 Thumbs.db
 *.log
-.logs/
 hs_err_pid*
 replay_pid*
 
@@ -95,4 +94,5 @@ tests/
 !frontend/tests/
 frontend/tests/*
 !frontend/tests/staff-review-flow.test.mjs
+!frontend/tests/*.test.mjs
 

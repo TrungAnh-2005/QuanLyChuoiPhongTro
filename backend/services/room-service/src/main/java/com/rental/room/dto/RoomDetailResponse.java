@@ -28,6 +28,7 @@ public class RoomDetailResponse {
     private Integer maxOccupants;
     private RoomStatus status;
     private List<AmenityDto> amenities;
+    private String imageUrl;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

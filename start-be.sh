@@ -37,9 +37,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOG_DIR="$ROOT/.logs"
-PID_FILE="$LOG_DIR/be-pids.txt"
-ALL_BACKEND_PORTS=(8761 8080 8081 8082 8083 8084 8085 8086 8087 8088 8089 8090 8091)
+declare -A SERVICE_PIDS=()
 
 # Uu tien dung JDK 21 neu da cai tren may
 if [[ -d "/usr/lib/jvm/java-21-openjdk" ]]; then
@@ -47,34 +45,15 @@ if [[ -d "/usr/lib/jvm/java-21-openjdk" ]]; then
     export PATH="$JAVA_HOME/bin:$PATH"
 fi
 
-stop_port_processes() {
-    for port in "${ALL_BACKEND_PORTS[@]}"; do
-        if command -v lsof >/dev/null 2>&1; then
-            local pids
-            pids=$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
-            for pid in $pids; do
-                local comm
-                comm=$(ps -p "$pid" -o comm= 2>/dev/null || true)
-                if [[ "$comm" == "java" ]]; then
-                    kill -9 "$pid" 2>/dev/null || true
-                    echo "Stopped process on port $port (PID $pid)"
-                fi
-            done
-        fi
-    done
-}
-
 stop_all() {
-    if [[ -f "$PID_FILE" ]]; then
-        while read -r name pid; do
-            if [[ -n "${pid:-}" ]] && kill -0 "$pid" 2>/dev/null; then
-                kill -9 "$pid" 2>/dev/null || true
-                echo "Stopped $name (PID $pid)"
-            fi
-        done < "$PID_FILE"
-        rm -f "$PID_FILE"
-    fi
-    stop_port_processes
+    # Match this workspace's JARs, including JVMs still booting before port binding.
+    local service_pid comm args
+    while read -r service_pid comm args; do
+        if [[ "$comm" == "java" && "$args" == *"-jar $ROOT/backend/"* ]]; then
+            kill -9 "$service_pid" 2>/dev/null || true
+            echo "Stopped backend JVM (PID $service_pid)"
+        fi
+    done < <(ps -eo pid=,comm=,args=)
 }
 
 if [[ "$STOP" == true ]]; then
@@ -108,9 +87,6 @@ find_maven() {
 
 # Stop old processes if still running
 stop_all >/dev/null 2>&1 || true
-
-mkdir -p "$LOG_DIR"
-: > "$PID_FILE"
 
 # Check MySQL & RabbitMQ ports (warn only)
 if ! test_port_open "127.0.0.1" 3306; then
@@ -169,6 +145,20 @@ fi
 
 JVM_OPTS=("-Xms32m" "-Xmx128m" "-XX:MaxMetaspaceSize=128m" "-XX:+UseSerialGC" "-XX:ActiveProcessorCount=2")
 
+cleanup_launched_services() {
+    local name pid
+    for name in "${!SERVICE_PIDS[@]}"; do
+        pid="${SERVICE_PIDS[$name]}"
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+        fi
+        wait "$pid" 2>/dev/null || true
+    done
+}
+trap cleanup_launched_services EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 start_service_jar() {
     local name="$1"
     local module_dir="$2"
@@ -181,15 +171,13 @@ start_service_jar() {
         echo -e "\033[31mKhong tim thay JAR cho $name trong $target_dir\033[0m" >&2
         exit 1
     fi
-    local out_log="$LOG_DIR/$name.out.log"
-    local err_log="$LOG_DIR/$name.err.log"
     (
         cd "$ROOT"
-        nohup java "${JVM_OPTS[@]}" -jar "$jar" </dev/null >"$out_log" 2>"$err_log" &
-        local pid=$!
-        echo "$name $pid" >> "$PID_FILE"
-        printf "  [+] Started %-22s PID=%s (log: .logs/%s.out.log)\n" "$name" "$pid" "$name"
-    )
+        exec java "${JVM_OPTS[@]}" -jar "$jar" </dev/null
+    ) &
+    local service_pid=$!
+    SERVICE_PIDS[$name]=$service_pid
+    printf "  [+] Started %-22s PID=%s (log truc tiep tai terminal)\n" "$name" "$service_pid"
 }
 
 echo -e "\033[36m==> Khoi dong discovery-server (8761)...\033[0m"
@@ -197,11 +185,15 @@ start_service_jar "discovery-server" "backend/discovery-server"
 
 waited=0
 while ! test_port_open "127.0.0.1" 8761 && [[ $waited -lt 30 ]]; do
+    if ! kill -0 "${SERVICE_PIDS[discovery-server]}" 2>/dev/null; then
+        echo "discovery-server da dung dot ngot. Xem log tren terminal." >&2
+        exit 1
+    fi
     sleep 1
     waited=$((waited + 1))
 done
 if ! test_port_open "127.0.0.1" 8761; then
-    echo -e "\033[31mdiscovery-server khong khoi dong. Xem .logs/discovery-server.out.log va .err.log.\033[0m" >&2
+    echo -e "\033[31mdiscovery-server khong khoi dong. Xem log tren terminal.\033[0m" >&2
     exit 1
 fi
 
@@ -242,12 +234,12 @@ while [[ ${#PENDING[@]} -gt 0 && $(date +%s) -lt $DEADLINE ]]; do
     done
     PENDING=("${NEW_PENDING[@]}")
 
-    while read -r name pid; do
-        if [[ -n "${pid:-}" ]] && ! kill -0 "$pid" 2>/dev/null; then
-            echo -e "\033[31m$name da dung dot ngot. Xem .logs/$name.out.log va .err.log.\033[0m" >&2
+    for name in "${!SERVICE_PIDS[@]}"; do
+        if ! kill -0 "${SERVICE_PIDS[$name]}" 2>/dev/null; then
+            echo -e "\033[31m$name da dung dot ngot. Xem log tren terminal.\033[0m" >&2
             exit 1
         fi
-    done < "$PID_FILE"
+    done
 
     if [[ ${#PENDING[@]} -gt 0 ]]; then
         sleep 2
@@ -255,7 +247,7 @@ while [[ ${#PENDING[@]} -gt 0 && $(date +%s) -lt $DEADLINE ]]; do
 done
 
 if [[ ${#PENDING[@]} -gt 0 ]]; then
-    echo -e "\033[31mCac service chua san sang: ${PENDING[*]}. Xem .logs/.\033[0m" >&2
+    echo -e "\033[31mCac service chua san sang: ${PENDING[*]}. Xem log tren terminal.\033[0m" >&2
     exit 1
 fi
 
@@ -280,10 +272,19 @@ while [[ ${#MISSING[@]} -gt 0 && $(date +%s) -lt $DEADLINE ]]; do
 done
 
 if [[ ${#MISSING[@]} -gt 0 ]]; then
-    echo -e "\033[31mGateway chua nhan cac service: ${MISSING[*]}. Xem .logs/api-gateway.out.log.\033[0m" >&2
+    echo -e "\033[31mGateway chua nhan cac service: ${MISSING[*]}. Xem log tren terminal.\033[0m" >&2
     exit 1
 fi
 
 echo ""
 echo -e "\033[32mHoan tat! Eureka: http://localhost:8761 | Gateway: http://localhost:8080\033[0m"
 echo -e "\033[33mDe dung toan bo BE: ./start-be.sh -Stop  (hoac npm run be:stop)\033[0m"
+echo "Log hien truc tiep tai terminal nay. Nhan Ctrl+C de dung cac service."
+# Stay attached to the services so their output remains available in this terminal.
+# If one service exits, the EXIT trap stops the other services from this launch.
+set +e
+wait -n
+service_exit=$?
+set -e
+echo "Mot service da dung (exit code $service_exit). Dung cac service con lai." >&2
+exit "$service_exit"

@@ -31,16 +31,14 @@ public class RoomServiceImpl implements RoomService {
         Floor floor = floorRepository.findById(request.getFloorId())
                 .orElseThrow(() -> new AppException("Floor not found with id: " + request.getFloorId(), HttpStatus.NOT_FOUND, "FLOOR_NOT_FOUND"));
 
-        Set<Amenity> amenities = new HashSet<>();
-        if (request.getAmenityIds() != null && !request.getAmenityIds().isEmpty()) {
-            amenities = new HashSet<>(amenityRepository.findAllById(request.getAmenityIds()));
-        }
+        Set<Amenity> amenities = resolveAmenities(request.getAmenityIds(), request.getAmenities());
 
         Room room = Room.builder()
                 .floor(floor)
                 .roomNumber(request.getRoomNumber().trim())
                 .basePrice(request.getBasePrice())
                 .area(request.getArea())
+                .imageUrl(request.getImageUrl())
                 .maxOccupants(request.getMaxOccupants() != null ? request.getMaxOccupants() : 2)
                 .status(RoomStatus.AVAILABLE)
                 .amenities(amenities)
@@ -74,6 +72,7 @@ public class RoomServiceImpl implements RoomService {
         Room room = roomRepository.findById(id)
                 .orElseThrow(() -> new AppException("Room not found with id: " + id, HttpStatus.NOT_FOUND, "ROOM_NOT_FOUND"));
 
+        validateStatusChange(room, request.getStatus());
         if (request.getFloorId() != null && !request.getFloorId().equals(room.getFloor().getId())) {
             Floor floor = floorRepository.findById(request.getFloorId())
                     .orElseThrow(() -> new AppException("Floor not found with id: " + request.getFloorId(), HttpStatus.NOT_FOUND, "FLOOR_NOT_FOUND"));
@@ -83,6 +82,7 @@ public class RoomServiceImpl implements RoomService {
         room.setRoomNumber(request.getRoomNumber().trim());
         room.setBasePrice(request.getBasePrice());
         room.setArea(request.getArea());
+        if (request.getImageUrl() != null) room.setImageUrl(request.getImageUrl());
         if (request.getMaxOccupants() != null) {
             room.setMaxOccupants(request.getMaxOccupants());
         }
@@ -90,9 +90,8 @@ public class RoomServiceImpl implements RoomService {
             room.setStatus(request.getStatus());
         }
 
-        if (request.getAmenityIds() != null) {
-            Set<Amenity> amenities = new HashSet<>(amenityRepository.findAllById(request.getAmenityIds()));
-            room.setAmenities(amenities);
+        if (request.getAmenityIds() != null || request.getAmenities() != null) {
+            room.setAmenities(resolveAmenities(request.getAmenityIds(), request.getAmenities()));
         }
 
         Room updated = roomRepository.save(room);
@@ -105,6 +104,7 @@ public class RoomServiceImpl implements RoomService {
         Room room = roomRepository.findById(id)
                 .orElseThrow(() -> new AppException("Room not found with id: " + id, HttpStatus.NOT_FOUND, "ROOM_NOT_FOUND"));
 
+        validateStatusChange(room, status);
         room.setStatus(status);
         Room updated = roomRepository.save(room);
         return mapToResponse(updated);
@@ -117,10 +117,36 @@ public class RoomServiceImpl implements RoomService {
                 .orElseThrow(() -> new AppException("Room not found with id: " + id, HttpStatus.NOT_FOUND, "ROOM_NOT_FOUND"));
 
         if (room.getStatus() == RoomStatus.OCCUPIED) {
-            throw new AppException("Cannot delete room currently occupied", HttpStatus.BAD_REQUEST, "ROOM_OCCUPIED");
+            throw new AppException("Phòng còn người thuê. Vui lòng trả phòng trước khi xóa.", HttpStatus.CONFLICT, "ROOM_OCCUPIED");
         }
 
         roomRepository.delete(room);
+    }
+
+    private void validateStatusChange(Room room, RoomStatus status) {
+        if (room.getStatus() == RoomStatus.OCCUPIED
+                && (status == RoomStatus.LOCKED || status == RoomStatus.MAINTENANCE)) {
+            throw new AppException("Phòng còn người thuê. Vui lòng trả phòng trước khi khóa.", HttpStatus.CONFLICT, "ROOM_OCCUPIED");
+        }
+    }
+
+    private Set<Amenity> resolveAmenities(Set<Long> ids, Set<String> names) {
+        if (names == null) return ids == null ? new HashSet<>() : new HashSet<>(amenityRepository.findAllById(ids));
+        Set<Amenity> selected = new HashSet<>();
+        for (String value : names) {
+            if (value == null || value.isBlank() || value.trim().length() > 100) {
+                throw new AppException("Tên tiện ích phải có từ 1 đến 100 ký tự.", HttpStatus.BAD_REQUEST, "INVALID_AMENITY");
+            }
+            String name = value.trim();
+            selected.add(amenityRepository.findByName(name)
+                    .orElseGet(() -> amenityRepository.save(Amenity.builder().name(name).build())));
+        }
+        return selected;
+    }
+
+    private List<AmenityDto> mapAmenities(Room room) {
+        return room.getAmenities().stream().map(a -> AmenityDto.builder()
+                .id(a.getId()).name(a.getName()).icon(a.getIcon()).build()).collect(Collectors.toList());
     }
 
     private RoomResponse mapToResponse(Room room) {
@@ -140,6 +166,8 @@ public class RoomServiceImpl implements RoomService {
                 .area(room.getArea())
                 .maxOccupants(room.getMaxOccupants())
                 .status(room.getStatus())
+                .amenities(mapAmenities(room))
+                .imageUrl(room.getImageUrl())
                 .createdAt(room.getCreatedAt())
                 .build();
     }
@@ -148,14 +176,6 @@ public class RoomServiceImpl implements RoomService {
         Floor floor = room.getFloor();
         Building building = floor != null ? floor.getBuilding() : null;
         BoardingHouse boardingHouse = building != null ? building.getBoardingHouse() : null;
-
-        List<AmenityDto> amenityDtos = room.getAmenities().stream()
-                .map(a -> AmenityDto.builder()
-                        .id(a.getId())
-                        .name(a.getName())
-                        .icon(a.getIcon())
-                        .build())
-                .collect(Collectors.toList());
 
         return RoomDetailResponse.builder()
                 .id(room.getId())
@@ -171,7 +191,8 @@ public class RoomServiceImpl implements RoomService {
                 .area(room.getArea())
                 .maxOccupants(room.getMaxOccupants())
                 .status(room.getStatus())
-                .amenities(amenityDtos)
+                .amenities(mapAmenities(room))
+                .imageUrl(room.getImageUrl())
                 .createdAt(room.getCreatedAt())
                 .updatedAt(room.getUpdatedAt())
                 .build();
