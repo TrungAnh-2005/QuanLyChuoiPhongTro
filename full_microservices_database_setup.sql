@@ -637,7 +637,7 @@ CREATE TABLE `maintenance_requests` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT 'Mã phiếu báo sự cố',
     `ticket_code` VARCHAR(50) NOT NULL UNIQUE COMMENT 'Mã hiển thị: SC-2026-001...',
     `room_id` BIGINT NOT NULL COMMENT 'Phòng xảy ra sự cố (Logical FK -> room_db.rooms.id)',
-    `tenant_id` BIGINT NOT NULL COMMENT 'Cư dân gửi phản ánh (Logical FK -> tenant_db.tenants.id)',
+    `tenant_id` BIGINT NULL COMMENT 'Cư dân gửi phản ánh (NULL nếu Staff tạo phiếu bảo trì phòng trống)',
     `category` VARCHAR(50) NOT NULL COMMENT 'Phân loại: WATER (Nước), ELECTRICITY (Điện), FURNITURE (Nội thất), APPLIANCE (Thiết bị), OTHER',
     `title` VARCHAR(255) NOT NULL COMMENT 'Tiêu đề ngắn gọn: Hỏng vòi sen nhà tắm...',
     `description` TEXT NULL COMMENT 'Mô tả chi tiết tình trạng hư hại',

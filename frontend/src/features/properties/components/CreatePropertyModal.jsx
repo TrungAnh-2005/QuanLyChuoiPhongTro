@@ -13,7 +13,7 @@ export default function CreatePropertyModal({ handleCreate, handleImageFileUploa
           </div>
           <div>
             <h2 className="text-lg font-bold text-slate-900">Thêm Cơ Sở Nhà Trọ Vào Chuỗi</h2>
-            <p className="text-xs text-slate-500">Khai báo tòa nhà, cấu hình thông tin và ảnh đại diện chi nhánh</p>
+            <p className="text-xs text-slate-500">Cơ sở mới ở trạng thái Chờ duyệt. Admin phê duyệt trước khi tạo phòng và đón khách.</p>
           </div>
         </div>
 

@@ -14,10 +14,14 @@ import com.rental.contract.repository.MoveOutSettlementRepository;
 import com.rental.contract.repository.RoomRequestRepository;
 import com.rental.contract.repository.RoomRequestVoteRepository;
 import com.rental.contract.service.ContractService;
+import com.rental.contract.service.ReservationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -38,9 +42,11 @@ public class ContractWorkflowController {
     private final ContractService contracts;
     private final RoomClient rooms;
     private final TenantClient tenants;
+    private final ReservationService reservations;
+    private final PlatformTransactionManager transactionManager;
 
     @PostMapping("/requests/{id}/approve")
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public Object approve(
             @PathVariable Long id,
             @RequestHeader("X-User-Roles") String roles
@@ -48,6 +54,16 @@ public class ContractWorkflowController {
         manager(roles);
 
         RoomRequest request = roomRequestRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy yêu cầu"));
+
+        if (ReservationService.isRent(request)) {
+            return Map.of("success", true, "data", reservations.approveLegacy(id));
+        }
+        return new TransactionTemplate(transactionManager).execute(status -> approveOtherRequest(id));
+    }
+
+    private Object approveOtherRequest(Long id) {
+        RoomRequest request = roomRequestRepository.findForReservation(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy yêu cầu"));
 
         if ("APPROVED".equals(request.getStatus()) && !"CHECKOUT".equals(request.getType())) {
@@ -64,7 +80,7 @@ public class ContractWorkflowController {
         }
 
         String type = request.getType();
-        if ("RENT".equals(type) || "TRANSFER".equals(type)) {
+        if ("TRANSFER".equals(type)) {
             var room = rooms.getRoomById(roomId).getData();
             if ("TRANSFER".equals(type) && request.getContractId() != null) {
                 contracts.terminateContract(request.getContractId());
@@ -204,16 +220,17 @@ public class ContractWorkflowController {
     @PostMapping("/{id}/confirm-deposit")
     @Transactional
     public Object deposit(@PathVariable Long id, @RequestHeader("X-User-Roles") String roles) {
-        if (!roles.contains("ROLE_ADMIN") && !roles.contains("ROLE_STAFF")) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chủ trọ hoặc nhân viên cần xác nhận đã nhận tiền cọc");
-        }
+        manager(roles);
 
         Contract contract = contractRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy hợp đồng"));
 
+        if (contract.getStatus() != ContractStatus.ACTIVE) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Confirm receipts on the rental request before activating a contract");
+        }
+
         contract.setDepositPaid(true);
         contract.setDepositPaidAt(LocalDateTime.now());
-        contract.setStatus(ContractStatus.ACTIVE);
         contractRepository.save(contract);
 
         return Map.of("success", true, "data", id);
@@ -265,18 +282,48 @@ public class ContractWorkflowController {
 
     @GetMapping("/requests")
     public Map<String, Object> listRoomRequests() {
+        reservations.expireHolds();
         return Map.of("success", true, "data", roomRequestRepository.findAll(Sort.by(Sort.Direction.DESC, "id")));
+    }
+
+    public record DepositReceiptBody(BigDecimal amount, String receiptReference) {}
+
+    @PostMapping("/requests/{id}/deposit")
+    public Map<String, Object> confirmReservationDeposit(@PathVariable Long id,
+            @RequestBody DepositReceiptBody body, @RequestHeader(value = "X-User-Roles", defaultValue = "") String roles) {
+        manager(roles);
+        return Map.of("success", true, "data", reservations.confirmReceipt(id, body.amount(), body.receiptReference()));
+    }
+
+    @PostMapping("/requests/{id}/cancel")
+    public Map<String, Object> cancelReservation(@PathVariable Long id,
+            @RequestHeader(value = "X-User-Roles", defaultValue = "") String roles) {
+        manager(roles);
+        return Map.of("success", true, "data", reservations.cancel(id));
+    }
+
+    @GetMapping("/requests/{id}/receipts")
+    public Map<String, Object> reservationReceipts(@PathVariable Long id,
+            @RequestHeader(value = "X-User-Roles", defaultValue = "") String roles) {
+        manager(roles);
+        return Map.of("success", true, "data", reservations.receipts(id));
     }
 
     @PostMapping("/requests")
     @ResponseStatus(HttpStatus.CREATED)
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public Map<String, Object> createRoomRequest(@RequestBody RoomRequestBody req) {
+        if ("RENT".equals(ReservationService.normalizeType(req.type()))) return createRequest(req);
+        return new TransactionTemplate(transactionManager).execute(status -> createRequest(req));
+    }
+
+    private Map<String, Object> createRequest(RoomRequestBody req) {
         if (req.type() == null || req.tenantId() == null || req.targetRoomId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "type, tenantId, and targetRoomId are required");
         }
+        String type = ReservationService.normalizeType(req.type());
         Boolean forfeitDeposit = req.forfeitDeposit();
-        if ("CHECKOUT".equals(req.type())) {
+        if ("CHECKOUT".equals(type)) {
             if (req.contractId() == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Thiếu hợp đồng trả phòng");
             var contract = contractRepository.findForLeave(req.contractId())
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy hợp đồng"));
@@ -291,9 +338,9 @@ public class ContractWorkflowController {
             LocalDate date = req.moveOutDate() != null ? req.moveOutDate() : LocalDate.now();
             forfeitDeposit = contract.getEndDate() != null && date.isBefore(contract.getEndDate());
         }
-        RoomRequest saved = roomRequestRepository.save(RoomRequest.builder()
-                .type(req.type())
-                .contractId(req.contractId())
+        RoomRequest pending = RoomRequest.builder()
+                .type(type)
+                .contractId("RENT".equals(type) ? null : req.contractId())
                 .tenantId(req.tenantId())
                 .targetRoomId(req.targetRoomId())
                 .currentRoomId(req.currentRoomId())
@@ -301,9 +348,10 @@ public class ContractWorkflowController {
                 .note(req.note())
                 .moveOutDate(req.moveOutDate()).bankAccount(req.bankAccount()).bankName(req.bankName()).accountHolder(req.accountHolder())
                 .forfeitDeposit(forfeitDeposit != null ? forfeitDeposit : false)
-                .status(req.status() != null ? req.status() : "PENDING")
-                .reviewedAt(req.reviewedAt())
-                .build());
+                .status("RENT".equals(type) ? "PENDING" : req.status() != null ? req.status() : "PENDING")
+                .reviewedAt("RENT".equals(type) ? null : req.reviewedAt())
+                .build();
+        RoomRequest saved = "RENT".equals(type) ? reservations.reserve(pending) : roomRequestRepository.save(pending);
         return Map.of("success", true, "data", saved);
     }
 
@@ -315,8 +363,13 @@ public class ContractWorkflowController {
             @RequestHeader("X-User-Roles") String roles
     ) {
         manager(roles);
-        RoomRequest existing = roomRequestRepository.findById(id)
+        RoomRequest existing = roomRequestRepository.findForReservation(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        if (ReservationService.isRent(existing) || "RENT".equals(ReservationService.normalizeType(req.type()))
+                || existing.getHoldExpiresAt() != null
+                || (existing.getPaidDepositAmount() != null && existing.getPaidDepositAmount().signum() > 0)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Rental reservations must use the deposit or cancellation endpoints");
+        }
         if (req.type() != null) existing.setType(req.type());
         if (req.contractId() != null) existing.setContractId(req.contractId());
         if (req.tenantId() != null) existing.setTenantId(req.tenantId());
@@ -341,8 +394,11 @@ public class ContractWorkflowController {
             @RequestHeader("X-User-Roles") String roles
     ) {
         manager(roles);
-        if (!roomRequestRepository.existsById(id)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        RoomRequest existing = roomRequestRepository.findForReservation(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        if (ReservationService.isRent(existing) || existing.getHoldExpiresAt() != null
+                || (existing.getPaidDepositAmount() != null && existing.getPaidDepositAmount().signum() > 0)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Reservation and payment history must be retained; cancel the reservation instead");
         }
         roomRequestRepository.deleteById(id);
         return Map.of("success", true, "data", id);
@@ -393,8 +449,6 @@ public class ContractWorkflowController {
     }
 
     private void manager(String roles) {
-        if (roles == null || (!roles.contains("ROLE_ADMIN") && !roles.contains("ROLE_STAFF"))) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-        }
+        com.rental.contract.config.ManagerAuthorization.requireManager(roles);
     }
 }

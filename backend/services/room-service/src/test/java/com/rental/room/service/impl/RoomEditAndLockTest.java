@@ -3,6 +3,7 @@ package com.rental.room.service.impl;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rental.room.dto.UpdateRoomRequest;
+import com.rental.room.dto.CreateRoomRequest;
 import com.rental.room.entity.*;
 import com.rental.room.exception.AppException;
 import com.rental.room.repository.*;
@@ -30,6 +31,7 @@ class RoomEditAndLockTest {
         Room room = Room.builder().id(40L).floor(floor).roomNumber("P.101")
                 .basePrice(BigDecimal.TEN).area(25.0).status(status).amenities(new HashSet<>(Set.of(wifi))).build();
         when(rooms.findById(40L)).thenReturn(Optional.of(room));
+        when(rooms.findLockedById(40L)).thenReturn(Optional.of(room));
         when(rooms.save(any(Room.class))).thenAnswer(call -> call.getArgument(0));
         return room;
     }
@@ -42,6 +44,42 @@ class RoomEditAndLockTest {
         Room room = room(RoomStatus.AVAILABLE);
         when(rooms.findByFilter(null, null)).thenReturn(List.of(room));
         assertEquals("WiFi Tốc Độ Cao", json.valueToTree(service.getRooms(null, null)).get(0).path("amenities").path(0).path("name").asText());
+    }
+
+    @Test void cannotAddRoomsToAnUnapprovedHouse() {
+        Room existing = room(RoomStatus.AVAILABLE);
+        existing.getFloor().getBuilding().getBoardingHouse().setStatus("PENDING_APPROVAL");
+        when(floors.findById(30L)).thenReturn(Optional.of(existing.getFloor()));
+        var request = new CreateRoomRequest();
+        request.setFloorId(30L);
+        assertThrows(AppException.class, () -> service.createRoom(request));
+        verify(rooms, never()).save(any());
+    }
+
+    @Test void managedRoomStatesCannotBeClearedByGenericStatusOrDelete() {
+        for (RoomStatus status : List.of(RoomStatus.HOLDING, RoomStatus.MAINTENANCE)) {
+            Room managed = room(status);
+            assertThrows(AppException.class, () -> service.updateRoomStatus(40L, RoomStatus.AVAILABLE));
+            assertThrows(AppException.class, () -> service.deleteRoom(40L));
+            assertEquals(status, managed.getStatus());
+        }
+        verify(rooms, never()).delete(any());
+    }
+
+    @Test void genericStatusCannotAcquireHoldOrMaintenance() {
+        room(RoomStatus.AVAILABLE);
+        assertThrows(AppException.class, () -> service.updateRoomStatus(40L, RoomStatus.HOLDING));
+        assertThrows(AppException.class, () -> service.updateRoomStatus(40L, RoomStatus.MAINTENANCE));
+    }
+
+    @Test void cannotMoveAnExistingRoomIntoAnUnapprovedHouse() throws Exception {
+        Room existing = room(RoomStatus.AVAILABLE);
+        BoardingHouse pending = BoardingHouse.builder().status("PENDING_APPROVAL").build();
+        Floor destination = Floor.builder().id(31L).building(Building.builder().boardingHouse(pending).build()).build();
+        when(floors.findById(31L)).thenReturn(Optional.of(destination));
+        assertThrows(AppException.class, () -> service.updateRoom(40L, edit("\"floorId\":31")));
+        assertEquals(30L, existing.getFloor().getId());
+        verify(rooms, never()).save(any());
     }
 
     @Test void selectedAmenityNamesAreSavedAndReturned() throws Exception {

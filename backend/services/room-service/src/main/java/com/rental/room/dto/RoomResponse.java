@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 @Data
@@ -26,6 +27,9 @@ public class RoomResponse {
     private Double area;
     private Integer maxOccupants;
     private RoomStatus status;
+    private Long holdRequestId;
+    private Instant holdExpiresAt;
+    private Long maintenanceRequestId;
     private List<AmenityDto> amenities;
     private String imageUrl;
     private LocalDateTime createdAt;

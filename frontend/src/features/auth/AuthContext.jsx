@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import api, { clearSession } from '../../shared/api/client';
+import api, { clearSession, setTestRole } from '../../shared/api/client';
 const AuthContext = createContext(null);
 const testMode = import.meta.env.VITE_TEST_MODE === 'true';
 const testUser = { isTestMode:true,id:2,username:'staff',fullName:'Kiểm thử nghiệp vụ',email:'test@rental.local',role:'STAFF',rooms:[],room:null,packageCode:'ENTERPRISE' };
@@ -46,8 +46,8 @@ export function AuthProvider({ children }) {
     } catch (error) { return { success: false, error: error.message }; }
     finally { setLoading(false); }
   };
-  const logout = () => { clearSession(); setUser(testMode ? testUser : null); };
+  const logout = () => { clearSession(); setTestRole('STAFF'); setUser(testMode ? testUser : null); };
   const updateTenantRoom = (_name, rooms) => setUser(prev => prev ? ({ ...prev, rooms: Array.isArray(rooms) ? rooms : [rooms].filter(Boolean), room: Array.isArray(rooms) ? rooms[0] : rooms }) : prev);
-  return <AuthContext.Provider value={{ user, login, logout, register, loading, updateTenantRoom, tenantRooms: {}, testMode, switchRole: (role,fields={}) => { if(testMode) setUser({...testUser,...fields,role}); else logout(); } }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, login, logout, register, loading, updateTenantRoom, tenantRooms: {}, testMode, switchRole: (role,fields={}) => { if(testMode) { setTestRole(role); setUser({...testUser,...fields,role}); } else logout(); } }}>{children}</AuthContext.Provider>;
 }
 export const useAuth = () => useContext(AuthContext);

@@ -85,16 +85,11 @@ find_maven() {
     return 1
 }
 
+# Start infrastructure before interrupting any existing backend processes.
+node "$ROOT/scripts/start-infra.mjs"
+
 # Stop old processes if still running
 stop_all >/dev/null 2>&1 || true
-
-# Check MySQL & RabbitMQ ports (warn only)
-if ! test_port_open "127.0.0.1" 3306; then
-    echo -e "\033[33m[WARN] Cong MySQL 3306 chua mo. Hay dam bao MySQL dang chay (sudo systemctl start mysqld).\033[0m"
-fi
-if ! test_port_open "127.0.0.1" 5672; then
-    echo -e "\033[33m[WARN] Cong RabbitMQ 5672 chua mo. Neu can event RabbitMQ, hay chay: docker compose up -d rabbitmq\033[0m"
-fi
 
 if [[ "$SKIP_BUILD" == false ]]; then
     echo -e "\033[36m==> Dang dong goi backend (mvn package -DskipTests)...\033[0m"

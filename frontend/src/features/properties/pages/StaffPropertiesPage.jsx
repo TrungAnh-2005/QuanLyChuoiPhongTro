@@ -32,7 +32,7 @@ export default function BoardingHousesPage() {
     paySaasInvoice,
     updateLandlordPackage,
     deleteRoom,
-    recordHouseDeletion, boardingHouses: apiHouses = [], updateBoardingHouse, deleteBoardingHouse, refreshData
+    recordHouseDeletion, boardingHouses: apiHouses = [], updateBoardingHouse, approveBoardingHouse, deleteBoardingHouse, refreshData
   } = useData();
   const role = user?.role || 'ADMIN';
   const isTenant = role === 'TENANT';
@@ -244,7 +244,7 @@ export default function BoardingHousesPage() {
 
   const handleApproveHouse = async (code) => {
     const target = rawHouses.find(h => h.code === code);
-    if (!(await updateBoardingHouse(target.id, {status:"ACTIVE"})).success) return;
+    if (!(await approveBoardingHouse(target.id)).success) return;
     const nextList = rawHouses.map((h) => (h.code === code ? { ...h, status: 'ACTIVE', approvedAt: new Date().toLocaleDateString('vi-VN') } : h));
     setHouses(nextList);
     try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
@@ -504,7 +504,7 @@ try {
     });
 
     const newCode = `${staffPrefix}-${String(nextPrefixNum).padStart(2, '0')}`;
-    const initialStatus = isStaff && !user?.isTestMode ? 'PENDING_APPROVAL' : 'ACTIVE';
+    const initialStatus = 'PENDING_APPROVAL';
     const targetRooms = Math.min(Number(newHouse.totalRooms) || 10, maxRoomsAllowed);
     const creatorUser = user?.username || (isStaff ? 'staff' : 'admin');
     const assignedManager = newHouse.manager || user?.fullName || 'Quản lý cơ sở';
@@ -557,6 +557,7 @@ try {
     setHouses(nextList);
     try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
     setShowModal(false);
+    setHouseStatusTab('PENDING');
     setNewHouse({
       code: '',
       name: '',

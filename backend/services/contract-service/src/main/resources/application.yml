@@ -1,6 +1,11 @@
 server:
   port: 8084
 
+contract:
+  reservation:
+    hold-hours: ${RESERVATION_HOLD_HOURS:24}
+    expiry-scan-ms: ${RESERVATION_EXPIRY_SCAN_MS:60000}
+
 spring:
   config:
     import: "optional:file:./backend/.env[.properties],optional:file:./.env[.properties]"
@@ -12,6 +17,7 @@ spring:
     password: ${MYSQL_PASSWORD:rental_secret}
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: update
     show-sql: false

@@ -11,7 +11,7 @@ globalThis.sessionStorage = storage();
 globalThis.window = new EventTarget();
 beforeEach(() => { globalThis.sessionStorage = storage(); });
 
-function setup(overrides = {}) {
+function setup(overrides = {}, user = { id: 2, role: 'STAFF' }) {
   const calls = [];
   const state = { ...initial,
     boardingHouses: [{ id: 1, code: 'CS-1', name: 'Test house' }],
@@ -29,7 +29,7 @@ function setup(overrides = {}) {
       : { id: 999 };
     return { config, status: 200, statusText: 'OK', headers: {}, data: { success: true, data } };
   };
-  const actions = createRentalActions({ view, user: { id: 2, role: 'STAFF' }, testMode: true, billingMonth: '2026-11', refreshData: async () => { refreshes++; }, setState: () => {}, setDrafts: () => {}, setMonth: () => {} });
+  const actions = createRentalActions({ view, user, testMode: true, billingMonth: '2026-11', refreshData: async () => { refreshes++; }, setState: () => {}, setDrafts: () => {}, setMonth: () => {} });
   return { actions, calls, view, refreshes: () => refreshes };
 }
 
@@ -41,6 +41,17 @@ test('room price updates retain amenities, image and the resolved floor', async 
     status: 'AVAILABLE', amenities: ['WiFi'], imageUrl: '/room.jpg',
   } });
   assert.equal(refreshes(), 1);
+});
+
+test('house creation always requests approval and only admin uses the approval endpoint', async () => {
+  const staff = setup();
+  await staff.actions.addBoardingHouse({ name: 'New house', status: 'ACTIVE' });
+  assert.equal(staff.calls[0].body.status, 'PENDING_APPROVAL');
+  assert.throws(() => staff.actions.approveBoardingHouse(1), /Admin/);
+  const admin = setup({}, { id: 1, role: 'ADMIN' });
+  await admin.actions.approveBoardingHouse(1);
+  assert.equal(admin.calls[0].url, '/properties/1/approval');
+  assert.equal(admin.calls[0].method, 'patch');
 });
 
 test('utility price commands retain service endpoints and refresh after both rates', async () => {
@@ -97,4 +108,100 @@ test('view composition keeps all invoices while filtering the selected billing m
   assert.deepEqual(view.invoices.map(row => row.id), [2]);
   assert.deepEqual(view.allInvoices.map(row => row.id), [1, 2]);
   assert.equal(view.invoices[0].houseCode, 'CS-1');
+});
+
+test('deposit receipt and manager cancellation preserve server commands and refresh authoritative state', async () => {
+  const { actions, calls, refreshes } = setup();
+  const receipt = { amount: '1000000', receiptReference: '65996c3f-0c4b-492c-8596-851a9aee323e' };
+  await actions.confirmRoomRequestDeposit(501, receipt);
+  await actions.confirmRoomRequestDeposit(501, receipt);
+  await actions.cancelRentalRequest(501, 'Tenant requested cancellation');
+  assert.deepEqual(calls.slice(0, 2).map(call => call.body), [
+    { amount: 1000000, receiptReference: receipt.receiptReference },
+    { amount: 1000000, receiptReference: receipt.receiptReference },
+  ]);
+  assert.equal(calls[0].url, '/contracts/requests/501/deposit');
+  assert.deepEqual(calls[2], { method: 'post', url: '/contracts/requests/501/cancel', body: { reason: 'Tenant requested cancellation' } });
+  assert.equal(refreshes(), 3);
+});
+
+test('definitively rejected receipts unlock amount entry only after an empty authoritative ledger and refresh', async () => {
+  for (const status of [400, 409]) {
+    const { actions, refreshes } = setup();
+    const urls = [];
+    api.defaults.adapter = async config => {
+      urls.push(config.url);
+      if (config.method === 'post') {
+        const failure = new Error('Stale amount');
+        failure.config = config; failure.response = { status, data: { message: 'Stale amount' } };
+        throw failure;
+      }
+      return { config, status: 200, statusText: 'OK', headers: {}, data: { success: true, data: [] } };
+    };
+    await assert.rejects(actions.confirmRoomRequestDeposit(501, { amount: 3000000, receiptReference: 'retry-ref' }), failure => failure.receiptRejected === true);
+    assert.deepEqual(urls, ['/contracts/requests/501/deposit', '/contracts/requests/501/receipts']);
+    assert.equal(refreshes(), 1);
+  }
+});
+
+test('an already committed receipt is reconciled from the ledger after a conflict', async () => {
+  const { actions, refreshes } = setup();
+  const recorded = { amount: 1000000, receiptReference: 'already-committed' };
+  api.defaults.adapter = async config => {
+    if (config.method === 'post') {
+      const failure = new Error('Conflict');
+      failure.config = config; failure.response = { status: 409, data: { message: 'Conflict' } };
+      throw failure;
+    }
+    return { config, status: 200, statusText: 'OK', headers: {}, data: { success: true, data: [recorded] } };
+  };
+  assert.deepEqual(await actions.getRoomRequestReceipts(501), [recorded]);
+  const result = await actions.confirmRoomRequestDeposit(501, recorded);
+  assert.equal(result.reconciled, true);
+  assert.deepEqual(result.data, recorded);
+  assert.equal(refreshes(), 1);
+});
+
+test('uncertain receipt failures retain their reference when the network, server or ledger is unavailable', async () => {
+  for (const scenario of ['network', 'server', 'ledger']) {
+    const { actions, refreshes } = setup();
+    const urls = [];
+    api.defaults.adapter = async config => {
+      urls.push(config.url);
+      const failure = new Error('Unavailable');
+      failure.config = config;
+      if (scenario !== 'network') failure.response = { status: scenario === 'ledger' && config.method === 'post' ? 409 : 503, data: { message: 'Unavailable' } };
+      throw failure;
+    };
+    await assert.rejects(actions.confirmRoomRequestDeposit(501, { amount: 1000000, receiptReference: 'must-retain' }), failure => failure.receiptRejected === undefined);
+    assert.equal(urls.length, scenario === 'ledger' ? 2 : 1);
+    assert.equal(refreshes(), 0);
+  }
+});
+
+test('held and maintenance rooms reject generic release, price editing and deletion', async () => {
+  for (const status of ['HOLDING', 'MAINTENANCE']) {
+    const { actions, calls } = setup({ rooms: [{ id: 101, boardingHouseId: 1, roomNumber: 'P.101', basePrice: 3500000, status }] });
+    assert.throws(() => actions.updateRoomStatus(101, 'AVAILABLE'), /đặt cọc|bảo trì/);
+    assert.throws(() => actions.deleteRoom(101), /đặt cọc|bảo trì/);
+    if (status === 'HOLDING') {
+      assert.throws(() => actions.updateRoomPrice(101, 4000000), /đặt cọc/);
+      await assert.rejects(actions.updateRoom(101, { price: 4000000 }), /đặt cọc/);
+    }
+    assert.equal(calls.length, 0);
+  }
+});
+
+test('blocking maintenance is explicit while occupied repairs retain non-blocking tickets', async () => {
+  const { actions, calls, refreshes } = setup();
+  await actions.createTicket({ roomId: 101, title: 'Repair', description: 'Vacant room repair', blocksRental: true });
+  await actions.updateTicketStatus(901, 'RESOLVED');
+  await actions.createTicket({ roomId: 101, tenantId: 201, title: 'Repair', description: 'Occupied repair' });
+  assert.equal(calls[0].body.blocksRental, true);
+  assert.equal(Object.hasOwn(calls[0].body, 'tenantId'), false);
+  assert.equal(calls[1].url, '/maintenance/901/status');
+  assert.equal(calls[1].body.status, 'RESOLVED');
+  assert.equal(calls[2].body.blocksRental, false);
+  assert.equal(calls[2].body.tenantId, 201);
+  assert.equal(refreshes(), 3);
 });

@@ -6,6 +6,16 @@ Bản hiện tại ưu tiên kiểm thử nghiệp vụ. `auth-service` thuộc 
 
 Chạy từ thư mục gốc:
 
+Chạy các service Java trên máy và MySQL/RabbitMQ trong Docker:
+
+```bash
+npm run be
+```
+
+Mở Docker Desktop/Engine trước. Lệnh tự bật MySQL và RabbitMQ, chờ cả hai sẵn sàng rồi build/chạy backend; `npm run be:fast` bỏ qua bước build. Nếu có container MySQL `rental_property_management`, lệnh dùng lại container và dữ liệu đó; nếu chưa có, dùng `rental-mysql` hoặc tạo bằng `docker-compose.infra.yml`. Container đang chạy không bị tạo lại. Log backend hiện trực tiếp ở terminal. `Ctrl+C` hoặc `npm run be:stop` dừng các JVM; các container dữ liệu vẫn chạy.
+
+Chạy toàn bộ ứng dụng trong Docker:
+
 ```bash
 docker compose up --build -d
 ```
@@ -22,7 +32,7 @@ npm run dev
 
 Vite đọc `frontend/.env`; `GATEWAY_URL=http://localhost:8080` là đích proxy, `VITE_API_BASE_URL=/api` là đường dẫn frontend sử dụng. Không đặt secret nhà cung cấp trong biến `VITE_*`.
 
-MySQL hiện có của bạn đang dùng cổng 3306. `.env` bản test dùng cổng host 3307, volume `rental_backend_test_mysql_v1` và mạng riêng để không ảnh hưởng dữ liệu đang có; kết nối giữa các container vẫn dùng `mysql:3306`.
+Port MySQL/RabbitMQ trên máy lấy từ `MYSQL_PORT`/`RABBITMQ_PORT` trong môi trường hoặc `.env` gốc. Bước khởi động kiểm tra container được chọn map đúng các port này; nếu không khớp thì dừng để bạn kiểm tra cấu hình, không tự tạo lại database. `.env.example` dùng MySQL cổng 3307; container MySQL hiện có của bạn dùng 3306. Kết nối giữa các container vẫn dùng `mysql:3306`.
 
 Các file `.env` và `.env.example` nằm ở thư mục gốc, `backend`, `frontend`. Docker Compose đọc `.env` gốc và chuyển các biến cần thiết cho container. Khi chạy Maven tại gốc, Spring Boot đọc `.env` gốc ưu tiên hơn `backend/.env`; khi chạy tại `backend`, đọc `.env` tại đó. JWT được giữ trong cấu hình cho giai đoạn sau, không được kiểm tra khi bật test mode.
 

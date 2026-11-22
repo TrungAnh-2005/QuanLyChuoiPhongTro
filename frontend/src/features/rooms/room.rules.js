@@ -4,7 +4,18 @@
 
 
 
-export const isRoomLocked = room => ['LOCKED', 'MAINTENANCE'].includes(room?.status);
+export const isRoomLocked = room => room?.status === 'LOCKED';
+export const isRoomHolding = room => room?.status === 'HOLDING';
+export const isRoomMaintenance = room => room?.status === 'MAINTENANCE' || room?.maintenanceRequestId != null;
+export const roomStatusLabel = status => ({ AVAILABLE: 'Còn trống', HOLDING: 'Đặt cọc', OCCUPIED: 'Đang thuê', LOCKED: 'Tạm khóa', MAINTENANCE: 'Bảo trì' }[status] || status);
+export const requestStatusLabel = status => ({ HOLDING: 'Đặt cọc', PENDING: 'Chờ duyệt', APPROVED: 'Đã hoàn tất', REJECTED: 'Đã từ chối', CANCELLED: 'Đã hủy', EXPIRED: 'Hết hạn', WAITING_ROOMMATES: 'Chờ ý kiến ở ghép' }[status] || status);
+export const isRentalRequest = request => ['RENT', 'RENTAL', 'NEW_RENT', 'HOLD'].includes(request?.type);
+export const depositProgress = request => {
+  const required = Number(request?.requiredDepositAmount ?? request?.rentalPriceSnapshot ?? 0);
+  const paid = Number(request?.paidDepositAmount ?? 0);
+  return { required, paid, remaining: Math.max(0, required - paid) };
+};
+export const tenantRoomRequests = (requests, tenantId) => tenantId == null ? [] : requests.filter(request => String(request.tenantId) === String(tenantId));
 const sameId = (a, b) => a != null && b != null && String(a) === String(b);
 export const hasRoomOccupants = (room, contracts = [], members = []) => room?.status === 'OCCUPIED'
   || Number(room?.occupants || 0) > 0

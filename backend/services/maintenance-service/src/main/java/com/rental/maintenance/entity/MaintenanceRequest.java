@@ -27,8 +27,11 @@ public class MaintenanceRequest {
     @Column(nullable = false)
     private Long roomId;
 
-    @Column(nullable = false)
     private Long tenantId;
+
+    @Builder.Default
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private Boolean blocksRental = false;
 
     @Column(length = 50)
     @Builder.Default
@@ -89,6 +92,9 @@ public class MaintenanceRequest {
         }
         if (this.status == null) {
             this.status = MaintenanceStatus.PENDING;
+        }
+        if (this.blocksRental == null) {
+            this.blocksRental = false;
         }
     }
 

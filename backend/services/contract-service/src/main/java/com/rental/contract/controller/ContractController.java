@@ -20,7 +20,9 @@ public class ContractController {
     private final ContractService contractService;
 
     @PostMapping
-    public ResponseEntity<ApiResponse<ContractResponse>> createContract(@Valid @RequestBody CreateContractRequest request) {
+    public ResponseEntity<ApiResponse<ContractResponse>> createContract(@Valid @RequestBody CreateContractRequest request,
+            @RequestHeader(value = "X-User-Roles", defaultValue = "") String roles) {
+        com.rental.contract.config.ManagerAuthorization.requireManager(roles);
         ContractResponse response = contractService.createContract(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response, "Contract created successfully"));
     }

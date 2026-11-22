@@ -31,6 +31,8 @@ public class RoomServiceImpl implements RoomService {
         Floor floor = floorRepository.findById(request.getFloorId())
                 .orElseThrow(() -> new AppException("Floor not found with id: " + request.getFloorId(), HttpStatus.NOT_FOUND, "FLOOR_NOT_FOUND"));
 
+        requireApprovedHouse(floor);
+
         Set<Amenity> amenities = resolveAmenities(request.getAmenityIds(), request.getAmenities());
 
         Room room = Room.builder()
@@ -69,13 +71,17 @@ public class RoomServiceImpl implements RoomService {
     @Override
     @Transactional
     public RoomDetailResponse updateRoom(Long id, UpdateRoomRequest request) {
-        Room room = roomRepository.findById(id)
+        Room room = roomRepository.findLockedById(id)
                 .orElseThrow(() -> new AppException("Room not found with id: " + id, HttpStatus.NOT_FOUND, "ROOM_NOT_FOUND"));
 
         validateStatusChange(room, request.getStatus());
+        if (isManaged(room) && request.getFloorId() != null && !request.getFloorId().equals(room.getFloor().getId())) {
+            throw workflowRequired();
+        }
         if (request.getFloorId() != null && !request.getFloorId().equals(room.getFloor().getId())) {
             Floor floor = floorRepository.findById(request.getFloorId())
                     .orElseThrow(() -> new AppException("Floor not found with id: " + request.getFloorId(), HttpStatus.NOT_FOUND, "FLOOR_NOT_FOUND"));
+            requireApprovedHouse(floor);
             room.setFloor(floor);
         }
 
@@ -87,6 +93,7 @@ public class RoomServiceImpl implements RoomService {
             room.setMaxOccupants(request.getMaxOccupants());
         }
         if (request.getStatus() != null) {
+            if (request.getStatus() != room.getStatus()) clearAvailabilityReferences(room);
             room.setStatus(request.getStatus());
         }
 
@@ -101,10 +108,11 @@ public class RoomServiceImpl implements RoomService {
     @Override
     @Transactional
     public RoomResponse updateRoomStatus(Long id, RoomStatus status) {
-        Room room = roomRepository.findById(id)
+        Room room = roomRepository.findLockedById(id)
                 .orElseThrow(() -> new AppException("Room not found with id: " + id, HttpStatus.NOT_FOUND, "ROOM_NOT_FOUND"));
 
         validateStatusChange(room, status);
+        if (room.getStatus() != status) clearAvailabilityReferences(room);
         room.setStatus(status);
         Room updated = roomRepository.save(room);
         return mapToResponse(updated);
@@ -113,14 +121,22 @@ public class RoomServiceImpl implements RoomService {
     @Override
     @Transactional
     public void deleteRoom(Long id) {
-        Room room = roomRepository.findById(id)
+        Room room = roomRepository.findLockedById(id)
                 .orElseThrow(() -> new AppException("Room not found with id: " + id, HttpStatus.NOT_FOUND, "ROOM_NOT_FOUND"));
 
         if (room.getStatus() == RoomStatus.OCCUPIED) {
             throw new AppException("Phòng còn người thuê. Vui lòng trả phòng trước khi xóa.", HttpStatus.CONFLICT, "ROOM_OCCUPIED");
         }
 
+        if (isManaged(room)) throw workflowRequired();
         roomRepository.delete(room);
+    }
+
+    private void requireApprovedHouse(Floor floor) {
+        if (floor.getBuilding() != null && floor.getBuilding().getBoardingHouse() != null
+                && "PENDING_APPROVAL".equals(floor.getBuilding().getBoardingHouse().getStatus())) {
+            throw new AppException("Cơ sở chưa được Admin phê duyệt, chưa thể thêm hoặc chuyển phòng vào cơ sở.", HttpStatus.CONFLICT, "HOUSE_APPROVAL_REQUIRED");
+        }
     }
 
     private void validateStatusChange(Room room, RoomStatus status) {
@@ -128,6 +144,20 @@ public class RoomServiceImpl implements RoomService {
                 && (status == RoomStatus.LOCKED || status == RoomStatus.MAINTENANCE)) {
             throw new AppException("Phòng còn người thuê. Vui lòng trả phòng trước khi khóa.", HttpStatus.CONFLICT, "ROOM_OCCUPIED");
         }
+        if (status != null && status != room.getStatus()
+                && (isManaged(room) || status == RoomStatus.HOLDING || status == RoomStatus.MAINTENANCE)) throw workflowRequired();
+    }
+
+    private boolean isManaged(Room room) {
+        return room.getStatus() == RoomStatus.HOLDING || room.getStatus() == RoomStatus.MAINTENANCE;
+    }
+
+    private AppException workflowRequired() {
+        return new AppException("Vui lòng xử lý đơn đặt cọc hoặc phiếu bảo trì trước khi đổi trạng thái, chuyển hoặc xóa phòng.", HttpStatus.CONFLICT, "ROOM_WORKFLOW_REQUIRED");
+    }
+
+    private void clearAvailabilityReferences(Room room) {
+        room.setHoldRequestId(null); room.setHoldTenantId(null); room.setHoldExpiresAt(null); room.setMaintenanceRequestId(null);
     }
 
     private Set<Amenity> resolveAmenities(Set<Long> ids, Set<String> names) {
@@ -166,6 +196,7 @@ public class RoomServiceImpl implements RoomService {
                 .area(room.getArea())
                 .maxOccupants(room.getMaxOccupants())
                 .status(room.getStatus())
+                .holdRequestId(room.getHoldRequestId()).holdExpiresAt(room.getHoldExpiresAt()).maintenanceRequestId(room.getMaintenanceRequestId())
                 .amenities(mapAmenities(room))
                 .imageUrl(room.getImageUrl())
                 .createdAt(room.getCreatedAt())
@@ -191,6 +222,7 @@ public class RoomServiceImpl implements RoomService {
                 .area(room.getArea())
                 .maxOccupants(room.getMaxOccupants())
                 .status(room.getStatus())
+                .holdRequestId(room.getHoldRequestId()).holdExpiresAt(room.getHoldExpiresAt()).maintenanceRequestId(room.getMaintenanceRequestId())
                 .amenities(mapAmenities(room))
                 .imageUrl(room.getImageUrl())
                 .createdAt(room.getCreatedAt())

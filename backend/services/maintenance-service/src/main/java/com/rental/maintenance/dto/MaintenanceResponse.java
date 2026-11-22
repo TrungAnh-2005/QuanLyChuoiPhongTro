@@ -19,6 +19,7 @@ public class MaintenanceResponse {
     private Long id;
     private Long roomId;
     private Long tenantId;
+    private Boolean blocksRental;
     private String title;
     private String description;
     private String imageUrl;

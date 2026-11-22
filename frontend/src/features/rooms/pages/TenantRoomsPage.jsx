@@ -1,7 +1,7 @@
 import { getHouseFullAddress } from '../../properties/property.presentation.js';
 import { buildTenantPropertyCatalog, roomBelongsToProperty } from '../../properties/property.catalog.js';
 import { getRoomImage } from '../room.presentation.js';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 
 import {
   MapPin,
@@ -11,12 +11,13 @@ import {
   FileText,
   X
 } from 'lucide-react';
-import { useAuth } from '../../auth/AuthContext';
 import { useData } from '../../../shared/data/RentalDataContext';
 import Modal from '../../../shared/ui/Modal';
-import ResidentContractModal from '../../contracts/components/ResidentContractModal';
+import HoldDepositDetails from '../components/HoldDepositDetails.jsx';
+import { tenantRoomRequests, isRentalRequest, roomStatusLabel, requestStatusLabel } from '../room.rules.js';
 import { useTenantResidency } from '../../tenants/useTenantResidency';
 import TenantBuildingRooms from '../components/TenantBuildingRooms';
+import { useReservationRefresh } from '../useReservationRefresh.js';
 
 export default function TenantRoomsPage() {
   const residency = useTenantResidency();
@@ -28,12 +29,12 @@ export default function TenantRoomsPage() {
 function TenantRoomMarketplace({ currentTenant }) {
   const {boardingHouses:apiBoardingHouses=[]}=useData() || {};
 
-  const { user } = useAuth();
 
   const {
     rooms = [],
     roomRequests = [],
-    submitRoomRequest
+    submitRoomRequest,
+    refreshData
   } = useData();
 
   const [selectedHouse, setSelectedHouse] = useState('ALL');
@@ -44,7 +45,14 @@ function TenantRoomMarketplace({ currentTenant }) {
   const [priceRange, setPriceRange] = useState('ALL');
 
   const [selectedRoomDetails, setSelectedRoomDetails] = useState(null);
-  const [selectedContractForModal, setSelectedContractForModal] = useState(null);
+  const [selectedHold, setSelectedHold] = useState(null);
+  const [reservingRoomId, setReservingRoomId] = useState(null);
+  const [reservationError, setReservationError] = useState('');
+  const reservationInFlight = useRef(false);
+  const newlyHeldRooms = useRef(new Map());
+  const ownRequests = tenantRoomRequests(roomRequests, currentTenant?.id);
+  const activeHolds = ownRequests.filter(req => isRentalRequest(req) && req.status === 'HOLDING');
+  useReservationRefresh(activeHolds.length > 0 || rooms.some(room => room.status === 'HOLDING'));
   const [showRequestsHistory, setShowRequestsHistory] = useState(false);
   const [actionToast, setActionToast] = useState(null);
 
@@ -64,7 +72,7 @@ function TenantRoomMarketplace({ currentTenant }) {
       }
       if (filterStatus === 'AVAILABLE' && room.status !== 'AVAILABLE') return false;
       if (filterStatus === 'HOLDING' && room.status !== 'HOLDING') return false;
-      if (filterStatus === 'OCCUPIED' && room.status !== 'OCCUPIED') return false;
+      if (filterStatus !== 'ALL' && room.status !== filterStatus) return false;
 
       if (priceRange === 'UNDER_3M' && room.price >= 3000000) return false;
       if (priceRange === '3M_5M' && (room.price < 3000000 || room.price > 5000000)) return false;
@@ -82,21 +90,31 @@ function TenantRoomMarketplace({ currentTenant }) {
     });
   }, [visibleRooms, selectedHouse, selectedAddress, tenantViewAllFlat, visibleHousesForUser, filterStatus, priceRange, searchTerm]);
 
-  const handleDepositClick = (room) => {
-    setSelectedContractForModal({
-      roomId: room.id,
-      isBookingRequest: true,
-      roomNumber: room.number,
-      houseCode: room.houseCode,
-      houseName: room.house || 'Nhà Trọ Cầu Giấy',
-      tenantName: user?.fullName || 'Khách thuê',
-      tenantPhone: user?.phone || '0900.000.000',
-      price: room.price,
-      depositAmount: 1000000,
-      rentalPrice: room.price,
-      status: 'PENDING_SIGN',
-      createdDate: new Date().toLocaleDateString('vi-VN')
-    });
+  const handleDepositClick = async (room) => {
+    if (reservationInFlight.current) return;
+    const cached = newlyHeldRooms.current.get(room.id);
+    const existing = ownRequests.find(req => isRentalRequest(req) && String(req.targetRoomId) === String(room.id) && ['HOLDING', 'PENDING'].includes(req.status))
+      || (cached && !ownRequests.some(req => req.id === cached.id) ? cached : null);
+    if (existing) { setSelectedHold(existing); return; }
+    if (!currentTenant?.id) { setReservationError('Không tìm thấy hồ sơ khách thuê của bạn. Vui lòng liên hệ quản lý.'); return; }
+    if (room.status !== 'AVAILABLE') return;
+    reservationInFlight.current = true;
+    setReservingRoomId(room.id);
+    setReservationError('');
+    try {
+      const result = await submitRoomRequest({ type: 'RENT', tenantId: currentTenant.id, targetRoomId: room.id, durationMonths: 12,
+        note: 'Đặt cọc giữ phòng. Khoản nộp trước 1.000.000 đ tính vào tổng cọc một tháng tiền thuê; chờ quản lý xác nhận tiền thực nhận.' });
+      const hold = result.data || result;
+      newlyHeldRooms.current.set(room.id, { ...hold, roomNumber: room.number });
+      setSelectedHold({ ...hold, roomNumber: room.number });
+      setActionToast('Đã giữ phòng. Vui lòng liên hệ quản lý cơ sở để nộp cọc và xác nhận tiền thực nhận.');
+    } catch (error) {
+      setSelectedHold(null);
+      setActionToast(null);
+      try { await refreshData(); } catch { /* Keep the original reservation error visible. */ }
+      setReservationError(error.message || 'Không thể giữ phòng. Vui lòng thử lại.');
+    }
+    finally { reservationInFlight.current = false; setReservingRoomId(null); }
   };
 
   return (
@@ -140,6 +158,9 @@ function TenantRoomMarketplace({ currentTenant }) {
           <button onClick={() => setActionToast(null)}>✕</button>
         </div>
       )}
+
+      {reservationError && <p role="alert" className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs">{reservationError}</p>}
+      {activeHolds.map(hold => <div key={hold.id} className="bento-card p-4 border border-amber-200 bg-white"><HoldDepositDetails request={hold} /></div>)}
 
       {/* Breadcrumb Navigation */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs">
@@ -343,7 +364,7 @@ function TenantRoomMarketplace({ currentTenant }) {
           {/* Filter Bar */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
             <div className="flex items-center gap-2 flex-wrap">
-              {['ALL', 'AVAILABLE', 'HOLDING'].map((st) => (
+              {['ALL', 'AVAILABLE', 'HOLDING', 'MAINTENANCE', 'LOCKED'].map((st) => (
                 <button
                   key={st}
                   onClick={() => setFilterStatus(st)}
@@ -353,7 +374,7 @@ function TenantRoomMarketplace({ currentTenant }) {
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
-                  {st === 'ALL' ? 'Tất Cả' : st === 'AVAILABLE' ? '🟢 Còn Trống' : '🔒 Đang Giữ Chỗ'}
+                  {st === 'ALL' ? 'Tất cả' : roomStatusLabel(st)}
                 </button>
               ))}
 
@@ -411,12 +432,12 @@ function TenantRoomMarketplace({ currentTenant }) {
                               🟢 Còn trống
                             </span>
                           ) : room.status === 'HOLDING' ? (
-                            <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-amber-500/95 text-white backdrop-blur-md shadow-md animate-pulse">
-                              🔒 Đang giữ chỗ
+                            <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-amber-500/95 text-white backdrop-blur-md shadow-md">
+                              Đặt cọc
                             </span>
                           ) : (
                             <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-slate-900/80 text-white backdrop-blur-md shadow-md">
-                              Đang thuê
+                              {roomStatusLabel(room.status)}
                             </span>
                           )}
                         </div>
@@ -473,10 +494,11 @@ function TenantRoomMarketplace({ currentTenant }) {
                       {room.status === 'AVAILABLE' && (
                         <button
                           type="button"
+                          disabled={reservingRoomId !== null}
                           onClick={() => handleDepositClick(room)}
                           className="text-xs text-white font-bold px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 rounded-xl shadow-xs transition-all flex-1 text-center btn-press cursor-pointer"
                         >
-                          Đặt Cọc 1Tr
+                          {reservingRoomId === room.id ? 'Đang giữ phòng…' : 'Đặt cọc 1tr'}
                         </button>
                       )}
                     </div>
@@ -534,7 +556,7 @@ function TenantRoomMarketplace({ currentTenant }) {
               <div>
                 <span className="text-slate-500">Trạng thái:</span>
                 <span className="font-bold ml-1 text-emerald-600">
-                  {selectedRoomDetails.status === 'AVAILABLE' ? 'Còn trống' : 'Đang ở'}
+                  {roomStatusLabel(selectedRoomDetails.status)}
                 </span>
               </div>
             </div>
@@ -561,6 +583,7 @@ function TenantRoomMarketplace({ currentTenant }) {
               {selectedRoomDetails.status === 'AVAILABLE' && (
                 <button
                   type="button"
+                  disabled={reservingRoomId !== null}
                   onClick={() => {
                     const r = selectedRoomDetails;
                     setSelectedRoomDetails(null);
@@ -576,25 +599,12 @@ function TenantRoomMarketplace({ currentTenant }) {
         </Modal>
       )}
 
-      {/* Contract & Deposit Modal */}
-      <ResidentContractModal
-        isOpen={!!selectedContractForModal}
-        key={selectedContractForModal?.roomId || 'closed'}
-        onClose={() => setSelectedContractForModal(null)}
-        contract={selectedContractForModal}
-        onSignSuccess={async () => {
-          await submitRoomRequest({
-            type: 'RENT',
-            targetRoomId: selectedContractForModal.roomId,
-            tenantId: currentTenant?.id,
-            durationMonths: 12,
-            note: 'Yêu cầu đặt cọc giữ chỗ 1.000.000 đ. Khách đã xác nhận điều khoản; chờ quản lý xét duyệt và xác nhận tiền cọc.'
-          });
-          setSelectedContractForModal(null);
-          setActionToast('Đã gửi yêu cầu đặt cọc. Vui lòng chờ quản lý xét duyệt và xác nhận tiền cọc.');
-          setTimeout(() => setActionToast(null), 4000);
-        }}
-      />
+      {selectedHold && <Modal isOpen={!!selectedHold} onClose={() => setSelectedHold(null)} maxWidth="max-w-lg">
+        <div className="space-y-4">
+          <div className="flex justify-between items-center"><h3 className="font-bold text-slate-900">Thông tin đặt cọc</h3><button aria-label="Đóng" onClick={() => setSelectedHold(null)}><X className="w-4 h-4" /></button></div>
+          <HoldDepositDetails request={ownRequests.find(req => req.id === selectedHold.id) || selectedHold} />
+        </div>
+      </Modal>}
 
       {/* Requests History Modal */}
       {showRequestsHistory && (
@@ -608,20 +618,20 @@ function TenantRoomMarketplace({ currentTenant }) {
             </div>
 
             <div className="space-y-2">
-              {roomRequests.length === 0 ? (
+              {ownRequests.length === 0 ? (
                 <p className="text-center py-6 text-slate-400">Bạn chưa gửi đơn nào</p>
               ) : (
-                roomRequests.map((req) => (
+                ownRequests.map((req) => (
                   <div key={req.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
                     <div className="flex justify-between font-bold">
                       <span>{['RENT', 'RENTAL', 'NEW_RENT'].includes(req.type) ? 'Đơn Thuê Phòng / Đặt Cọc' : req.type === 'TRANSFER' ? 'Đổi Phòng' : 'Ở Ghép'}</span>
                       <span className={`px-2 py-0.5 rounded text-[10px] ${
                         req.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                       }`}>
-                        {req.status === 'APPROVED' ? 'Đã duyệt' : 'Chờ duyệt'}
+                        {requestStatusLabel(req.status)}
                       </span>
                     </div>
-                    <div className="text-slate-500">Phòng: {req.roomNumber || req.targetRoom}</div>
+                    {isRentalRequest(req) ? <HoldDepositDetails request={req} /> : <div className="text-slate-500">Phòng: {req.roomNumber || req.targetRoom}</div>}
                   </div>
                 ))
               )}

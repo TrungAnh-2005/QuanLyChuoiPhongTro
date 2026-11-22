@@ -9,5 +9,6 @@ public interface BoardingHouseService {
     BoardingHouseResponse createBoardingHouse(CreateBoardingHouseRequest request);
     List<BoardingHouseResponse> getAllBoardingHouses();
     BoardingHouseResponse updateBoardingHouse(Long id, CreateBoardingHouseRequest request);
+    BoardingHouseResponse approveBoardingHouse(Long id);
     void deleteBoardingHouse(Long id);
 }

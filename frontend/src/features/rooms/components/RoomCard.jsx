@@ -1,12 +1,12 @@
 import { getRoomImage } from '../room.presentation.js';
 import { Users } from 'lucide-react';
 import { Edit3 } from 'lucide-react';
-import { isRoomLocked } from '../room.rules.js';
+import { isRoomLocked, isRoomHolding, isRoomMaintenance } from '../room.rules.js';
 import { Unlock } from 'lucide-react';
 import { Lock } from 'lucide-react';
 import { Trash2 } from 'lucide-react';
 
-export default function RoomCard({ handleDeleteRoom, handleToggleRoomLock, occupantsCount, occupied, room, setEditingRoom, setRoomFormData, setSelectedRoomForMembers }) {
+export default function RoomCard({ handleDeleteRoom, handleToggleRoomLock, occupantsCount, occupied, room, setEditingRoom, setRoomFormData, setSelectedRoomForMembers, onMaintenance, onManageHold }) {
   return (<div
                       key={room.id}
                       className="bento-card p-5 bg-white border border-slate-200/80 rounded-2xl flex flex-col justify-between hover:shadow-lg transition-all"
@@ -34,7 +34,7 @@ export default function RoomCard({ handleDeleteRoom, handleToggleRoomLock, occup
                                 : room.status === 'OCCUPIED'
                                 ? '🟣 Đang thuê'
                                 : room.status === 'HOLDING'
-                                ? '🔒 Giữ chỗ'
+                                ? 'Đặt cọc'
                                 : room.status === 'LOCKED' ? 'Tạm khóa' : 'Bảo trì'}
                             </span>
                           </div>
@@ -83,11 +83,12 @@ export default function RoomCard({ handleDeleteRoom, handleToggleRoomLock, occup
 
                         <button
                           type="button"
+                          disabled={isRoomHolding(room)}
                           onClick={() => {
                             setEditingRoom(room);
                             setRoomFormData({ ...room });
                           }}
-                          className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition cursor-pointer"
+                          className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                           title="Sửa phòng"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
@@ -97,7 +98,7 @@ export default function RoomCard({ handleDeleteRoom, handleToggleRoomLock, occup
                           type="button"
                           onClick={() => handleToggleRoomLock(room)}
                           className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                          disabled={!isRoomLocked(room) && occupied}
+                          disabled={isRoomHolding(room) || isRoomMaintenance(room) || (!isRoomLocked(room) && occupied)}
                           aria-label={isRoomLocked(room) ? 'Mở khóa phòng' : 'Tạm khóa phòng'}
                           title={isRoomLocked(room) ? 'Mở khóa phòng' : occupied ? 'Phòng còn người thuê, cần trả phòng trước khi khóa' : 'Tạm khóa phòng'}
                         >
@@ -107,11 +108,14 @@ export default function RoomCard({ handleDeleteRoom, handleToggleRoomLock, occup
                         <button
                           type="button"
                           onClick={() => handleDeleteRoom(room.id, room.number)}
-                          className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition cursor-pointer"
+                          disabled={occupied || isRoomHolding(room) || isRoomMaintenance(room)}
+                          className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                           title="Xóa phòng"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
+                      {isRoomHolding(room) && <button type="button" onClick={() => onManageHold(room)} className="mt-3 px-3 py-2 text-xs font-bold bg-amber-50 text-amber-800 rounded-xl">Quản lý đặt cọc</button>}
+                      {((room.status === 'AVAILABLE' && !occupied) || room.status === 'MAINTENANCE') && <button type="button" onClick={() => onMaintenance(room)} className="mt-3 px-3 py-2 text-xs font-bold border border-slate-200 text-slate-700 rounded-xl">{room.status === 'MAINTENANCE' ? 'Hoàn tất bảo trì' : 'Bảo trì'}</button>}
                     </div>);
 }

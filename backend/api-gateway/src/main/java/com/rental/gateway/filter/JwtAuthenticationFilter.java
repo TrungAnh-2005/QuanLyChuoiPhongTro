@@ -52,11 +52,21 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
         return (exchange, chain) -> {
             ServerHttpRequest request = exchange.getRequest();
             String path = request.getURI().getPath();
+            String operationPath = canonicalWorkflowPath(path);
+            if (pathMatcher.match("/api/rooms/*/holds", operationPath)
+                    || pathMatcher.match("/api/rooms/*/holds/**", operationPath)
+                    || pathMatcher.match("/api/rooms/*/maintenance/**", operationPath)) {
+                return onError(exchange, "Room workflow operations are internal; use reservation or maintenance APIs", HttpStatus.FORBIDDEN);
+            }
             if (testMode) {
+                String selectedRole = request.getHeaders().getFirst("X-Test-Role");
+                String testRoles = selectedRole == null ? "ROLE_ADMIN,ROLE_STAFF,ROLE_TENANT"
+                        : "ADMIN".equals(selectedRole) ? "ROLE_ADMIN"
+                        : "TENANT".equals(selectedRole) ? "ROLE_TENANT" : "ROLE_STAFF";
                 ServerHttpRequest testRequest = request.mutate()
                         .headers(headers -> headers.remove(HttpHeaders.AUTHORIZATION))
                         .header("X-User-Id", "2")
-                        .header("X-User-Roles", "ROLE_ADMIN,ROLE_STAFF,ROLE_TENANT")
+                        .header("X-User-Roles", testRoles)
                         .header("X-User-Email", "test@rental.local")
                         .build();
                 return chain.filter(exchange.mutate().request(testRequest).build());
@@ -96,6 +106,17 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
         };
     }
 
+    private String canonicalWorkflowPath(String path) {
+        // MVC ignores matrix parameters while matching controller paths. Match
+        // the decoded/canonical path here too, including encoded separators.
+        String clean = path.replace('\\', '/').replaceAll(";[^/]*", "").replaceAll("/+", "/");
+        try {
+            return new java.net.URI(null, null, clean, null).normalize().getPath();
+        } catch (java.net.URISyntaxException error) {
+            return clean;
+        }
+    }
+
     private Mono<Void> onError(ServerWebExchange exchange, String message, HttpStatus status) {
         ServerHttpResponse response = exchange.getResponse();
         response.setStatusCode(status);
@@ -109,7 +130,7 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
         Map<String, Object> errorDetails = new LinkedHashMap<>();
         errorDetails.put("success", false);
         errorDetails.put("message", message);
-        errorDetails.put("errorCode", "UNAUTHORIZED");
+        errorDetails.put("errorCode", status == HttpStatus.FORBIDDEN ? "FORBIDDEN" : "UNAUTHORIZED");
         errorDetails.put("timestamp", Instant.now().toString());
         errorDetails.put("requestId", requestId != null ? requestId : "N/A");
 

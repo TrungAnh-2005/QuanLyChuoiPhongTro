@@ -1,5 +1,5 @@
 // Commands consume current state through the app's composition boundary.
-export function createPropertiesCommands({ actions, api, create, find, patch, refreshData, remove, request, requireEmptyHouse, resources, view }) {
+export function createPropertiesCommands({ actions, api, create, find, patch, refreshData, remove, request, requireEmptyHouse, resources, view, user }) {
   return {
 updateUtilityPrices: async prices => {
       for (const house of view.boardingHouses) for (const [serviceName,unitPrice] of [['Điện',prices.elecPrice],['Nước',prices.waterPrice]]) {
@@ -13,7 +13,11 @@ recordHouseDeletion: input => actions.addAuditLog({action:'DELETE_HOUSE',target:
 addHouseServiceConfig: input => create('houseServiceConfigs', { boardingHouseId: input.boardingHouseId || find(view.boardingHouses,input.houseCode).id, serviceName: input.serviceName, calculationType: input.calculationType, unitPrice: Number(input.unitPrice) }),
 updateHouseServiceConfig: (id, price, type) => patch('houseServiceConfigs',id,{ unitPrice: Number(price), ...(type ? {calculationType:type} : {}) }),
 deleteHouseServiceConfig: id => remove('houseServiceConfigs',id),
-addBoardingHouse: input => request('post','/properties',input),
+addBoardingHouse: input => request('post','/properties',{...input,status:'PENDING_APPROVAL'}),
+approveBoardingHouse: id => {
+  if (user?.role !== 'ADMIN') throw new Error('Chỉ Admin được phê duyệt cơ sở nhà trọ.');
+  return request('patch',`/properties/${id}/approval`,{});
+},
 updateBoardingHouse: (id,input) => { if (input.status === 'LOCKED') requireEmptyHouse(id); return request('put',`/properties/${id}`,{...find(view.boardingHouses,id),...input}); },
 deleteBoardingHouse: id => { requireEmptyHouse(id); return request('delete',`/properties/${id}`); }
 };

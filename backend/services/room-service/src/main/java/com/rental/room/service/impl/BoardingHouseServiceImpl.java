@@ -34,7 +34,7 @@ public class BoardingHouseServiceImpl implements BoardingHouseService {
                 .managerName(request.getManagerName())
                 .managerUsername(request.getManagerUsername())
                 .createdBy(request.getCreatedBy())
-                .status(request.getStatus())
+                .status("PENDING_APPROVAL")
                 .imageUrl(request.getImageUrl())
                 .totalFloors(request.getTotalFloors())
                 .totalRooms(request.getTotalRooms())
@@ -74,10 +74,18 @@ public class BoardingHouseServiceImpl implements BoardingHouseService {
     @Override
     @Transactional
     public BoardingHouseResponse updateBoardingHouse(Long id, CreateBoardingHouseRequest request) {
-        BoardingHouse boardingHouse = boardingHouseRepository.findById(id)
+        BoardingHouse boardingHouse = boardingHouseRepository.findLockedById(id)
                 .orElseThrow(() -> new AppException("Boarding house not found with id: " + id, HttpStatus.NOT_FOUND, "BOARDING_HOUSE_NOT_FOUND"));
 
-        if ("LOCKED".equalsIgnoreCase(request.getStatus())) requireVacantHouse(boardingHouse);
+        String nextStatus = request.getStatus() == null ? boardingHouse.getStatus() : request.getStatus();
+        if (nextStatus == null) nextStatus = "PENDING_APPROVAL";
+        if (!List.of("ACTIVE", "LOCKED", "PENDING_APPROVAL").contains(nextStatus)) {
+            throw new AppException("Trạng thái cơ sở không hợp lệ.", HttpStatus.BAD_REQUEST, "INVALID_HOUSE_STATUS");
+        }
+        if ("PENDING_APPROVAL".equals(boardingHouse.getStatus()) && !"PENDING_APPROVAL".equals(nextStatus)) {
+            throw new AppException("Cơ sở đang chờ Admin phê duyệt, không thể tự kích hoạt hoặc khóa.", HttpStatus.CONFLICT, "HOUSE_APPROVAL_REQUIRED");
+        }
+        if ("LOCKED".equals(nextStatus)) requireVacantHouse(boardingHouse);
         boardingHouse.setName(request.getName().trim());
         boardingHouse.setAddress(request.getAddress().trim());
         boardingHouse.setManagerPhone(request.getManagerPhone() != null ? request.getManagerPhone().trim() : null);
@@ -86,7 +94,7 @@ public class BoardingHouseServiceImpl implements BoardingHouseService {
         boardingHouse.setManagerName(request.getManagerName());
         boardingHouse.setManagerUsername(request.getManagerUsername());
         boardingHouse.setCreatedBy(request.getCreatedBy());
-        boardingHouse.setStatus(request.getStatus());
+        boardingHouse.setStatus(nextStatus);
         boardingHouse.setImageUrl(request.getImageUrl());
         boardingHouse.setTotalFloors(request.getTotalFloors());
         boardingHouse.setTotalRooms(request.getTotalRooms());
@@ -96,15 +104,34 @@ public class BoardingHouseServiceImpl implements BoardingHouseService {
 
     @Override
     @Transactional
+    public BoardingHouseResponse approveBoardingHouse(Long id) {
+        BoardingHouse house = boardingHouseRepository.findLockedById(id)
+                .orElseThrow(() -> new AppException("Không tìm thấy cơ sở.", HttpStatus.NOT_FOUND, "BOARDING_HOUSE_NOT_FOUND"));
+        if (!"PENDING_APPROVAL".equals(house.getStatus())) {
+            throw new AppException("Chỉ phê duyệt cơ sở đang chờ duyệt.", HttpStatus.CONFLICT, "HOUSE_NOT_PENDING");
+        }
+        house.setStatus("ACTIVE");
+        return mapToResponse(boardingHouseRepository.save(house));
+    }
+
+    @Override
+    @Transactional
     public void deleteBoardingHouse(Long id) {
-        BoardingHouse boardingHouse = boardingHouseRepository.findById(id)
+        BoardingHouse boardingHouse = boardingHouseRepository.findLockedById(id)
                 .orElseThrow(() -> new AppException("Boarding house not found with id: " + id, HttpStatus.NOT_FOUND, "BOARDING_HOUSE_NOT_FOUND"));
 
         requireVacantHouse(boardingHouse);
+        if (boardingHouse.getBuildings().stream().flatMap(building -> building.getFloors().stream())
+                .flatMap(floor -> floor.getRooms().stream()).anyMatch(room -> room.getStatus() == RoomStatus.MAINTENANCE)) {
+            throw new AppException("Cơ sở còn phiếu bảo trì ngừng cho thuê. Vui lòng hoàn tất trước khi xóa.", HttpStatus.CONFLICT, "HOUSE_MAINTENANCE");
+        }
         boardingHouseRepository.delete(boardingHouse);
     }
 
     private void requireVacantHouse(BoardingHouse house) {
+        boolean reserved = house.getBuildings().stream().flatMap(building -> building.getFloors().stream())
+                .flatMap(floor -> floor.getRooms().stream()).anyMatch(room -> room.getStatus() == RoomStatus.HOLDING);
+        if (reserved) throw new AppException("Cơ sở còn phòng đặt cọc. Vui lòng xử lý các đơn đặt cọc trước khi khóa hoặc xóa.", HttpStatus.CONFLICT, "HOUSE_RESERVED");
         boolean occupied = house.getBuildings().stream()
                 .flatMap(building -> building.getFloors().stream())
                 .flatMap(floor -> floor.getRooms().stream())

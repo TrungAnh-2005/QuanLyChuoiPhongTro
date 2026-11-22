@@ -12,6 +12,7 @@ import com.rental.contract.dto.RenewContractRequest;
 import com.rental.contract.dto.event.ContractEventDTO;
 import com.rental.contract.entity.Contract;
 import com.rental.contract.entity.ContractStatus;
+import com.rental.contract.entity.RoomRequest;
 import com.rental.contract.exception.AppException;
 import com.rental.contract.publisher.ContractEventPublisher;
 import com.rental.contract.repository.ContractRepository;
@@ -25,6 +26,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.Objects;
 
 @Slf4j
 @Service
@@ -75,6 +79,45 @@ public class ContractServiceImpl implements ContractService {
             throw new AppException("Failed to lock room status: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR, "ROOM_UPDATE_FAILED");
         }
 
+        return persistContract(request, tenant, room, false);
+    }
+
+    /** Only ReservationService invokes this after the serialized receipt ledger reaches the full deposit. */
+    @Override
+    @Transactional
+    public ContractResponse createReservedContract(RoomRequest reservation) {
+        if (!"RENT".equals(reservation.getType()) || !"HOLDING".equals(reservation.getStatus())
+                || reservation.getId() == null || reservation.getContractId() != null
+                || reservation.getRequiredDepositAmount() == null || reservation.getRequiredDepositAmount().signum() <= 0
+                || reservation.getPaidDepositAmount() == null
+                || reservation.getPaidDepositAmount().compareTo(reservation.getRequiredDepositAmount()) != 0) {
+            throw new AppException("The reservation must have its full deposit confirmed", HttpStatus.CONFLICT, "DEPOSIT_INCOMPLETE");
+        }
+        TenantDto tenant = tenantClient.getTenantById(reservation.getTenantId()).getData();
+        RoomDto room = roomClient.getRoomById(reservation.getTargetRoomId()).getData();
+        if (tenant == null || room == null) {
+            throw new AppException("Reservation tenant or room is missing", HttpStatus.BAD_REQUEST, "RESERVATION_INVALID");
+        }
+        if (!Objects.equals(reservation.getId(), room.getHoldRequestId())
+                || !("HOLDING".equals(room.getStatus()) || "OCCUPIED".equals(room.getStatus()))) {
+            throw new AppException("Room is not held by this reservation", HttpStatus.CONFLICT, "RESERVATION_LOST");
+        }
+        try {
+            // This endpoint validates the tenant and also supports remote-success/local-rollback retries.
+            roomClient.confirmHold(reservation.getTargetRoomId(), reservation.getId(),
+                    new RoomClient.ConfirmHoldRequest(reservation.getTenantId()));
+        } catch (feign.FeignException error) {
+            throw new AppException("Room reservation could not be confirmed",
+                    error.status() == 409 ? HttpStatus.CONFLICT : HttpStatus.BAD_GATEWAY, "RESERVATION_CONFIRM_FAILED");
+        }
+        var request = CreateContractRequest.builder().tenantId(reservation.getTenantId()).roomId(reservation.getTargetRoomId())
+                .startDate(LocalDate.now()).endDate(LocalDate.now().plusMonths(reservation.getDurationMonths()))
+                .rentalPrice(reservation.getRentalPriceSnapshot()).depositAmount(reservation.getRequiredDepositAmount())
+                .paymentCycle(1).build();
+        return persistContract(request, tenant, room, true);
+    }
+
+    private ContractResponse persistContract(CreateContractRequest request, TenantDto tenant, RoomDto room, boolean depositPaid) {
         String contractCode = "HD-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
 
         Contract contract = Contract.builder()
@@ -88,6 +131,8 @@ public class ContractServiceImpl implements ContractService {
                 .paymentCycle(request.getPaymentCycle() != null ? request.getPaymentCycle() : 1)
                 .terms(request.getTerms())
                 .status(ContractStatus.ACTIVE)
+                .depositPaid(depositPaid)
+                .depositPaidAt(depositPaid ? LocalDateTime.now() : null)
                 .build();
 
         Contract saved = contractRepository.save(contract);

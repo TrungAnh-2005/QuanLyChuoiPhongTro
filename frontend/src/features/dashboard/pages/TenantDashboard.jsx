@@ -1,16 +1,12 @@
-import SepayConfigModal from '../components/SepayConfigModal.jsx';
+import HoldDepositDetails from '../../rooms/components/HoldDepositDetails.jsx';
+import { tenantRoomRequests, isRentalRequest } from '../../rooms/room.rules.js';
+import { useTenantResidency } from '../../tenants/useTenantResidency';
+import { useReservationRefresh } from '../../rooms/useReservationRefresh.js';
 import LeaveRoomModal from '../components/LeaveRoomModal.jsx';
 import CheckoutRequestModal from '../components/CheckoutRequestModal.jsx';
 import { useState, useMemo, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Home, Users, Receipt, Zap, CheckCircle2, Clock, CreditCard, Wrench, ShieldCheck, X, LogOut, UserPlus, FileText, Sparkles, ChevronRight, Check, Copy, Shield, ArrowRight, Settings } from 'lucide-react';
-import {
-  generateSePayQrUrl,
-  getSePayConfig,
-  saveSePayConfig,
-  checkSePayTransaction,
-  syncBankAccountsFromSePay
-} from '../../payments/api/sepay.api';
+import { Link } from 'react-router-dom';
+import { Home, Users, Receipt, CheckCircle2, Clock, CreditCard, Wrench, ShieldCheck, X, LogOut, UserPlus, FileText, Sparkles, ChevronRight, Shield, ArrowRight } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 import { useData } from '../../../shared/data/RentalDataContext';
 
@@ -33,6 +29,7 @@ import PaymentModal from '../../payments/components/PaymentModal';
 
 export default function UserDashboard() {
   const { user } = useAuth();
+  const { currentTenant: linkedTenant } = useTenantResidency();
   const {
     invoices = [],
     allInvoices = [],
@@ -44,21 +41,16 @@ export default function UserDashboard() {
     roomMembers = [],
     resetRoomPaymentStatus,
     signContractElectronically,
-    payDepositAndSignContract,
     leaveRoom,
     submitCheckoutRequest,
-    voteRoommateRequest,
-    cancelRoomHold
+    voteRoommateRequest
   } = useData();
-
-  const navigate = useNavigate();
 
   // Modals state for Tenant
   const [showContractModal, setShowContractModal] = useState(false);
   const [showRoommateModal, setShowRoommateModal] = useState(false);
   const [payingInvoice, setPayingInvoice] = useState(null);
   const [paySuccessToast, setPaySuccessToast] = useState(null);
-  const [copiedGateField, setCopiedGateField] = useState(null);
 
   // Modal Rời phòng & Trả phòng dành cho Cổng Khách Thuê
   const [leaveModal, setLeaveModal] = useState(null);
@@ -81,28 +73,8 @@ export default function UserDashboard() {
   const [refundAccountNumber, setRefundAccountNumber] = useState('');
   const [refundAccountName, setRefundAccountName] = useState('');
 
-  // SePay Integration for Deposit & Onboarding Gate
-  const [sepayConfig, setSepayConfig] = useState(() => getSePayConfig());
-  const [showSepayConfigModal, setShowSepayConfigModal] = useState(false);
-  const [sepayForm, setSepayForm] = useState(() => {
-    const cfg = getSePayConfig();
-    return {
-      accountNumber: cfg.accountNumber || '35825112005',
-      bank: cfg.bank || 'MBBank',
-      accountName: cfg.accountName || 'DAM TRUNG ANH',
-      apiKey: cfg.apiKey || ''
-    };
-  });
-  const [isCheckingSepayDeposit, setIsCheckingSepayDeposit] = useState(false);
-  const [sepayDepositStatusMsg, setSepayDepositStatusMsg] = useState(null);
-  const [isSyncingSepay, setIsSyncingSepay] = useState(false);
-  const [isDepositPaid, setIsDepositPaid] = useState(false);
-
   // Tìm hợp đồng của khách thuê
-  const myTenant = useMemo(() =>
-    tenants.find(t => t.email && t.email === user?.email)
-      || tenants.find(t => t.fullName === user?.fullName), [tenants, user]);
-
+  const myTenant = linkedTenant;
 
   const myContract = useMemo(() => {
     if (!myTenant) return null;
@@ -125,69 +97,8 @@ export default function UserDashboard() {
   );
 
   // Đơn đăng ký thuê phòng đang chờ Quản lý duyệt hồ sơ
-  const myPendingRentalRequest = useMemo(() => {
-    const uName = (user?.fullName || '').toLowerCase().trim();
-    const uPhone = (user?.phone || '').trim();
-    return (roomRequests || []).find((r) =>
-      (r.type === 'RENT' || r.type === 'NEW_RENT') &&
-      r.status === 'PENDING' &&
-      ((uName && r.tenant?.toLowerCase().includes(uName)) || (uPhone && r.phone === uPhone) || (user?.username === 'tenant_new'))
-    );
-  }, [user, roomRequests]);
-
-  // Đếm ngược thời hạn nộp cọc giữ phòng (Countdown Timer cho Onboarding Gate)
-  const [holdingSecondsLeft, setHoldingSecondsLeft] = useState(15 * 60);
-
-  useEffect(() => {
-    if (!isContractPending || !myContract) return;
-    const targetRoomNum = myContract.roomNumber || 'P.102';
-    const holdingUntil = myContract.holdingUntil ||
-      rooms?.find(r => r.number === targetRoomNum && (!myContract.houseCode || r.houseCode === myContract.houseCode))?.holdingUntil ||
-      (Date.now() + 15 * 60 * 1000);
-
-    const update = () => {
-      const remaining = Math.max(0, Math.floor((holdingUntil - Date.now()) / 1000));
-      setHoldingSecondsLeft(remaining);
-    };
-    update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
-  }, [isContractPending, myContract, rooms]);
-
-  const formatCountdown = (totalSec) => {
-    const mins = Math.floor(totalSec / 60);
-    const secs = totalSec % 60;
-    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  };
-
-  const getDeadlineString = (targetTs) => {
-    if (!targetTs) return '';
-    const d = new Date(targetTs);
-    const hours = String(d.getHours()).padStart(2, '0');
-    const mins = String(d.getMinutes()).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const year = d.getFullYear();
-    return `${hours}:${mins} ngày ${day}/${month}/${year}`;
-  };
-
-  const handleCancelHoldRoom = async (roomNum, houseCode) => {
-try {
-
-    if (window.confirm(`Bạn có chắc chắn muốn hủy giữ chỗ phòng ${roomNum}? Phòng sẽ được tự động mở lại trên sàn cho khách khác thuê.`)) {
-      if (cancelRoomHold) {
-        await cancelRoomHold(roomNum, houseCode);
-      }
-      setPaySuccessToast(`Đã hủy giữ chỗ phòng ${roomNum}. Phòng đã được mở lại cho người khác thuê.`);
-      setTimeout(() => {
-        setPaySuccessToast(null);
-        navigate('/rooms');
-      }, 1000);
-    }
-
-} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
-};
-
+  const myPendingRentalRequest = tenantRoomRequests(roomRequests, myTenant?.id).find(request => isRentalRequest(request) && ['HOLDING', 'PENDING'].includes(request.status));
+  useReservationRefresh(myPendingRentalRequest?.status === 'HOLDING');
 
   const myMembership = useMemo(() => roomMembers.find(m =>
     m.tenantId === myTenant?.id && m.status === 'ACTIVE'
@@ -435,36 +346,6 @@ try {
   const totalOccupants = Math.min(maxOccupants, 1 + roommates.length);
   const isRoomFull = totalOccupants >= maxOccupants;
 
-  useEffect(() => {
-    if (!isContractPending || !myContract) return;
-    let isMounted = true;
-    const targetRoomNum = myContract.roomNumber || 'P.102';
-    const transferMemo = `COC ${String(targetRoomNum || 'P.102').replace('.', '')} ${String(user?.fullName || myContract?.tenantName || 'NAM').replace(/\s+/g, ' ').toUpperCase()}`.trim();
-    const depositAmount = myContract.depositAmount || 2800000;
-    const bankAccount = sepayConfig.accountNumber || '35825112005';
-
-    const checkDeposit = async () => {
-      try {
-        const res = await checkSePayTransaction({
-          invoiceCode: transferMemo,
-          amount: depositAmount,
-          accountNumber: bankAccount
-        });
-        if (res.success && isMounted) {
-          setIsDepositPaid(true);
-          setPaySuccessToast(`⚡ SePay Xác Nhận: Đã nhận ${depositAmount.toLocaleString('vi-VN')} đ tiền cọc! Nút Ký Hợp Đồng đã sáng lên để bạn bấm.`);
-          setTimeout(() => setPaySuccessToast(null), 6000);
-        }
-      } catch {}
-    };
-
-    const timer = setInterval(checkDeposit, 5000);
-    return () => {
-      isMounted = false;
-      clearInterval(timer);
-    };
-  }, [isContractPending, myContract, sepayConfig, user]);
-
   const myCurrentInvoice = useMemo(() => {
     if (!myRoomNumber || isContractPending) return null;
     return invoices.find((inv) => inv.room === myRoomNumber && (!inv.houseCode || inv.houseCode === currentRoomObj?.houseCode)) || null;
@@ -474,433 +355,23 @@ try {
   // 1A. GIAO DIỆN BẮT BUỘC: NỘP TIỀN CỌC & KÝ HỢP ĐỒNG ĐIỆN TỬ (ONBOARDING GATE)
   // =========================================================================
   if (isContractPending && myContract) {
-    const depositAmount = myContract.depositAmount || 2800000;
-    const targetRoomNum = myContract.roomNumber || 'P.102';
-    const targetHouseName = myContract.houseName || 'Nhà Trọ Bách Khoa - Cơ Sở 2';
-    const bankAccount = sepayConfig.accountNumber || '35825112005';
-    const bankName = sepayConfig.bank || 'MBBank';
-    const accountHolder = sepayConfig.accountName || 'DAM TRUNG ANH';
-    const transferMemo = `COC ${String(targetRoomNum || 'P.102').replace('.', '')} ${String(user?.fullName || myContract?.tenantName || 'NAM').replace(/\s+/g, ' ').toUpperCase()}`.trim();
-    const depositSepayQr = generateSePayQrUrl({
-      accountNumber: bankAccount,
-      bank: bankName,
-      amount: depositAmount,
-      content: transferMemo,
-      template: 'compact'
-    });
-
-    const copyGate = (text, field) => {
-      navigator.clipboard.writeText(String(text));
-      setCopiedGateField(field);
-      setTimeout(() => setCopiedGateField(null), 2000);
-    };
-
-    const handleConfirmDepositAndSign = async (cccdData = null) => {
-try {
-
-      if (payDepositAndSignContract) {
-        await payDepositAndSignContract(myContract.id, { cccdData });
-        setPaySuccessToast(
-          `🎉 Ký HĐ thành công! Dữ liệu CCCD đã được gửi đến Quản lý cơ sở để làm thủ tục Tạm Trú (VNeID) phòng ${targetRoomNum}.`
-        );
-        setTimeout(() => setPaySuccessToast(null), 7000);
-      }
-
-} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
-};
-
-    const handleCheckSepayDepositNow = async () => {
-      setIsCheckingSepayDeposit(true);
-      setSepayDepositStatusMsg(null);
-      try {
-        const res = await checkSePayTransaction({
-          invoiceCode: transferMemo,
-          amount: depositAmount,
-          accountNumber: bankAccount
-        });
-        if (res.success) {
-          setSepayDepositStatusMsg('✅ Đã phát hiện giao dịch nộp cọc thành công trên SePay!');
-          setTimeout(() => handleConfirmDepositAndSign(), 800);
-        } else {
-          setSepayDepositStatusMsg('Chưa phát hiện giao dịch mới trên SePay. Vui lòng chuyển khoản đúng nội dung hoặc bấm "Mô phỏng Webhook".');
-        }
-      } catch {
-        setSepayDepositStatusMsg('Không thể kết nối máy chủ SePay.');
-      } finally {
-        setIsCheckingSepayDeposit(false);
-      }
-    };
-
-    const handleSimulateSepayWebhook = () => {
-      setPaySuccessToast(`🧪 SePay Webhook Giả Lập: Đã ghi nhận ${depositAmount.toLocaleString('vi-VN')} đ tiền cọc phòng ${targetRoomNum} thành công!`);
-      handleConfirmDepositAndSign();
-    };
-
-    const handleSaveSepayConfig = (e) => {
-      e.preventDefault();
-      saveSePayConfig(sepayForm);
-      setSepayConfig(sepayForm);
-      setShowSepayConfigModal(false);
-      setPaySuccessToast('🎉 Đã cập nhật thông tin tài khoản SePay của bạn thành công!');
-      setTimeout(() => setPaySuccessToast(null), 4000);
-    };
-
-    const handleSyncFromSepay = async () => {
-      if (!sepayForm.apiKey) {
-        setPaySuccessToast('⚠️ Vui lòng dán SePay API Token trước khi đồng bộ!');
-        setTimeout(() => setPaySuccessToast(null), 4000);
-        return;
-      }
-      setIsSyncingSepay(true);
-      const res = await syncBankAccountsFromSePay(sepayForm.apiKey);
-      setIsSyncingSepay(false);
-      if (res.success && res.account) {
-        const updated = {
-          ...sepayForm,
-          accountNumber: res.account.account_number,
-          bank: res.account.bank_short_name || 'MBBank',
-          accountName: res.account.account_holder_name || sepayForm.accountName
-        };
-        setSepayForm(updated);
-        setSepayConfig(updated);
-        saveSePayConfig(updated);
-        setPaySuccessToast(`✓ Đã đồng bộ thành công tài khoản ${res.account.account_number} (${res.account.bank_short_name}) từ SePay!`);
-        setTimeout(() => setPaySuccessToast(null), 4000);
-      } else {
-        setPaySuccessToast('⚠️ Không thể kết nối tài khoản SePay. Vui lòng kiểm tra lại API Token!');
-        setTimeout(() => setPaySuccessToast(null), 4000);
-      }
-    };
-
-    return (
-      <div className="space-y-6 page-enter">
-        {/* Banner Onboarding Gate */}
-        <div className="bento-card-dark relative overflow-hidden p-6 sm:p-8 rounded-3xl border border-amber-500/30 shadow-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white">
-          <div className="absolute -right-16 -top-16 w-80 h-80 bg-amber-500/15 rounded-full blur-3xl pointer-events-none" />
-          <div className="relative z-10 space-y-3">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/30">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-              <span>Bước Bắt Buộc: Nộp Tiền Cọc & Ký Hợp Đồng Điện Tử (Onboarding)</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-              Xin chào, {user?.fullName || myContract.tenantName}!
-            </h1>
-            <p className="text-slate-300 text-xs sm:text-sm max-w-2xl leading-relaxed">
-              Đơn đăng ký thuê phòng <strong className="text-amber-300 font-mono bg-white/10 px-2 py-0.5 rounded-lg border border-white/10">{targetRoomNum}</strong> tại <strong>{targetHouseName}</strong> của bạn đã được Quản lý phê duyệt. Theo quy định trọ, bạn cần <strong>hoàn tất nộp tiền cọc</strong> và <strong>ký hợp đồng điện tử</strong> để kích hoạt nhận phòng chính thức.
-            </p>
-          </div>
-        </div>
-
-        {/* BANNER ĐẾM NGƯỢC THỜI HẠN NỘP CỌC GIỮ PHÒNG (TTL 15 PHÚT) */}
-        <div className={`p-5 rounded-3xl border shadow-xl transition-all ${
-          holdingSecondsLeft === 0
-            ? 'bg-rose-950/80 border-rose-500/50 text-rose-200'
-            : holdingSecondsLeft <= 120
-              ? 'bg-gradient-to-r from-rose-950 via-slate-900 to-rose-950 border-rose-500/60 text-rose-100 shadow-rose-900/30'
-              : holdingSecondsLeft <= 300
-                ? 'bg-gradient-to-r from-amber-950/90 via-slate-900 to-amber-950/90 border-amber-500/60 text-amber-100 shadow-amber-900/20'
-                : 'bg-gradient-to-r from-purple-950/90 via-slate-900 to-indigo-950/90 border-purple-500/50 text-purple-100 shadow-purple-900/20'
-        }`}>
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-start sm:items-center gap-3.5">
-              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 font-black text-xl shadow-lg ${
-                holdingSecondsLeft === 0
-                  ? 'bg-rose-600 text-white'
-                  : holdingSecondsLeft <= 120
-                    ? 'bg-rose-600 text-white animate-pulse'
-                    : holdingSecondsLeft <= 300
-                      ? 'bg-amber-500 text-slate-950'
-                      : 'bg-purple-600 text-white'
-              }`}>
-                {holdingSecondsLeft === 0 ? '⚠️' : '⏳'}
-              </div>
-              <div className="space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-black uppercase tracking-wider text-white">
-                    {holdingSecondsLeft === 0 ? 'Đã Hết Hạn Giữ Phòng' : 'Thời Hạn Nộp Cọc Giữ Phòng Còn Lại:'}
-                  </span>
-                  {holdingSecondsLeft > 0 ? (
-                    <span className={`font-mono font-black text-base px-3 py-0.5 rounded-xl shadow-sm ${
-                      holdingSecondsLeft <= 120
-                        ? 'bg-rose-600 text-white animate-bounce'
-                        : holdingSecondsLeft <= 300
-                          ? 'bg-amber-400 text-slate-950'
-                          : 'bg-purple-500/30 text-purple-200 border border-purple-400/40'
-                    }`}>
-                      {formatCountdown(holdingSecondsLeft)}
-                    </span>
-                  ) : (
-                    <span className="font-mono font-bold text-xs bg-rose-600 text-white px-2.5 py-0.5 rounded-lg">
-                      00:00 (Đã kết thúc)
-                    </span>
-                  )}
-                  <span className="text-[11px] font-semibold text-slate-300">
-                    • Hạn chót: <strong className="text-white font-mono">{getDeadlineString(myContract.holdingUntil || (Date.now() + holdingSecondsLeft * 1000))}</strong>
-                  </span>
-                </div>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  {holdingSecondsLeft > 0 ? (
-                    <>
-                      Phòng <strong className="text-amber-300 font-mono">{targetRoomNum}</strong> ({targetHouseName}) đang được tạm khóa giữ chỗ độc quyền cho bạn. Vui lòng chuyển khoản nộp cọc <strong className="text-purple-300 font-mono">{depositAmount.toLocaleString('vi-VN')} ₫</strong> trước hạn chót. <span className="text-amber-200 font-medium">Sau thời hạn này nếu chưa nộp cọc, phòng sẽ tự động mở lại cho khách khác thuê!</span>
-                    </>
-                  ) : (
-                    <>
-                      Rất tiếc! Đã quá thời hạn 15 phút nộp tiền cọc. Lệnh giữ phòng <strong className="text-white font-mono">{targetRoomNum}</strong> đã kết thúc và phòng đã được hệ thống tự động mở lại trên sàn cho khách khác.
-                    </>
-                  )}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
-              <button
-                type="button"
-                onClick={() => handleCancelHoldRoom(targetRoomNum, myContract.houseCode)}
-                className="btn-press-ghost px-3.5 py-2 rounded-xl text-xs font-bold text-rose-300 hover:text-white hover:bg-rose-900/40 border border-rose-500/40 transition-all flex items-center gap-1.5 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-                <span>Hủy Giữ Chỗ Phòng</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* 2 Bước Onboarding Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* CỘT 1: NỘP TIỀN CỌC SEPAY */}
-          <div className="bento-card p-6 space-y-5 border-2 border-purple-200 bg-white shadow-xl rounded-3xl">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-purple-600 text-white font-black text-sm flex items-center justify-center shadow-md">
-                  1
-                </div>
-                <div>
-                  <h3 className="font-black text-base text-slate-900">Nộp Tiền Cọc Giữ Phòng (SePay QR)</h3>
-                  <p className="text-[11px] text-slate-500">Quét mã VietQR SePay để gạch nợ tức thì</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowSepayConfigModal(true)}
-                className="text-xs font-bold text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-xl border border-purple-200 flex items-center gap-1 transition-colors cursor-pointer"
-              >
-                <Settings className="w-3.5 h-3.5" />
-                <span>Cấu hình SePay</span>
-              </button>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center gap-5 p-4 bg-slate-50 rounded-2xl border border-slate-200/80">
-              <div className="relative group shrink-0 bg-white p-3 rounded-2xl shadow-md border border-slate-200">
-                <img
-                  src={depositSepayQr}
-                  alt="SePay VietQR Cọc Phòng"
-                  className="w-44 h-44 object-contain rounded-xl"
-                />
-                <div className="absolute inset-x-3 bottom-3 bg-purple-900/90 backdrop-blur-xs text-white text-[10px] font-bold py-1 text-center rounded-lg">
-                  ⚡ SePay Auto Verify
-                </div>
-              </div>
-
-              <div className="space-y-2 text-xs flex-1 w-full">
-                <div className="p-2.5 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between">
-                  <span className="text-slate-500">Số tiền cọc:</span>
-                  <span className="font-black text-purple-700 text-base font-mono">
-                    {depositAmount.toLocaleString('vi-VN')} ₫
-                  </span>
-                </div>
-                <div className="p-2.5 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between">
-                  <span className="text-slate-500">Số tài khoản:</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-mono font-bold text-slate-800">{bankAccount}</span>
-                    <button
-                      type="button"
-                      onClick={() => copyGate(bankAccount, 'acc')}
-                      className="text-slate-400 hover:text-purple-600 cursor-pointer"
-                    >
-                      {copiedGateField === 'acc' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                </div>
-                <div className="p-2.5 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between">
-                  <span className="text-slate-500">Ngân hàng:</span>
-                  <span className="font-bold text-slate-800">{bankName} ({accountHolder})</span>
-                </div>
-                <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200 flex items-center justify-between">
-                  <span className="text-amber-800 font-semibold">Nội dung CK:</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-mono font-black text-amber-900">{transferMemo}</span>
-                    <button
-                      type="button"
-                      onClick={() => copyGate(transferMemo, 'memo')}
-                      className="text-amber-600 hover:text-amber-900 cursor-pointer"
-                    >
-                      {copiedGateField === 'memo' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {sepayDepositStatusMsg && (
-              <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-xs font-semibold text-indigo-900">
-                {sepayDepositStatusMsg}
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 pt-2">
-              <button
-                type="button"
-                onClick={handleCheckSepayDepositNow}
-                disabled={isCheckingSepayDeposit}
-                className="btn-press flex-1 py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
-              >
-                <Zap className="w-4 h-4 text-purple-400" />
-                <span>{isCheckingSepayDeposit ? 'Đang kiểm tra SePay...' : 'Kiểm Tra Giao Dịch SePay'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleSimulateSepayWebhook}
-                className="btn-press py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
-                title="Giả lập hệ thống SePay gửi Webhook nộp cọc thành công"
-              >
-                <span>🧪 Mô Phỏng Webhook</span>
-              </button>
-            </div>
-          </div>
-
-          {/* CỘT 2: KÝ HỢP ĐỒNG ĐIỆN TỬ */}
-          <div className="bento-card p-6 space-y-5 border-2 border-indigo-200 bg-white shadow-xl rounded-3xl flex flex-col justify-between">
-            <div className="space-y-4">
-              <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
-                <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white font-black text-sm flex items-center justify-center shadow-md">
-                  2
-                </div>
-                <div>
-                  <h3 className="font-black text-base text-slate-900">Ký Hợp Đồng Thuê Nhà Điện Tử</h3>
-                  <p className="text-[11px] text-slate-500">Xác thực CCCD số & kích hoạt nhận phòng</p>
-                </div>
-              </div>
-
-              <div className="p-4 bg-indigo-50/70 border border-indigo-200/80 rounded-2xl space-y-3 text-xs text-indigo-950">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-slate-600">Mã hợp đồng số:</span>
-                  <span className="font-mono font-bold bg-white px-2 py-0.5 rounded border border-indigo-200">{myContract.contractCode || 'HD-2026-007'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Khách thuê đại diện:</span>
-                  <span className="font-bold text-slate-900">{user?.fullName || myContract.tenantName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Phòng chỉ định:</span>
-                  <span className="font-bold text-purple-700 font-mono">{targetRoomNum} ({targetHouseName})</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Thời hạn hợp đồng:</span>
-                  <span className="font-bold text-slate-900">{myContract.startDate || '01/01/2026'} - {myContract.endDate || '31/12/2026'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Giá thuê niêm yết:</span>
-                  <span className="font-bold text-slate-900 font-mono">{(myContract.rentalPrice || 2800000).toLocaleString('vi-VN')} đ/tháng</span>
-                </div>
-              </div>
-
-              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
-                ⚖️ Theo Bộ luật Dân sự và Nghị định 13/2023/NĐ-CP, việc ký điện tử kèm thông tin định danh CCCD có giá trị pháp lý tương đương ký trực tiếp bằng giấy.
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowContractModal(true)}
-              className="btn-press btn-shimmer w-full py-3.5 px-5 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-700 hover:to-purple-800 text-white font-black text-sm rounded-2xl shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer mt-4"
-            >
-              <FileText className="w-4 h-4" />
-              <span>Xem Toàn Văn & Ký Hợp Đồng Điện Tử (UC-T01)</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* Modal Toàn văn hợp đồng */}
-        <ResidentContractModal
-          isOpen={showContractModal}
-          onClose={() => setShowContractModal(false)}
-          contract={{
-            ...myContract,
-            status: isDepositPaid ? 'PENDING_SIGN' : (myContract.status || 'PENDING_DEPOSIT')
-          }}
-          onSignSuccess={async (contractId, cccdData) => {
-            const result = await handleConfirmDepositAndSign(cccdData);
-            if (result?.success === false) return result;
-            setShowContractModal(false);
-            return result;
-          }}
-        />
-
-        {/* Modal Cấu hình tài khoản SePay */}
-        <SepayConfigModal
-          handleSaveSepayConfig={handleSaveSepayConfig}
-          handleSyncFromSepay={handleSyncFromSepay}
-          isSyncingSepay={isSyncingSepay}
-          sepayForm={sepayForm}
-          setSepayForm={setSepayForm}
-          setShowSepayConfigModal={setShowSepayConfigModal}
-          showSepayConfigModal={showSepayConfigModal}
-        />
-      </div>
-    );
+    return <section className="bento-card p-6 space-y-3">
+      <h1 className="text-xl font-bold">Hợp đồng đang chờ xác nhận tiền cọc</h1>
+      <p className="text-sm text-slate-600">Vui lòng liên hệ quản lý cơ sở để xác nhận tiền thực nhận. Hợp đồng và quyền cư trú chỉ được kích hoạt sau khi máy chủ xác nhận đủ tiền cọc.</p>
+      {myPendingRentalRequest && <HoldDepositDetails request={myPendingRentalRequest} />}
+      <Link to="/rooms" className="text-purple-700 font-bold text-sm">Xem đơn của tôi</Link>
+    </section>;
   }
 
-  // =========================================================================
-  // 1B. GIAO DIỆN DÀNH CHO KHÁCH THUÊ MỚI (CHƯA GÁN PHÒNG)
-  // =========================================================================
   if (!myRoomNumber) {
     return (
       <div className="space-y-6 page-enter">
-        {/* BANNER NỔI BẬT: ĐƠN ĐĂNG KÝ THUÊ PHÒNG ĐANG CHỜ BAN QUẢN LÝ PHÊ DUYỆT */}
-        {myPendingRentalRequest && (
-          <div className="bento-card p-6 border-2 border-amber-300 bg-gradient-to-br from-amber-50/90 via-white to-amber-50/40 rounded-3xl shadow-lg space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-amber-200/70">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-lg shadow-inner">
-                  ⏳
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-amber-950">
-                    Đơn Đăng Ký Thuê Phòng Đang Chờ Ban Quản Lý Phê Duyệt
-                  </h3>
-                  <p className="text-xs text-amber-800 font-medium">
-                    Phòng <strong className="font-mono text-purple-700 font-black">{myPendingRentalRequest.targetRoom}</strong> • {myPendingRentalRequest.house || 'Cơ sở trọ'} (Ngày đăng ký: {myPendingRentalRequest.date})
-                  </p>
-                </div>
-              </div>
-              <span className="px-3 py-1.5 rounded-full text-xs font-black bg-amber-100 text-amber-800 border border-amber-300 shrink-0 flex items-center gap-1.5 shadow-2xs">
-                <span>🟡</span>
-                <span>Chờ Staff Duyệt Hồ Sơ</span>
-              </span>
-            </div>
-
-            <div className="p-4 bg-white/90 rounded-2xl border border-amber-200 text-xs text-slate-700 space-y-2.5">
-              <div className="flex items-center gap-2 font-bold text-slate-900">
-                <span>🔒</span>
-                <span>Cổng nộp tiền cọc trọ đang tạm khóa (Chưa mở):</span>
-              </div>
-              <p className="leading-relaxed text-slate-600">
-                Theo quy định của hệ thống, chỉ khi <strong>Quản lý cơ sở (Staff)</strong> kiểm tra hồ sơ và bấm <strong>[✅ Phê Duyệt & Mở Cổng Nộp Cọc]</strong>, cổng thanh toán tiền cọc giữ phòng (SePay QR) và ký hợp đồng điện tử mới được kích hoạt trong 15 phút.
-              </p>
-              <div className="p-3 bg-indigo-50/70 rounded-xl border border-indigo-200/60 text-indigo-900 font-medium text-[11px] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <span>💡 <strong>Thông báo:</strong> Quản lý cơ sở đang thụ lý hồ sơ của bạn. Bạn cũng có thể liên hệ trực tiếp lễ tân hoặc vào <strong>Quản Lý Phòng</strong> để xem chi tiết!</span>
-                <Link
-                  to="/rooms"
-                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition shrink-0 inline-flex items-center gap-1 cursor-pointer"
-                >
-                  <span>Xem Chi Tiết Phòng</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </Link>
-              </div>
-            </div>
-          </div>
-        )}
+        {myPendingRentalRequest && <section className="bento-card p-5 border border-amber-200 space-y-3">
+          <h2 className="font-bold text-slate-900">{myPendingRentalRequest.status === 'HOLDING' ? 'Phòng đang đặt cọc' : 'Yêu cầu thuê phòng đang chờ duyệt'}</h2>
+          <HoldDepositDetails request={myPendingRentalRequest} />
+          <p className="text-xs text-slate-600">Liên hệ quản lý cơ sở nếu cần hủy đặt cọc hoặc đối soát khoản đã nộp.</p>
+          <Link to="/rooms" className="inline-block text-xs font-bold text-purple-700">Xem đơn đặt cọc và lịch sử</Link>
+        </section>}
 
         <div className="bento-card-dark relative overflow-hidden p-6 sm:p-8 rounded-3xl border border-indigo-500/30 shadow-2xl text-white">
           <div className="absolute -right-16 -top-16 w-80 h-80 bg-indigo-500/25 rounded-full blur-3xl pointer-events-none animate-float-slow" />

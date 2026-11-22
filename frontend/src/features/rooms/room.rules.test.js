@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { amenityNames, roomPayload } from './room.mapper.js';
 import { amenityOptions } from './room.config.js';
-import { hasRoomOccupants, isRoomLocked, isDuplicateRoom } from './room.rules.js';
+import { hasRoomOccupants, isRoomLocked, isRoomHolding, isRoomMaintenance, isDuplicateRoom, depositProgress, tenantRoomRequests } from './room.rules.js';
 
 test('room edit payload preserves selected amenities, image and distinct lock status', () => {
   const payload = roomPayload({ number: 'P.101', price: 3500000, area: 25, maxOccupants: 2,
@@ -34,10 +34,25 @@ test('occupied status, active contract or remaining member independently prevent
   assert.equal(hasRoomOccupants(vacant, [{ roomId: 1, status: 'TERMINATED' }], [{ roomId: 1, status: 'MOVED_OUT' }]), false);
 });
 
-test('new locked rooms and legacy maintenance locks offer unlock', () => {
+test('maintenance and deposits cannot be released using the generic lock toggle', () => {
   assert.equal(isRoomLocked({ status: 'LOCKED' }), true);
-  assert.equal(isRoomLocked({ status: 'MAINTENANCE' }), true);
+  assert.equal(isRoomLocked({ status: 'MAINTENANCE' }), false);
   assert.equal(isRoomLocked({ status: 'AVAILABLE' }), false);
+  assert.equal(isRoomHolding({ status: 'HOLDING' }), true);
+  assert.equal(isRoomHolding({ status: 'OCCUPIED', holdRequestId: 5 }), false);
+  assert.equal(isRoomMaintenance({ maintenanceRequestId: 9 }), true);
+});
+
+test('initial receipt counts toward one month deposit without assuming any money was paid', () => {
+  assert.deepEqual(depositProgress({ requiredDepositAmount: 3500000 }), { required: 3500000, paid: 0, remaining: 3500000 });
+  assert.deepEqual(depositProgress({ requiredDepositAmount: 3500000, paidDepositAmount: 1000000 }), { required: 3500000, paid: 1000000, remaining: 2500000 });
+  assert.deepEqual(depositProgress({ requiredDepositAmount: 3500000, paidDepositAmount: 3500000 }), { required: 3500000, paid: 3500000, remaining: 0 });
+});
+
+test('tenant requests use the linked tenant id and never a shared display name', () => {
+  const requests = [{ id: 1, tenantId: 10, tenantName: 'Same name' }, { id: 2, tenantId: 20, tenantName: 'Same name' }];
+  assert.deepEqual(tenantRoomRequests(requests, '10').map(request => request.id), [1]);
+  assert.deepEqual(tenantRoomRequests(requests, undefined), []);
 });
 
 test('duplicate room checks normalize labels but stay scoped to the house and exclude the edited room', () => {

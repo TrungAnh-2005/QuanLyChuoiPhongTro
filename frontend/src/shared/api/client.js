@@ -6,7 +6,10 @@ export const clearSession = () => {
 };
 const api = axios.create({ baseURL: import.meta.env?.VITE_API_BASE_URL || '/api', timeout: 30000 });
 let refreshPromise;
+let testRole = 'STAFF';
+export const setTestRole = role => { testRole = role; };
 api.interceptors.request.use(config => {
+  if (import.meta.env?.VITE_TEST_MODE === 'true') config.headers['X-Test-Role'] = testRole;
   const token = sessionStorage.getItem('rental_token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;

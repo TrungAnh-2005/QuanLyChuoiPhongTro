@@ -32,4 +32,20 @@ class RoomStatusHttpTest {
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.success").value(false));
         verifyNoInteractions(service);
     }
+
+    @Test void onlyAdminCanApproveAHouse() throws Exception {
+        var houses = mock(com.rental.room.service.BoardingHouseService.class);
+        var approvalMvc = MockMvcBuilders.standaloneSetup(new BoardingHouseController(houses))
+                .setControllerAdvice(new GlobalExceptionHandler()).build();
+        for (String role : new String[]{"ROLE_STAFF", "ROLE_TENANT", "ROLE_ADMIN_FAKE", ""}) {
+            approvalMvc.perform(patch("/api/properties/1/approval").header("X-User-Roles", role))
+                    .andExpect(status().isForbidden());
+        }
+        verifyNoInteractions(houses);
+        when(houses.approveBoardingHouse(1L)).thenReturn(com.rental.room.dto.BoardingHouseResponse.builder()
+                .id(1L).status("ACTIVE").build());
+        approvalMvc.perform(patch("/api/properties/1/approval").header("X-User-Roles", "ROLE_ADMIN"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("ACTIVE"));
+        verify(houses).approveBoardingHouse(1L);
+    }
 }

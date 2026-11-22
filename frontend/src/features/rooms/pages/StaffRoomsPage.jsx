@@ -3,6 +3,8 @@ import RoomFormModal from '../components/RoomFormModal.jsx';
 import ResidentRequestsModal from '../components/ResidentRequestsModal.jsx';
 import RoomMembersModal from '../components/RoomMembersModal.jsx';
 import RoomQuotaModal from '../components/RoomQuotaModal.jsx';
+import RoomMaintenanceModal from '../components/RoomMaintenanceModal.jsx';
+import { useReservationRefresh } from '../useReservationRefresh.js';
 import { parseFloorNum } from '../room.presentation.js';
 import { isDuplicateRoom } from '../room.rules.js';
 
@@ -38,6 +40,8 @@ export default function StaffRoomsPage() {
     roomRequests = [],
     approveRoomRequest,
     rejectRoomRequest,
+    confirmRoomRequestDeposit,
+    cancelRentalRequest,
     roomMembers = [],
     contracts = [],
     moveOutSettlements = [],
@@ -87,9 +91,10 @@ export default function StaffRoomsPage() {
 
   // Lọc cơ sở mà Staff có thẩm quyền
   const staffManageableHouses = useMemo(() => {
-    if (user?.isTestMode || user?.role === 'ADMIN') return storedBoardingHouses;
+    const approvedHouses = storedBoardingHouses.filter(house => house.status !== 'PENDING_APPROVAL');
+    if (user?.isTestMode || user?.role === 'ADMIN') return approvedHouses;
     const u = (user?.username || '').toLowerCase();
-    return storedBoardingHouses.filter((h) => { if(user?.isTestMode) return true;
+    return approvedHouses.filter((h) => { if(user?.isTestMode) return true;
       const created = (h.createdBy || '').toLowerCase();
       const manager = (h.managerUsername || '').toLowerCase();
       if (created && created === u) return true;
@@ -117,6 +122,8 @@ export default function StaffRoomsPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingRoom, setEditingRoom] = useState(null);
   const [showRequestsManager, setShowRequestsManager] = useState(false);
+  const [requestRoomFilter, setRequestRoomFilter] = useState(null);
+  const [maintenanceRoom, setMaintenanceRoom] = useState(null);
   const [selectedRoomForMembers, setSelectedRoomForMembers] = useState(null);
   const [activeSettlementModal, setActiveSettlementModal] = useState(null);
   const [quotaExceededModal, setQuotaExceededModal] = useState(false);
@@ -154,6 +161,9 @@ export default function StaffRoomsPage() {
     if (user?.role === 'ADMIN') return rooms;
     return rooms.filter((r) => staffHouseCodes.includes(r.houseCode));
   }, [rooms, staffHouseCodes, user?.role]);
+  useReservationRefresh(staffRooms.some(room => room.status === 'HOLDING'));
+  const manageableRequests = useMemo(() => roomRequests.filter(req => user?.role === 'ADMIN' || staffHouseCodes.includes(req.houseCode)), [roomRequests, staffHouseCodes, user?.role]);
+  const managerRequests = requestRoomFilter ? manageableRequests.filter(req => String(req.targetRoomId) === String(requestRoomFilter.id)) : manageableRequests;
 
   const filteredRooms = useMemo(() => {
     return staffRooms.filter((r) => {
@@ -182,7 +192,7 @@ export default function StaffRoomsPage() {
 
   const pendingRequestsCount = useMemo(() => {
     return (roomRequests || []).filter((req) => {
-      if (req.status !== 'PENDING') return false;
+      if (!['PENDING', 'HOLDING'].includes(req.status)) return false;
       if (user?.role === 'ADMIN') return true;
       return staffHouseCodes.includes(req.houseCode);
     }).length;
@@ -289,11 +299,11 @@ try {
         <div className="flex items-center gap-2.5 flex-wrap">
           <button
             type="button"
-            onClick={() => setShowRequestsManager(true)}
+            onClick={() => { setRequestRoomFilter(null); setShowRequestsManager(true); }}
             className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:border-purple-300 hover:text-purple-700 text-slate-700 text-xs font-bold rounded-xl shadow-xs transition-all btn-press cursor-pointer relative"
           >
             <FileText className="w-4 h-4 text-purple-600" />
-            <span>Duyệt Đơn Cư Dân</span>
+            <span>Đơn cư dân & đặt cọc</span>
             {pendingRequestsCount > 0 && (
               <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white animate-pulse">
                 {pendingRequestsCount} mới
@@ -352,7 +362,7 @@ try {
             { id: 'ALL', label: 'Tất Cả' },
             { id: 'AVAILABLE', label: '🟢 Trống' },
             { id: 'OCCUPIED', label: '🟣 Đang Thuê' },
-            { id: 'HOLDING', label: '🔒 Giữ Chỗ' },
+            { id: 'HOLDING', label: 'Đặt cọc' },
             { id: 'MAINTENANCE', label: '🟡 Bảo Trì' },
             { id: 'LOCKED', label: '🔴 Tạm Khóa' }
           ].map((st) => (
@@ -415,6 +425,8 @@ try {
           setEditingRoom={setEditingRoom}
           setRoomFormData={setRoomFormData}
           setSelectedRoomForMembers={setSelectedRoomForMembers}
+          onMaintenance={setMaintenanceRoom}
+          onManageHold={target => { setRequestRoomFilter(target); setShowRequestsManager(true); }}
         />
                   );
                 })}
@@ -444,11 +456,17 @@ try {
           pendingRequestsCount={pendingRequestsCount}
           reviewResidentRequest={reviewResidentRequest}
           reviewingRequest={reviewingRequest}
-          roomRequests={roomRequests}
+          roomRequests={managerRequests}
+          confirmRoomRequestDeposit={confirmRoomRequestDeposit}
+          cancelRentalRequest={cancelRentalRequest}
+          roomFilter={requestRoomFilter}
+          onClearRoomFilter={() => setRequestRoomFilter(null)}
           setShowRequestsManager={setShowRequestsManager}
           showRequestsManager={showRequestsManager}
         />
       )}
+
+      {maintenanceRoom && <RoomMaintenanceModal key={maintenanceRoom.id} room={rooms.find(room => room.id === maintenanceRoom.id) || maintenanceRoom} onClose={() => setMaintenanceRoom(null)} onSuccess={setActionToast} />}
 
       {/* Modal Hồ Sơ Khách & CCCD / Tạm Trú */}
       {selectedRoomForMembers && (

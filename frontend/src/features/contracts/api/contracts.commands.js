@@ -4,6 +4,24 @@ export function createContractsCommands({ api, create, data, find, findRoommateS
 voteRoommateRequest: (id,_name,approved) => request('post',`/contracts/requests/${id}/vote`,{approved}),
 submitRoomRequest: input => create('roomRequests', { type: input.type === 'NEW_RENT' || input.type === 'HOLD' ? 'RENT' : input.type, tenantId: tenantId(input), targetRoomId: input.targetRoomId || room(input.targetRoom || input.room).id, currentRoomId: input.currentRoom ? room(input.currentRoom).id : null, contractId: ['RENT', 'NEW_RENT', 'HOLD'].includes(input.type) ? undefined : (input.contractId || view.contracts.find(c=>c.tenantId===tenantId(input) && c.status==='ACTIVE')?.id), durationMonths: input.durationMonths || 12, note: input.note || input.reason || '' }),
 approveRoomRequest: id => request('post',`/contracts/requests/${id}/approve`,{}),
+getRoomRequestReceipts: async id => data(await api.get(`/contracts/requests/${id}/receipts`)),
+confirmRoomRequestDeposit: async (id, input) => {
+      try { return await request('post', `/contracts/requests/${id}/deposit`, { amount: Number(input.amount), receiptReference: input.receiptReference }); }
+      catch (failure) {
+        if (![400, 409].includes(failure.response?.status)) throw failure;
+        let receipts;
+        try {
+          receipts = data(await api.get(`/contracts/requests/${id}/receipts`));
+          if (!Array.isArray(receipts)) throw new Error('Invalid receipt ledger');
+          await refreshData();
+        } catch { throw failure; } // An unavailable ledger cannot prove that a receipt was rejected.
+        const recorded = receipts.find(receipt => receipt.receiptReference === input.receiptReference);
+        if (recorded) return { success: true, data: recorded, reconciled: true };
+        failure.receiptRejected = true;
+        throw failure;
+      }
+    },
+cancelRentalRequest: (id, reason) => request('post', `/contracts/requests/${id}/cancel`, { reason }),
 rejectRoomRequest: (id, note) => patch('roomRequests',id,{ status: 'REJECTED', note }),
 submitCheckoutRequest: input => {
       const target = input.roomId ? room(input.roomId) : room(input.room);

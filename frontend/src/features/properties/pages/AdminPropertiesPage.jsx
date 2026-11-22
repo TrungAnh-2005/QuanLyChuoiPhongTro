@@ -23,7 +23,7 @@ import { useData } from '../../../shared/data/RentalDataContext';
 export default function AdminHousesPage() {
   const {boardingHouses:apiBoardingHouses=[]}=useData() || {};
 
-  const { landlords = [], boardingHouses = [], updateBoardingHouse, deleteBoardingHouse } = useData();
+  const { landlords = [], boardingHouses = [], approveBoardingHouse, deleteBoardingHouse } = useData();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'PENDING' | 'ACTIVE'
   const [toastMessage, setToastMessage] = useState(null);
@@ -104,7 +104,11 @@ export default function AdminHousesPage() {
   };
 
   const handleApproveHouse = async (code) => {
-    await updateBoardingHouse(housesList.find(h=>h.code===code).id,{status:"ACTIVE"});
+    try {
+      await approveBoardingHouse(housesList.find(h=>h.code===code).id);
+    } catch {
+      return;
+    }
     const updated = housesList.map((h) =>
       h.code === code ? { ...h, status: 'ACTIVE', approvedAt: new Date().toLocaleDateString('vi-VN') } : h
     );

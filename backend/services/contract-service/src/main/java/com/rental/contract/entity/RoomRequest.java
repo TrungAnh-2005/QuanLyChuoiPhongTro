@@ -6,6 +6,7 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 
 @Entity
 @Table(name = "room_requests")
@@ -61,4 +62,21 @@ public class RoomRequest {
 
     @Column(name = "reviewed_at")
     private LocalDateTime reviewedAt;
+
+    @Column(precision = 15, scale = 2)
+    private BigDecimal requiredDepositAmount;
+
+    @Column(precision = 15, scale = 2)
+    @Builder.Default
+    private BigDecimal paidDepositAmount = BigDecimal.ZERO;
+
+    @Column(precision = 15, scale = 2)
+    private BigDecimal rentalPriceSnapshot;
+
+    private java.time.Instant holdExpiresAt;
+
+    /** Nullable after completion; uniqueness serializes concurrent retry intents for a tenant/room. */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    @Column(unique = true, length = 80)
+    private String reservationKey;
 }

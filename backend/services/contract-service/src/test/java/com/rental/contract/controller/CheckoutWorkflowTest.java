@@ -30,7 +30,8 @@ class CheckoutWorkflowTest {
     final RoomClient rooms = mock(RoomClient.class);
     final ContractEventPublisher events = mock(ContractEventPublisher.class);
     final ContractServiceImpl service = new ContractServiceImpl(contracts, tenants, rooms, events);
-    final ContractWorkflowController controller = new ContractWorkflowController(contracts, settlements, requests, votes, service, rooms, tenants);
+    final com.rental.contract.service.ReservationService reservations = mock(com.rental.contract.service.ReservationService.class);
+    final ContractWorkflowController controller = new ContractWorkflowController(contracts, settlements, requests, votes, service, rooms, tenants, reservations, new LocalTransactionManager());
     Contract contract;
     RoomRequest request;
 
@@ -44,6 +45,7 @@ class CheckoutWorkflowTest {
         when(contracts.findForLeave(10L)).thenReturn(Optional.of(contract));
         when(contracts.findById(10L)).thenReturn(Optional.of(contract));
         when(contracts.save(any())).thenAnswer(call -> call.getArgument(0));
+        when(requests.findForReservation(20L)).thenReturn(Optional.of(request));
         when(requests.findById(20L)).thenReturn(Optional.of(request));
         when(settlements.findByContractId(10L)).thenReturn(Optional.empty());
         when(settlements.save(any())).thenAnswer(call -> call.getArgument(0));
