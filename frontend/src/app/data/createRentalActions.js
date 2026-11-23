@@ -36,7 +36,7 @@ export function createRentalActions({ view, user, testMode, billingMonth, refres
       .some(r => hasRoomOccupants(r, view.contracts, view.roomMembers));
     if (occupied) throw new Error('Cơ sở còn người thuê. Vui lòng trả hết phòng trước khi khóa hoặc xóa cơ sở.');
   };
-  const tenantPayload = input => ({ fullName: input.fullName || input.name, identityCard: input.cccd || input.identityCard, phone: input.phone, email: input.email || undefined, birthDate: input.birthDate ? isoDate(input.birthDate) : undefined, gender: normalizeGender(input.gender), hometown: input.hometown, address: input.address });
+  const tenantPayload = input => ({ fullName: input.fullName || input.name, identityCard: input.cccd || input.identityCard, phone: input.phone, email: input.email || undefined, birthDate: (input.birthDate || input.dob) ? isoDate(input.birthDate || input.dob) : undefined, gender: normalizeGender(input.gender), hometown: input.hometown, address: input.address });
   const resolveFloor = async input => {
     const floorNumber = Number(String(input.floor || input.floorNumber || 1).replace(/\D/g,'')) || 1;
     const targetHouse = input.boardingHouseId || input.houseCode;

@@ -71,8 +71,19 @@ class MaintenanceWorkflowTest {
         assertEquals(Boolean.FALSE, created.getBlocksRental());
         MaintenanceRequest ticket = ticket(false, MaintenanceStatus.PENDING);
         stubTicket(ticket);
+        when(rooms.getRoom(3L)).thenReturn(new RoomLookupResponse(true, new RoomMaintenanceSnapshot("OCCUPIED", null)));
         assertEquals(MaintenanceStatus.RESOLVED, service.updateMaintenanceStatus(17L, update(MaintenanceStatus.RESOLVED)).getStatus());
-        verifyNoInteractions(rooms);
+        verify(rooms, never()).startMaintenance(anyLong(), any());
+        verify(rooms, never()).finishMaintenance(anyLong(), any());
+    }
+
+    @Test
+    void completingNonBlockingTicketOnMaintenanceRoomAutoReopensRoom() {
+        MaintenanceRequest ticket = ticket(false, MaintenanceStatus.IN_PROGRESS);
+        stubTicket(ticket);
+        when(rooms.getRoom(3L)).thenReturn(new RoomLookupResponse(true, new RoomMaintenanceSnapshot("MAINTENANCE", null)));
+        assertEquals(MaintenanceStatus.RESOLVED, service.updateMaintenanceStatus(17L, update(MaintenanceStatus.RESOLVED)).getStatus());
+        verify(rooms).finishMaintenance(3L, new RoomMaintenanceRequest(17L));
     }
 
     @Test

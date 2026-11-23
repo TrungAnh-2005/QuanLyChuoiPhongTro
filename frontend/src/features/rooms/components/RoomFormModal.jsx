@@ -1,9 +1,10 @@
 import Modal from '../../../shared/ui/Modal.jsx';
-import { X } from 'lucide-react';
+import { X, Wrench, CheckCircle2 } from 'lucide-react';
 import { ROOM_IMAGE_PRESETS } from '../room.config.js';
 import { amenityOptions } from '../room.config.js';
+import { roomStatusLabel } from '../room.rules.js';
 
-export default function RoomFormModal({ editingRoom, handleSaveRoom, roomFormData, setEditingRoom, setRoomFormData, setShowAddModal, showAddModal, staffManageableHouses }) {
+export default function RoomFormModal({ editingRoom, editingRoomOccupied = false, handleSaveRoom, onStartMaintenance, roomFormData, setEditingRoom, setRoomFormData, setShowAddModal, showAddModal, staffManageableHouses }) {
   return (<Modal
           isOpen={showAddModal || !!editingRoom}
           onClose={() => {
@@ -138,6 +139,50 @@ export default function RoomFormModal({ editingRoom, handleSaveRoom, roomFormDat
                   })}
                 </div>
               </div>
+
+              {editingRoom && (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-slate-700">Trạng thái phòng hiện tại:</span>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-white border border-slate-200 text-slate-800">
+                      {roomStatusLabel(editingRoom.status)}
+                    </span>
+                  </div>
+                  {editingRoom.status === 'AVAILABLE' && !editingRoomOccupied && onStartMaintenance && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = editingRoom;
+                        setEditingRoom(null);
+                        onStartMaintenance(target);
+                      }}
+                      className="w-full px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <Wrench className="w-3.5 h-3.5" />
+                      <span>Chuyển sang Đang bảo trì</span>
+                    </button>
+                  )}
+                  {editingRoom.status === 'MAINTENANCE' && onStartMaintenance && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = editingRoom;
+                        setEditingRoom(null);
+                        onStartMaintenance(target);
+                      }}
+                      className="w-full px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Hoàn tất bảo trì</span>
+                    </button>
+                  )}
+                  {editingRoom.status === 'LOCKED' && (
+                    <p className="text-[11px] text-amber-700">
+                      Phòng đang tạm khóa. Hãy mở khóa phòng về trạng thái Trống trước khi chuyển sang bảo trì.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                 <button

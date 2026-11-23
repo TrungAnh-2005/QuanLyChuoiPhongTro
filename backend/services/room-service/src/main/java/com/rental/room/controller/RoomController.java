@@ -1,8 +1,10 @@
 package com.rental.room.controller;
 
 import com.rental.room.dto.*;
+import com.rental.room.entity.Room;
 import com.rental.room.entity.RoomStatus;
 import com.rental.room.service.RoomService;
+import com.rental.room.service.impl.RoomAvailabilityService;
 import com.rental.room.exception.AppException;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +21,7 @@ import java.util.Arrays;
 public class RoomController {
 
     private final RoomService roomService;
+    private final RoomAvailabilityService roomAvailabilityService;
 
     @PostMapping
     public ResponseEntity<ApiResponse<RoomDetailResponse>> createRoom(@Valid @RequestBody CreateRoomRequest request,
@@ -63,6 +66,16 @@ public class RoomController {
         manager(roles);
         RoomResponse response = roomService.updateRoomStatus(id, request.getStatus());
         return ResponseEntity.ok(ApiResponse.success(response, "Room status updated successfully"));
+    }
+
+    @PostMapping("/{id}/complete-maintenance")
+    public ResponseEntity<ApiResponse<RoomDetailResponse>> completeMaintenance(
+            @PathVariable Long id,
+            @RequestHeader(value = "X-User-Roles", defaultValue = "") String roles
+    ) {
+        manager(roles);
+        Room room = roomAvailabilityService.finishMaintenance(id, null);
+        return ResponseEntity.ok(ApiResponse.success(roomService.getRoomById(room.getId()), "Maintenance completed and room reopened"));
     }
 
     @DeleteMapping("/{id}")

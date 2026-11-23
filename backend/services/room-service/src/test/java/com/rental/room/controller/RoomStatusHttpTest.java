@@ -4,6 +4,7 @@ import com.rental.room.dto.RoomResponse;
 import com.rental.room.entity.RoomStatus;
 import com.rental.room.exception.GlobalExceptionHandler;
 import com.rental.room.service.RoomService;
+import com.rental.room.service.impl.RoomAvailabilityService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -15,7 +16,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class RoomStatusHttpTest {
     private final RoomService service = mock(RoomService.class);
-    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new RoomController(service))
+    private final RoomAvailabilityService availability = mock(RoomAvailabilityService.class);
+    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new RoomController(service, availability))
             .setControllerAdvice(new GlobalExceptionHandler()).build();
 
     @Test void acceptsLockedStatusOnTheHttpEndpoint() throws Exception {

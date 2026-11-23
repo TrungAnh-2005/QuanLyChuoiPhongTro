@@ -130,7 +130,8 @@ public class RoomAvailabilityService {
     public Room finishMaintenance(Long id, Long ticketId) {
         Room room = lockedRoom(id);
         if (room.getStatus() == RoomStatus.AVAILABLE) return room;
-        if (room.getStatus() != RoomStatus.MAINTENANCE || !Objects.equals(room.getMaintenanceRequestId(), ticketId)) throw busy();
+        boolean matchesTicket = room.getMaintenanceRequestId() == null || Objects.equals(room.getMaintenanceRequestId(), ticketId);
+        if (room.getStatus() != RoomStatus.MAINTENANCE || !matchesTicket) throw busy();
         occupants.requireVacant(id);
         room.setStatus(RoomStatus.AVAILABLE);
         room.setMaintenanceRequestId(null);

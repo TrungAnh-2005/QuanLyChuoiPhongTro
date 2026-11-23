@@ -10,7 +10,6 @@ import { isDuplicateRoom } from '../room.rules.js';
 
 import { healBoardingHousesList } from '../../properties/property.repair.js';
 
-import WorkflowReviewPanel from '../../contracts/components/WorkflowReviewPanel';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, Search, Building2, FileText, CheckCircle2 } from "lucide-react";
@@ -45,6 +44,7 @@ export default function StaffRoomsPage() {
     roomMembers = [],
     contracts = [],
     moveOutSettlements = [],
+    roommateRequestsV2 = [],
     landlords = []
   } = useData();
 
@@ -191,12 +191,15 @@ export default function StaffRoomsPage() {
   }, [filteredRooms]);
 
   const pendingRequestsCount = useMemo(() => {
-    return (roomRequests || []).filter((req) => {
+    const reqCount = (roomRequests || []).filter((req) => {
       if (!['PENDING', 'HOLDING'].includes(req.status)) return false;
       if (user?.role === 'ADMIN') return true;
       return staffHouseCodes.includes(req.houseCode);
     }).length;
-  }, [roomRequests, staffHouseCodes, user?.role]);
+    const settlementCount = (moveOutSettlements || []).filter((item) => item.refundStatus !== 'COMPLETED').length;
+    const roommateCount = (roommateRequestsV2 || []).filter((row) => row.status === 'PENDING').length;
+    return reqCount + settlementCount + roommateCount;
+  }, [roomRequests, moveOutSettlements, roommateRequestsV2, staffHouseCodes, user?.role]);
 
   const handleOpenAddModal = () => {
     if (staffRooms.length >= maxRoomsAllowed) {
@@ -440,7 +443,9 @@ try {
       {(showAddModal || editingRoom) && (
         <RoomFormModal
           editingRoom={editingRoom}
+          editingRoomOccupied={editingRoom ? hasRoomOccupants(editingRoom, contracts, roomMembers) : false}
           handleSaveRoom={handleSaveRoom}
+          onStartMaintenance={setMaintenanceRoom}
           roomFormData={roomFormData}
           setEditingRoom={setEditingRoom}
           setRoomFormData={setRoomFormData}
@@ -459,6 +464,13 @@ try {
           roomRequests={managerRequests}
           confirmRoomRequestDeposit={confirmRoomRequestDeposit}
           cancelRentalRequest={cancelRentalRequest}
+          approveRoomRequest={approveRoomRequest}
+          moveOutSettlements={moveOutSettlements}
+          onOpenSettlement={(item) => {
+            setShowRequestsManager(false);
+            setActiveSettlementModal(item);
+          }}
+          onSuccessToast={setActionToast}
           roomFilter={requestRoomFilter}
           onClearRoomFilter={() => setRequestRoomFilter(null)}
           setShowRequestsManager={setShowRequestsManager}
@@ -486,23 +498,8 @@ try {
           staffRooms={staffRooms}
         />
       )}
-      <section className="p-4 border rounded-xl bg-white space-y-3">
-        <h2 className="font-bold">Yêu cầu trả phòng và quyết toán</h2>
-        {roomRequests.filter(req => req.type === 'CHECKOUT' && req.status === 'APPROVED'
-          && !moveOutSettlements.some(item => item.contractId === req.contractId)).map(req => (
-          <div key={`checkout-${req.id}`} className="flex justify-between gap-4 border-t pt-3">
-            <span>Phòng {req.targetRoom} · Đã duyệt trả phòng, chưa có hồ sơ quyết toán</span>
-            <button className="px-3 py-1 border rounded" onClick={async () => {
-              try { await approveRoomRequest(req.id); setActionToast('Đã tạo hồ sơ quyết toán.'); }
-              catch (error) { window.dispatchEvent(new CustomEvent('rental:api-error', { detail: error.message })); }
-            }}>Tạo hồ sơ quyết toán</button>
-          </div>
-        ))}
-        {moveOutSettlements.filter(item=>item.refundStatus!=='COMPLETED').map(item=><div key={item.id} className="flex justify-between gap-4 border-t pt-3"><span>{item.roomNumber} · {item.tenantName} · {item.moveOutDate}</span><button className="px-3 py-1 border rounded" onClick={()=>setActiveSettlementModal(item)}>Quyết toán</button></div>)}
-        {!moveOutSettlements.some(item=>item.refundStatus!=='COMPLETED') && <p className="text-sm text-slate-500">Chưa có yêu cầu chờ quyết toán.</p>}
-      </section>
+
       <MoveOutSettlementModal isOpen={!!activeSettlementModal} onClose={()=>setActiveSettlementModal(null)} settlement={activeSettlementModal} room={rooms.find(item=>item.id===activeSettlementModal?.roomId)} contract={contracts.find(item=>item.id===activeSettlementModal?.contractId)} />
-      <WorkflowReviewPanel type="roommates" onOpenRentalRequests={() => setShowRequestsManager(true)} />
     </div>
   );
 }

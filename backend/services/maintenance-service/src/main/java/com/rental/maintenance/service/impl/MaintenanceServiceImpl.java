@@ -185,6 +185,18 @@ public class MaintenanceServiceImpl implements MaintenanceService {
                     throw remoteFailure(failure, "Room release failed; maintenance ticket remains open");
                 }
             }
+        } else if (!blocking && (request.getStatus() == MaintenanceStatus.COMPLETED || request.getStatus() == MaintenanceStatus.RESOLVED)) {
+            try {
+                RoomLookupResponse lookup = roomClient.getRoom(maintenanceRequest.getRoomId());
+                RoomMaintenanceSnapshot room = lookup == null ? null : lookup.data();
+                if (room != null && "MAINTENANCE".equals(room.status())
+                        && (room.maintenanceRequestId() == null || Objects.equals(room.maintenanceRequestId(), id))) {
+                    roomClient.finishMaintenance(maintenanceRequest.getRoomId(), new RoomMaintenanceRequest(id));
+                }
+            } catch (RuntimeException ignored) {
+                log.warn("Could not auto-reopen MAINTENANCE room {} after completing ticket {}",
+                        maintenanceRequest.getRoomId(), id, ignored);
+            }
         }
 
         maintenanceRequest.setStatus(request.getStatus());

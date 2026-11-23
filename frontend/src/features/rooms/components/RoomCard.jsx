@@ -5,6 +5,8 @@ import { isRoomLocked, isRoomHolding, isRoomMaintenance } from '../room.rules.js
 import { Unlock } from 'lucide-react';
 import { Lock } from 'lucide-react';
 import { Trash2 } from 'lucide-react';
+import { Wrench } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 
 export default function RoomCard({ handleDeleteRoom, handleToggleRoomLock, occupantsCount, occupied, room, setEditingRoom, setRoomFormData, setSelectedRoomForMembers, onMaintenance, onManageHold }) {
   return (<div
@@ -107,6 +109,31 @@ export default function RoomCard({ handleDeleteRoom, handleToggleRoomLock, occup
 
                         <button
                           type="button"
+                          onClick={() => onMaintenance(room)}
+                          disabled={!((room.status === 'AVAILABLE' && !occupied) || room.status === 'MAINTENANCE')}
+                          className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                          aria-label={room.status === 'MAINTENANCE' ? 'Hoàn tất bảo trì' : 'Đưa vào bảo trì'}
+                          title={
+                            room.status === 'MAINTENANCE'
+                              ? 'Hoàn tất bảo trì'
+                              : room.status === 'AVAILABLE' && !occupied
+                              ? 'Đưa vào bảo trì'
+                              : occupied
+                              ? 'Phòng đang có người thuê, chỉ tạo phiếu sửa chữa thường'
+                              : isRoomHolding(room)
+                              ? 'Phòng đang đặt cọc, không thể đưa vào bảo trì'
+                              : 'Cần mở khóa phòng về Trống trước khi đưa vào bảo trì'
+                          }
+                        >
+                          {room.status === 'MAINTENANCE' ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          ) : (
+                            <Wrench className="w-3.5 h-3.5 text-amber-600" />
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
                           onClick={() => handleDeleteRoom(room.id, room.number)}
                           disabled={occupied || isRoomHolding(room) || isRoomMaintenance(room)}
                           className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
@@ -115,7 +142,6 @@ export default function RoomCard({ handleDeleteRoom, handleToggleRoomLock, occup
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
-                      {isRoomHolding(room) && <button type="button" onClick={() => onManageHold(room)} className="mt-3 px-3 py-2 text-xs font-bold bg-amber-50 text-amber-800 rounded-xl">Quản lý đặt cọc</button>}
-                      {((room.status === 'AVAILABLE' && !occupied) || room.status === 'MAINTENANCE') && <button type="button" onClick={() => onMaintenance(room)} className="mt-3 px-3 py-2 text-xs font-bold border border-slate-200 text-slate-700 rounded-xl">{room.status === 'MAINTENANCE' ? 'Hoàn tất bảo trì' : 'Bảo trì'}</button>}
+                      {isRoomHolding(room) && <button type="button" onClick={() => onManageHold(room)} className="mt-3 w-full px-3 py-2 text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl transition cursor-pointer">Quản lý đặt cọc</button>}
                     </div>);
 }

@@ -428,6 +428,7 @@ export default function CreateTenantModal({ isOpen, onClose, onSaveTenant }) {
       phone: formData.phone || '',
       cccd: formData.identityCard,
       gender: formData.gender,
+      birthDate: formData.birthDate,
       dob: formData.birthDate,
       hometown: formData.hometown,
       address: formData.address,
