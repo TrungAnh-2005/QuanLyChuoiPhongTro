@@ -45,11 +45,24 @@ export default function BoardingHousesPage() {
   const canManageHouse = (house) => { if(user?.isTestMode) return true;
     if (!house) return false;
     if (role !== 'STAFF') return false;
-    const myUsername = user?.username;
+    const myUsername = (user?.username || '').toLowerCase();
     if (!myUsername) return false;
+    const created = (house.createdBy || '').toLowerCase();
+    const manager = (house.managerUsername || '').toLowerCase();
+    const code = (house.code || '').toUpperCase();
+
+    if (myUsername === 'staff2') {
+      if (created === 'staff' || created === 'staff1' || manager === 'staff' || manager === 'staff1' || code.startsWith('S1-') || code === 'CS-01') return false;
+    }
+    if (myUsername === 'staff' || myUsername === 'staff1') {
+      if (created === 'staff2' || manager === 'staff2' || code.startsWith('S2-') || code === 'CS-02') return false;
+    }
+
     return (
-      house.createdBy === myUsername ||
-      house.managerUsername === myUsername ||
+      house.createdBy === user?.username ||
+      house.managerUsername === user?.username ||
+      (user?.fullName && house.manager && house.manager.toLowerCase().includes(user.fullName.toLowerCase())) ||
+      (user?.phone && house.managerPhone && house.managerPhone.replace(/\D/g, '') === user.phone.replace(/\D/g, '')) ||
       (!isZeroSandbox && myUsername === 'staff' && (house.code === 'CS-01' || !house.createdBy)) ||
       (!isZeroSandbox && myUsername === 'staff2' && house.code === 'CS-02') ||
       (staffHouseCode && house.code === staffHouseCode)
@@ -86,6 +99,23 @@ export default function BoardingHousesPage() {
 
   const [rawHouses, setHouses] = useState(apiHouses);
 
+  // Lắng nghe sự kiện storage để đồng bộ tức thì khi Admin phê duyệt hoặc cơ sở thay đổi ở tab/trang khác
+  useEffect(() => {
+    const handleStorage = () => {
+      try {
+        const saved = localStorage.getItem('rental_boarding_houses');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            setHouses(healCustomHouses(parsed));
+          }
+        }
+      } catch {}
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [maxRoomsAllowed]);
+
   // Đếm số cơ sở mà Chủ trọ / Staff hiện tại đang sở hữu / quản lý (không tính gộp cơ sở của chủ trọ khác)
   const myHousesCount = useMemo(() => {
     if (role === 'ADMIN') return rawHouses.length;
@@ -97,6 +127,20 @@ export default function BoardingHousesPage() {
     return rawHouses.map((house) => {
       // Lấy danh sách phòng thuộc cơ sở này
       const houseRooms = rooms.filter(room => roomBelongsToProperty(room, house));
+
+      // Danh sách khách thuê thực tế đang ở tại cơ sở này
+      const houseTenants = (tenants || []).filter((t) => {
+        if (t.status !== 'ACTIVE') return false;
+        const belongsToThisHouse = isSameHouse(t.houseCode, house.code) || (!t.houseCode && house.code === 'CS-01');
+        return belongsToThisHouse && houseRooms.some((r) => (isSameRoom(r.number, t.room) || (Array.isArray(t.rooms) && t.rooms.some((rn) => isSameRoom(rn, r.number)))) && r.status === 'OCCUPIED');
+      });
+
+      // Kiểm tra phòng thực sự đang có người ở (loại trừ phòng ma 0 người)
+      const isRoomOccupied = (r) => {
+        if (r.status !== 'OCCUPIED') return false;
+        if (typeof r.occupants === 'number' && r.occupants > 0) return true;
+        return houseTenants.some((t) => isSameRoom(t.room, r.number) || (Array.isArray(t.rooms) && t.rooms.some((rn) => isSameRoom(rn, r.number))));
+      };
 
       // Nếu cơ sở đang ở trạng thái CHỜ ADMIN DUYỆT (PENDING_APPROVAL), cơ sở chưa được cấp phép nên số phòng hoạt động bằng 0
       const isPending = house.status === 'PENDING_APPROVAL';
@@ -111,12 +155,6 @@ export default function BoardingHousesPage() {
         ? 0
         : houseRooms.filter(room => room.status === 'OCCUPIED')
             .reduce((sum, room) => sum + Number(room.price || 0), 0);
-
-      // Danh sách khách thuê thực tế đang ở tại cơ sở này
-      const houseTenants = (tenants || []).filter((t) => {
-        if (t.status !== 'ACTIVE') return false;
-        return houseRooms.some((r) => (r.number === t.room || (Array.isArray(t.rooms) && t.rooms.includes(r.number))) && r.status === 'OCCUPIED');
-      });
 
       return {
         ...house,
@@ -143,8 +181,8 @@ export default function BoardingHousesPage() {
 
     if (isTenant) {
       list = list.filter((h) => h.code === 'CS-01');
-    } else if (isStaff) {
-      // Staff chỉ xem cơ sở thuộc quyền quản lý của mình (Multi-Tenancy)
+    } else if (isStaff && houseScopeTab === 'ASSIGNED') {
+      // Staff chỉ xem cơ sở thuộc quyền quản lý của mình khi chọn tab 'Cơ Sở Bạn Quản Lý'
       list = list.filter((h) => canManageHouse(h));
     }
 
@@ -165,10 +203,10 @@ export default function BoardingHousesPage() {
       if (cmp !== 0) return cmp;
       return String(a.code || '').localeCompare(String(b.code || ''), undefined, { numeric: true, sensitivity: 'base' });
     });
-  }, [enrichedHouses, isTenant, isStaff, houseStatusTab, staffHouseCode, user]);
+  }, [enrichedHouses, isTenant, isStaff, houseScopeTab, houseStatusTab, staffHouseCode, user]);
 
   const houseCounts = useMemo(() => {
-    const baseList = isStaff
+    const baseList = isStaff && houseScopeTab === 'ASSIGNED'
       ? enrichedHouses.filter(canManageHouse)
       : enrichedHouses;
     return {
@@ -247,7 +285,10 @@ export default function BoardingHousesPage() {
     if (!(await approveBoardingHouse(target.id)).success) return;
     const nextList = rawHouses.map((h) => (h.code === code ? { ...h, status: 'ACTIVE', approvedAt: new Date().toLocaleDateString('vi-VN') } : h));
     setHouses(nextList);
-    try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
+    try { 
+      localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); 
+      window.dispatchEvent(new Event('storage'));
+    } catch {}
     alert(`✅ Quản Trị Viên đã phê duyệt cơ sở ${code}! Cơ sở đã chuyển sang trạng thái Hoạt Động chính thức.`);
   };
 
@@ -257,7 +298,10 @@ export default function BoardingHousesPage() {
       if (!(await deleteBoardingHouse(target.id)).success) return;
       const nextList = rawHouses.filter((h) => h.code !== code);
       setHouses(nextList);
-      try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
+      try { 
+        localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); 
+        window.dispatchEvent(new Event('storage'));
+      } catch {}
       alert(`Đã từ chối và gỡ bỏ cơ sở ${code}.`);
     }
   };
@@ -408,7 +452,10 @@ try {
       if (!(await deleteBoardingHouse(targetHouse.id)).success) return;
       const nextList = rawHouses.filter((h) => h.code !== code);
       setHouses(nextList);
-      try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
+      try { 
+        localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); 
+        window.dispatchEvent(new Event('storage'));
+      } catch {}
 
       // Xóa đồng bộ các phòng thuộc cơ sở này
       const houseRoomsToDelete = (rooms || []).filter((r) => r.houseCode === code || (code === 'CS-01' && !r.houseCode));
@@ -480,6 +527,18 @@ try {
       return;
     }
 
+    const floorsVal = Number(newHouse.floors);
+    if (!Number.isFinite(floorsVal) || floorsVal < 1 || floorsVal > 50) {
+      alert('⚠️ Số tầng của cơ sở phải từ 1 đến 50 tầng!');
+      return;
+    }
+
+    const cleanedPhone = String(newHouse.managerPhone || '').trim().replace(/[\s.-]/g, '');
+    if (cleanedPhone && !/^(0|\+84)\d{9,10}$/.test(cleanedPhone)) {
+      alert('⚠️ Số điện thoại quản lý phải gồm 10–11 chữ số hợp lệ (bắt đầu bằng 0 hoặc +84)!');
+      return;
+    }
+
     if (myHousesCount >= maxHousesAllowed) {
       setShowModal(false);
       setShowUpgradeModal(true);
@@ -537,8 +596,8 @@ try {
       id: savedHouse.id,
       createdAtMs: now,
       createdAt: new Date().toLocaleString('vi-VN'),
-      code: newCode,
       ...newHouse,
+      code: newCode,
       imageUrl: newHouse.imageUrl || '/assets/images/house_cau_giay.jpg',
       manager: assignedManager,
       managerPhone: assignedPhone,
@@ -555,7 +614,10 @@ try {
     };
     const nextList = [...rawHouses, created];
     setHouses(nextList);
-    try { localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); } catch {}
+    try { 
+      localStorage.setItem('rental_boarding_houses', JSON.stringify(nextList)); 
+      window.dispatchEvent(new Event('storage'));
+    } catch {}
     setShowModal(false);
     setHouseStatusTab('PENDING');
     setNewHouse({
@@ -585,7 +647,13 @@ try {
           {isStaff && (
             <button
               onClick={() => {
-                const myHouseCode = houses[0]?.code || staffHouseCode || (user?.username === 'staff2' ? 'CS-02' : 'CS-01');
+                if (houses.length === 0) {
+                  alert(
+                    '⚠️ Bạn chưa khởi tạo cơ sở/tòa nhà nào!\n\nVui lòng nhấn "Thêm Cơ Sở Nhà Trọ" trước khi cài đặt biểu giá dịch vụ chi nhánh.'
+                  );
+                  return;
+                }
+                const myHouseCode = houses[0]?.code;
                 setSelectedHouseForConfig(myHouseCode);
                 setServiceConfigModalOpen(true);
               }}
@@ -608,14 +676,19 @@ try {
                 setShowUpgradeModal(true);
               } else {
                 let nextNum = 1;
-                rawHouses.forEach((h) => {
-                  const match = (h.code || '').match(/CS-(\d+)/i);
+                const staffPrefix = isStaff
+                  ? (user?.username === 'staff2' ? 'S2-CS' : (user?.username === 'staff' ? 'S1-CS' : `${(user?.username || 'S').toUpperCase()}-CS`))
+                  : 'CS';
+                const myHouses = rawHouses.filter((h) => canManageHouse(h));
+                const existingSamePrefix = myHouses.filter((h) => (h.code || '').toUpperCase().startsWith(staffPrefix));
+                existingSamePrefix.forEach((h) => {
+                  const match = (h.code || '').match(new RegExp(`${staffPrefix}-(\\d+)`, 'i'));
                   if (match) {
                     const n = parseInt(match[1], 10);
                     if (n >= nextNum) nextNum = n + 1;
                   }
                 });
-                const autoCode = `CS-${String(nextNum).padStart(2, '0')}`;
+                const autoCode = `${staffPrefix}-${String(nextNum).padStart(2, '0')}`;
                 setNewHouse((prev) => ({
                   ...prev,
                   code: autoCode,

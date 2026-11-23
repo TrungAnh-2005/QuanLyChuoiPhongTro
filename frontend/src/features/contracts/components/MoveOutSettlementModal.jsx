@@ -158,16 +158,6 @@ export default function MoveOutSettlementModal({ isOpen, onClose, settlement, ro
   const damageFee = Number(formData.damageFee) || 0;
   const unpaidUtilitiesFee = Number(formData.unpaidUtilitiesFee) || 0;
 
-  // Quét tiền phòng chưa trả để cấn trừ vào cọc
-  const unpaidRentInvoices = useMemo(() => {
-    return (invoices || []).filter(
-      (inv) => inv.room === settlement?.roomNumber && inv.status !== 'PAID'
-    );
-  }, [invoices, settlement]);
-  const unpaidRentFee = useMemo(() => {
-    return unpaidRentInvoices.reduce((sum, inv) => sum + (inv.total || inv.amount || 0), 0);
-  }, [unpaidRentInvoices]);
-
   // Tiền cọc thực trả lại cho khách (Cấn trừ tiền phòng nợ + điện nước + đồ đạc hư hỏng)
   const calculatedRefund = isEarlyTermination
     ? 0
@@ -198,6 +188,11 @@ try {
 
     e.preventDefault();
     setError('');
+
+    if (Number(formData.damageFee) < 0 || Number(formData.unpaidUtilitiesFee) < 0) {
+      setError('Chi phí bồi thường hư hỏng và cước điện nước phát sinh không được là số âm!');
+      return;
+    }
 
     try {
       if (settlement?.id) {

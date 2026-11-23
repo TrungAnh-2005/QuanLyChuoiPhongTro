@@ -39,7 +39,7 @@ const staffNavItems = [
   { name: 'Báo Cáo Doanh Thu Cơ Sở', path: '/reports', icon: BarChart3 },
 ];
 
-const tenantNavItems = [
+const getTenantNavItems = (isAssociatedWithLandlord = false) => [
   { name: 'Cổng Khách Thuê & Hợp Đồng', path: '/', icon: LayoutDashboard },
   { name: 'Tìm phòng trọ', path: '/rooms', icon: Building2 },
   { name: 'Chỉ Số Điện Nước (Đối Soát)', path: '/meters', icon: Zap },
@@ -51,6 +51,65 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
   const { user } = useAuth();
   const { hasActiveRental } = useTenantResidency();
   const role = user?.role || 'ADMIN';
+
+  // Kiểm tra khách đã thuê phòng hoặc đang ở chế độ cọc với chủ trọ chưa
+  const isAssociatedWithLandlord = React.useMemo(() => {
+    if (role !== 'TENANT' || !user) return false;
+    if (user.status === 'WAITING_ROOM' || user.status === 'INACTIVE') return false;
+
+    // 1. Kiểm tra tenantRooms từ localStorage (nguồn chuẩn sự thật)
+    try {
+      const s = localStorage.getItem('rental_tenant_rooms');
+      if (s) {
+        const parsed = JSON.parse(s);
+        const uNorm = (user.fullName || user.username || '').toLowerCase();
+        let myRooms = parsed[user.username] ?? (user.fullName ? parsed[user.fullName] : undefined);
+        if (myRooms === undefined) {
+          if (uNorm.includes('an')) myRooms = parsed.tenant1 ?? parsed['Nguyễn Văn An'];
+          else if (uNorm.includes('cường')) myRooms = parsed.tenant2 ?? parsed['Phạm Minh Cường'];
+          else if (uNorm.includes('nam')) myRooms = parsed.tenant_new ?? parsed['Hoàng Văn Nam'];
+        }
+        if (Array.isArray(myRooms)) {
+          if (myRooms.length === 0) return false;
+          if (myRooms.length > 0) return true;
+        }
+      }
+    } catch {}
+
+    // 2. Kiểm tra phòng đang thuê trực tiếp từ user
+    if (user.room || (user.rooms && user.rooms.length > 0)) {
+      try {
+        const s = localStorage.getItem('rental_tenant_rooms');
+        if (s) {
+          const parsed = JSON.parse(s);
+          const uNorm = (user.fullName || user.username || '').toLowerCase();
+          const rList = parsed[user.username] ?? (uNorm.includes('an') ? parsed.tenant1 : (uNorm.includes('cường') ? parsed.tenant2 : null));
+          if (Array.isArray(rList) && rList.length === 0) return false;
+        }
+      } catch {}
+      return true;
+    }
+
+    // 3. Kiểm tra đơn giữ chỗ / nộp cọc đang có hiệu lực (HOLDING hoặc PENDING)
+    try {
+      const sReq = localStorage.getItem('rental_room_requests');
+      if (sReq) {
+        const reqs = JSON.parse(sReq);
+        const uName = (user.fullName || '').toLowerCase().trim();
+        const uPhone = (user.phone || '').trim();
+        const hasDeposit = reqs.some((r) => {
+          if (r.status !== 'HOLDING' && r.status !== 'PENDING') return false;
+          if (r.type !== 'HOLD' && r.type !== 'RENT' && r.type !== 'NEW_RENT') return false;
+          const rTenant = (r.tenant || '').toLowerCase().trim();
+          const rPhone = (r.phone || '').trim();
+          return ((uName && rTenant.includes(uName)) || (uPhone && rPhone === uPhone));
+        });
+        if (hasDeposit) return true;
+      }
+    } catch {}
+
+    return false;
+  }, [role, user]);
 
   const navItems =
     role === 'TENANT'
@@ -66,6 +125,20 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
       if (s) {
         const arr = JSON.parse(s);
         return Array.isArray(arr) ? arr.filter((h) => h.status === 'PENDING_APPROVAL').length : 0;
+      }
+    } catch {}
+    return 0;
+  }, [role]);
+
+  const staffPendingRequestsCount = React.useMemo(() => {
+    if (role !== 'STAFF') return 0;
+    try {
+      const s = localStorage.getItem('rental_room_requests');
+      if (s) {
+        const arr = JSON.parse(s);
+        if (Array.isArray(arr)) {
+          return arr.filter(r => r.status === 'PENDING' || r.status === 'ROOMMATES_APPROVED').length;
+        }
       }
     } catch {}
     return 0;
@@ -144,6 +217,11 @@ export default function Sidebar({ isOpen = false, onClose = () => {} }) {
                   {item.path === '/admin/houses' && role === 'ADMIN' && pendingHousesCount > 0 && (
                     <span className="ml-auto px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white animate-pulse shadow-xs">
                       {pendingHousesCount}
+                    </span>
+                  )}
+                  {item.path === '/rooms' && role === 'STAFF' && staffPendingRequestsCount > 0 && (
+                    <span className="ml-auto px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-600 text-white animate-pulse shadow-xs">
+                      {staffPendingRequestsCount}
                     </span>
                   )}
                 </>

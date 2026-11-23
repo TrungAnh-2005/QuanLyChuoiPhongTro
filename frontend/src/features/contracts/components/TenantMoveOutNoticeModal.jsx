@@ -43,8 +43,16 @@ try {
       setError('Vui lòng chọn ngày dự kiến trả phòng.');
       return;
     }
+    if (!isFutureOrTodayDate(formData.moveOutDate)) {
+      setError('Ngày dự kiến trả phòng không được nằm trong quá khứ!');
+      return;
+    }
     if (!formData.bankAccount.trim()) {
       setError('Vui lòng nhập số tài khoản ngân hàng để nhận hoàn tiền cọc.');
+      return;
+    }
+    if (!isValidBankAccount(formData.bankAccount)) {
+      setError('Số tài khoản ngân hàng không hợp lệ (chỉ gồm từ 6 đến 20 chữ số)!');
       return;
     }
     if (!formData.bankName.trim()) {
@@ -143,6 +151,7 @@ try {
             <input
               type="date"
               name="moveOutDate"
+              min={getTodayDateInputMin()}
               value={formData.moveOutDate}
               onChange={handleChange}
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-rose-500 focus:outline-none"

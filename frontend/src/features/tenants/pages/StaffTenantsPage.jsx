@@ -42,7 +42,7 @@ export default function TenantsPage() {
   } = useData();
   const [pwdResetToast, setPwdResetToast] = useState(null);
   const [payingSaasInvoice, setPayingSaasInvoice] = useState(null);
-  const { user } = useAuth();
+  const { user, tenantRooms = {} } = useAuth();
   const isStaffOrAdmin = user?.role === 'ADMIN' || user?.role === 'STAFF';
 
   // Xác định gói cước của Chủ trọ hiện tại
@@ -85,6 +85,13 @@ export default function TenantsPage() {
         const fullHouse = parsedHouses.find((ph) => ph.code === h.code);
         const created = (fullHouse?.createdBy || '').toLowerCase();
         const manager = (fullHouse?.managerUsername || '').toLowerCase();
+        const code = (h.code || '').toUpperCase();
+        if (u === 'staff2') {
+          if (created === 'staff' || created === 'staff1' || manager === 'staff' || manager === 'staff1' || code.startsWith('S1-') || code === 'CS-01') return false;
+        }
+        if (u === 'staff' || u === 'staff1') {
+          if (created === 'staff2' || manager === 'staff2' || code.startsWith('S2-') || code === 'CS-02') return false;
+        }
         if (created && created === u) return true;
         if (manager && manager === u) return true;
         if (user?.houseCode && h.code === user.houseCode) return true;
@@ -226,7 +233,7 @@ export default function TenantsPage() {
     return { total, registered, pending, unregistered };
   }, [combinedResidents]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL'); // ALL | ACTIVE | INACTIVE
+  const [statusFilter, setStatusFilter] = useState('ACTIVE'); // ACTIVE | INACTIVE | ALL
   const [showModal, setShowModal] = useState(false);
   const [showAiTenantModal, setShowAiTenantModal] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState(null);
@@ -343,52 +350,151 @@ export default function TenantsPage() {
     }));
   };
 
+  const isSameRoom = (a, b) => {
+    if (!a || !b) return false;
+    const cleanA = String(a).replace(/^P\.?/i, '').trim().toLowerCase();
+    const cleanB = String(b).replace(/^P\.?/i, '').trim().toLowerCase();
+    return cleanA === cleanB;
+  };
+
+  const getTenantActiveInfo = (t) => {
+    const tName = (t.fullName || '').toLowerCase().trim();
+
+    // Kiểm tra xem session có phân bổ phòng không (bao gồm cả fallback từ localStorage)
+    let storedRoomsMap = {};
+    try {
+      const s = localStorage.getItem('rental_tenant_rooms');
+      if (s) storedRoomsMap = JSON.parse(s);
+    } catch {}
+
+    const resolvedMap = { ...storedRoomsMap, ...tenantRooms };
+    const sessionRooms = resolvedMap[t.fullName] !== undefined
+      ? resolvedMap[t.fullName]
+      : (resolvedMap[t.phone] !== undefined
+          ? resolvedMap[t.phone]
+          : (t.email?.includes('an.nguyen') || t.fullName?.toLowerCase().includes('an') ? resolvedMap['tenant1'] || resolvedMap['Nguyễn Văn An'] : null));
+    
+    // Nếu session explicitly đặt rỗng [] -> khách đã trả phòng / chưa thuê phòng nào!
+    const isSessionEmpty = Array.isArray(sessionRooms) && sessionRooms.length === 0;
+
+    // Tìm hợp đồng ACTIVE khớp với khách thuê
+    const activeContract = isSessionEmpty ? null : (contracts || []).find(
+      (c) =>
+        c.status === 'ACTIVE' &&
+        ((c.tenantName && (c.tenantName.toLowerCase().includes(tName) || tName.includes(c.tenantName.toLowerCase()))) ||
+         (c.tenantPhone && c.tenantPhone === t.phone))
+    );
+
+    const roomsFromState = t.rooms && t.rooms.length > 0 ? t.rooms : (t.room ? [t.room] : []);
+    const rawRooms = isSessionEmpty ? [] : (sessionRooms ? (Array.isArray(sessionRooms) ? sessionRooms : [sessionRooms]) : roomsFromState);
+
+    // Khách chỉ thực sự ĐANG THUÊ nếu:
+    // 1. Không bị session đặt về []
+    // 2. status trong t là ACTIVE
+    // 3. Có phòng trong rawRooms
+    // 4. Có hợp đồng ACTIVE hợp lệ và khớp với phòng đang ở
+    const isActuallyActive = !isSessionEmpty && t.status === 'ACTIVE' && rawRooms.length > 0 && Boolean(activeContract);
+
+    const activeRooms = isActuallyActive ? rawRooms : [];
+    const pastRoom = !isActuallyActive ? (t.previousRoom || (roomsFromState.length > 0 ? roomsFromState[0] : null)) : null;
+
+    return {
+      isActuallyActive,
+      activeRooms,
+      roomCount: activeRooms.length,
+      pastRoom,
+      activeContract
+    };
+  };
+
   // Lấy tập hợp khách thuộc phạm vi cơ sở (Tenant Scoping & Multi-tenancy Isolation)
   // Tuyệt đối không hiển thị khách tự do chưa thuê bất kỳ phòng nào trong danh bạ quản lý của Staff
   const scopedTenants = useMemo(() => {
     return (tenants || []).filter((t) => {
+      const info = getTenantActiveInfo(t);
+
       // 1. Nếu là Staff: chỉ quản lý khách thuộc các cơ sở do Staff này phụ trách
       if (user?.role === 'STAFF') {
         if (staffHouseCodes.length === 0) return false;
         const matchHouse =
           staffHouseCodes.includes(t.houseCode) ||
-          staffHouseCodes.some((c) => t.house && t.house.includes(c));
+          staffHouseCodes.some((c) => t.house && t.house.includes(c)) ||
+          (info.activeContract && staffHouseCodes.includes(info.activeContract.houseCode)) ||
+          (info.pastRoom && (rooms || []).some((r) => isSameRoom(r.number, info.pastRoom) && staffHouseCodes.includes(r.houseCode))) ||
+          (t.room && (rooms || []).some((r) => isSameRoom(r.number, t.room) && staffHouseCodes.includes(r.houseCode)));
         if (!matchHouse) return false;
       }
 
-      // 2. Chỉ hiển thị khách ĐANG THUÊ hoặc ĐÃ TỪNG THUÊ tại cơ sở này
-      const tenantRoomsList = t.rooms && t.rooms.length > 0 ? t.rooms : (t.room ? [t.room] : []);
-      const hasRoom = tenantRoomsList.length > 0;
-      const isPastTenant = t.status === 'INACTIVE' && (t.daysSinceLeave || 0) > 0;
+      // 2. Chỉ hiển thị khách ĐANG THUÊ hoặc ĐÃ TỪNG THUÊ tại cơ sở này (Đã rời / Đã trả phòng)
+      const hasRoom = info.activeRooms.length > 0 && info.isActuallyActive;
+      const isPastTenant = !info.isActuallyActive && (t.status === 'INACTIVE' || Boolean(info.pastRoom || t.leaveDate));
 
-      // Khách vãng lai / chưa có phòng (WAITING_ROOM) không thuộc cơ sở nào -> không cho Staff xem
       return hasRoom || isPastTenant;
     });
-  }, [tenants, staffHouseCodes, user]);
+  }, [tenants, staffHouseCodes, user, contracts, rooms, tenantRooms]);
 
   const filteredTenants = useMemo(() => {
     return scopedTenants.filter((t) => {
+      const info = getTenantActiveInfo(t);
       const matchesSearch =
         (t.fullName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (t.cccd || '').includes(searchTerm) ||
         (t.phone || '').includes(searchTerm) ||
         (t.room && t.room.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (t.rooms && t.rooms.some((r) => r.toLowerCase().includes(searchTerm.toLowerCase())));
+        (t.rooms && t.rooms.some((r) => r.toLowerCase().includes(searchTerm.toLowerCase()))) ||
+        (info.pastRoom && String(info.pastRoom).toLowerCase().includes(searchTerm.toLowerCase()));
 
       if (statusFilter === 'ALL') return matchesSearch;
-      if (statusFilter === 'ACTIVE') return matchesSearch && t.status === 'ACTIVE';
-      if (statusFilter === 'INACTIVE') return matchesSearch && t.status === 'INACTIVE';
+      if (statusFilter === 'ACTIVE') return matchesSearch && info.isActuallyActive;
+      if (statusFilter === 'INACTIVE') return matchesSearch && !info.isActuallyActive;
       return matchesSearch;
     });
-  }, [scopedTenants, searchTerm, statusFilter]);
+  }, [scopedTenants, searchTerm, statusFilter, contracts, tenantRooms]);
 
   const handleCreateTenant = async (e) => {
 try {
 
     e.preventDefault();
-    if (!newTenant.fullName || !newTenant.cccd) return;
+    const trimmedName = String(newTenant.fullName || '').trim();
+    const cleanedCccd = String(newTenant.cccd || '').trim().replace(/\s+/g, '');
+    const cleanedPhone = String(newTenant.phone || '').trim().replace(/[\s.-]/g, '');
+
+    if (!trimmedName || !cleanedCccd) {
+      setPwdResetToast({ type: 'ERROR', title: 'Thiếu Thông Tin', message: 'Vui lòng nhập đầy đủ Họ tên và Số CCCD!' });
+      setTimeout(() => setPwdResetToast(null), 4500);
+      return;
+    }
+    if (facilities.length === 0 || !manualHouseCode) {
+      setPwdResetToast({ type: 'ERROR', title: 'Chưa Có Cơ Sở', message: 'Bạn chưa tạo cơ sở/tòa nhà nào. Vui lòng tạo cơ sở trước khi thêm khách thuê!' });
+      setTimeout(() => setPwdResetToast(null), 5000);
+      return;
+    }
+    if (!/^\d{12}$/.test(cleanedCccd)) {
+      setPwdResetToast({ type: 'ERROR', title: 'Sai Định Dạng CCCD', message: 'Số CCCD gắn chip phải gồm đúng 12 chữ số!' });
+      setTimeout(() => setPwdResetToast(null), 4500);
+      return;
+    }
+    if (cleanedPhone && !/^(0|\+84)\d{9,10}$/.test(cleanedPhone)) {
+      setPwdResetToast({ type: 'ERROR', title: 'Sai Số Điện Thoại', message: 'Số điện thoại phải gồm 10–11 chữ số hợp lệ (bắt đầu bằng 0 hoặc +84)!' });
+      setTimeout(() => setPwdResetToast(null), 4500);
+      return;
+    }
+    const isDuplicateCccd = (tenants || []).some(
+      (t) => String(t.cccd || '').trim() === cleanedCccd && t.status === 'ACTIVE'
+    );
+    if (isDuplicateCccd) {
+      setPwdResetToast({ type: 'ERROR', title: 'Trùng Số CCCD', message: `Số CCCD ${cleanedCccd} đã tồn tại trên một hồ sơ khách thuê đang hiệu lực!` });
+      setTimeout(() => setPwdResetToast(null), 5000);
+      return;
+    }
     if (!newTenant.room) {
-      setPwdResetToast({ type: 'ERROR', title: 'Chưa Chọn Phòng', message: 'Vui lòng chọn cơ sở có phòng trống và chọn phòng cần thuê!' }); setTimeout(() => setPwdResetToast(null), 5000);
+      setPwdResetToast({ type: 'ERROR', title: 'Chưa Chọn Phòng', message: 'Vui lòng chọn cơ sở có phòng trống và chọn phòng cần thuê!' });
+      setTimeout(() => setPwdResetToast(null), 5000);
+      return;
+    }
+    if (Number(newTenant.deposit) < 0) {
+      setPwdResetToast({ type: 'ERROR', title: 'Tiền Cọc Không Hợp Lệ', message: 'Số tiền đặt cọc không được là số âm!' });
+      setTimeout(() => setPwdResetToast(null), 4500);
       return;
     }
     const selectedFacilityObj = facilities.find((f) => f.code === manualHouseCode);
@@ -396,6 +502,10 @@ try {
 
     await addTenant({
       ...newTenant,
+      fullName: trimmedName,
+      cccd: cleanedCccd,
+      phone: cleanedPhone,
+      deposit: Math.max(0, Number(newTenant.deposit) || 0),
       houseCode: manualHouseCode,
       house: selectedFacilityObj?.name || (facilities[0]?.name || 'Cơ sở nhà trọ'),
       contractEnd: calculatedEnd,
@@ -405,7 +515,7 @@ try {
     setShowModal(false);
     setDeleteNotice({
       type: 'SUCCESS',
-      message: `Đã thêm thành công hồ sơ khách thuê "${newTenant.fullName}" vào phòng ${newTenant.room} (${selectedFacilityObj?.shortName || manualHouseCode})!`
+      message: `Đã thêm thành công hồ sơ khách thuê "${trimmedName}" vào phòng ${newTenant.room} (${selectedFacilityObj?.shortName || manualHouseCode})!`
     });
     setTimeout(() => setDeleteNotice(null), 5000);
     setNewTenant({
@@ -433,6 +543,31 @@ try {
     e.preventDefault();
     if (!editingTenant) return;
 
+    const trimmedName = String(editingTenant.fullName || '').trim();
+    const cleanedCccd = String(editingTenant.cccd || '').trim().replace(/\s+/g, '');
+    const cleanedPhone = String(editingTenant.phone || '').trim().replace(/[\s.-]/g, '');
+
+    if (!trimmedName) {
+      setPwdResetToast({ type: 'ERROR', title: 'Thiếu Họ Tên', message: 'Họ và tên khách thuê không được để trống!' });
+      setTimeout(() => setPwdResetToast(null), 4000);
+      return;
+    }
+    if (cleanedCccd && !/^\d{12}$/.test(cleanedCccd)) {
+      setPwdResetToast({ type: 'ERROR', title: 'Sai Định Dạng CCCD', message: 'Số CCCD gắn chip phải gồm đúng 12 chữ số!' });
+      setTimeout(() => setPwdResetToast(null), 4000);
+      return;
+    }
+    if (cleanedPhone && !/^(0|\+84)\d{9,10}$/.test(cleanedPhone)) {
+      setPwdResetToast({ type: 'ERROR', title: 'Sai Số Điện Thoại', message: 'Số điện thoại phải gồm 10–11 chữ số hợp lệ!' });
+      setTimeout(() => setPwdResetToast(null), 4000);
+      return;
+    }
+    if (Number(editingTenant.deposit) < 0) {
+      setPwdResetToast({ type: 'ERROR', title: 'Tiền Cọc Không Hợp Lệ', message: 'Số tiền đặt cọc không được là số âm!' });
+      setTimeout(() => setPwdResetToast(null), 4000);
+      return;
+    }
+
     // QUY CHẾ HỆ THỐNG: Admin và Staff KHÔNG được sửa trạng thái hợp đồng và các phòng đang thuê!
     // Các dữ liệu này phải tự động cập nhật theo giao dịch của khách hàng.
     // Staff/Admin chỉ chỉnh sửa thông tin cá nhân và tiền cọc.
@@ -442,18 +577,18 @@ try {
       phone: editingTenant.phone,
       email: editingTenant.email,
       hometown: editingTenant.hometown,
-      deposit: Number(editingTenant.deposit) || 0
+      deposit: Math.max(0, Number(editingTenant.deposit) || 0)
     });
 
     if (selectedTenant && selectedTenant.id === editingTenant.id) {
       setSelectedTenant({
         ...selectedTenant,
-        fullName: editingTenant.fullName,
-        cccd: editingTenant.cccd,
-        phone: editingTenant.phone,
+        fullName: trimmedName,
+        cccd: cleanedCccd,
+        phone: cleanedPhone,
         email: editingTenant.email,
         hometown: editingTenant.hometown,
-        deposit: Number(editingTenant.deposit) || 0
+        deposit: Math.max(0, Number(editingTenant.deposit) || 0)
       });
     }
     setEditingTenant(null);
@@ -525,9 +660,28 @@ try {
 return (
     <div className="space-y-6">
       {pwdResetToast && (
-        <div className="fixed top-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700 text-xs font-bold animate-bounce">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span>{pwdResetToast}</span>
+        <div
+          className={`fixed top-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 text-white rounded-2xl shadow-2xl border text-xs font-bold animate-bounce ${
+            typeof pwdResetToast === 'object' && pwdResetToast.type === 'ERROR'
+              ? 'bg-rose-900 border-rose-700'
+              : 'bg-slate-900 border-slate-700'
+          }`}
+        >
+          {typeof pwdResetToast === 'object' && pwdResetToast.type === 'ERROR' ? (
+            <AlertCircle className="w-4 h-4 text-rose-300 shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          )}
+          <div>
+            {typeof pwdResetToast === 'object' ? (
+              <>
+                {pwdResetToast.title && <div className="font-extrabold">{pwdResetToast.title}</div>}
+                <div className="font-medium opacity-95">{pwdResetToast.message || ''}</div>
+              </>
+            ) : (
+              <span>{String(pwdResetToast)}</span>
+            )}
+          </div>
         </div>
       )}
             {/* 2 Tabs Chuyển Đổi Phân Hệ: Hợp Đồng vs Khai Báo Tạm Trú VNeID */}
@@ -588,6 +742,15 @@ return (
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
+                if (facilities.length === 0) {
+                  setPwdResetToast({
+                    type: 'ERROR',
+                    title: 'Chưa Khởi Tạo Cơ Sở',
+                    message: 'Vui lòng tạo Cơ sở / Tòa nhà và thêm phòng trống trước khi thêm khách thuê!'
+                  });
+                  setTimeout(() => setPwdResetToast(null), 4500);
+                  return;
+                }
                 if (!isEnterprise) {
                   setShowUpgradeModal(true);
                 } else {
@@ -610,7 +773,18 @@ return (
               )}
             </button>
             <button
-              onClick={() => setShowModal(true)}
+              onClick={() => {
+                if (facilities.length === 0) {
+                  setPwdResetToast({
+                    type: 'ERROR',
+                    title: 'Chưa Khởi Tạo Cơ Sở',
+                    message: 'Vui lòng tạo Cơ sở / Tòa nhà và thêm phòng trống trước khi thêm khách thuê!'
+                  });
+                  setTimeout(() => setPwdResetToast(null), 4500);
+                  return;
+                }
+                setShowModal(true);
+              }}
               className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -679,7 +853,7 @@ return (
                 : 'text-slate-600 hover:text-emerald-700'
             }`}
           >
-            Đang thuê ({scopedTenants.filter((t) => t.status === 'ACTIVE').length})
+            Đang thuê ({scopedTenants.filter((t) => getTenantActiveInfo(t).isActuallyActive).length})
           </button>
           <button
             onClick={() => setStatusFilter('INACTIVE')}
@@ -689,7 +863,7 @@ return (
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Đã trả phòng ({scopedTenants.filter((t) => t.status === 'INACTIVE').length})
+            Đã trả phòng ({scopedTenants.filter((t) => !getTenantActiveInfo(t).isActuallyActive).length})
           </button>
         </div>
       </div>
@@ -746,7 +920,7 @@ return (
 
                       {/* Phòng đang thuê (hỗ trợ nhiều phòng) */}
                       <td className="py-3 px-4">
-                        {roomCount > 0 ? (
+                        {isActuallyActive && roomCount > 0 ? (
                           <div className="flex flex-wrap items-center gap-1.5">
                             {tenantRoomsList.map((rm) => (
                               <span
@@ -762,16 +936,31 @@ return (
                               </span>
                             )}
                           </div>
+                        ) : info.pastRoom ? (
+                          <span className="font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 text-xs inline-flex items-center gap-1">
+                            <span>{info.pastRoom}</span>
+                            <span className="text-[10px] text-slate-400 font-normal">(Đã trả)</span>
+                          </span>
                         ) : (
                           <span className="text-slate-400 italic text-[11px]">
-                            Chưa có phòng
+                            Đã trả phòng
                           </span>
                         )}
                       </td>
 
                       {/* Hạn hợp đồng */}
                       <td className="py-3 px-4 text-slate-600">
-                        {t.contractStart ? (
+                        {info.activeContract ? (
+                          <div>
+                            <div>
+                              <span className="text-[11px] text-slate-500">Từ:</span>{' '}
+                              <strong>{info.activeContract.startDate}</strong>
+                            </div>
+                            <div className="text-[11px] text-slate-400">
+                              Đến: {info.activeContract.endDate || 'Chưa xác định'}
+                            </div>
+                          </div>
+                        ) : t.contractStart && isActuallyActive ? (
                           <div>
                             <div>
                               <span className="text-[11px] text-slate-500">Từ:</span>{' '}
@@ -781,6 +970,10 @@ return (
                               Đến: {t.contractEnd || 'Chưa xác định'}
                             </div>
                           </div>
+                        ) : !isActuallyActive && (t.contractStart || info.pastRoom) ? (
+                          <span className="text-slate-500 font-medium text-xs bg-slate-100 px-2 py-0.5 rounded-md">
+                            Đã thanh lý
+                          </span>
                         ) : (
                           <span className="text-slate-400 italic text-[11px]">
                             Chưa có hợp đồng
@@ -790,18 +983,14 @@ return (
 
                       {/* Trạng thái */}
                       <td className="py-3 px-4 text-center">
-                        {t.status === 'ACTIVE' && roomCount > 0 ? (
+                        {isActuallyActive ? (
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs inline-flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                             <span>Đang Thuê</span>
                           </span>
-                        ) : t.status === 'INACTIVE' ? (
+                        ) : (
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 inline-flex items-center gap-1">
                             <span>Đã rời ({t.daysSinceLeave || 0} ngày)</span>
-                          </span>
-                        ) : (
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 inline-flex items-center gap-1">
-                            <span>Chờ nhận phòng</span>
                           </span>
                         )}
                       </td>
@@ -846,25 +1035,18 @@ return (
                                   2. Nếu khách không thuê phòng (roomCount === 0) nhưng < 30 ngày: KHÔNG hiện nút xóa -> badge đếm ngược "🔒 Đợi X ngày hiện nút xóa".
                                   3. Chỉ khi roomCount === 0 VÀ ngày rời phòng >= 30 ngày (1 tháng): MỚI HIỆN NÚT XÓA ĐỎ NỔI BẬT!
                               */}
-                              {roomCount > 0 ? (
+                              {isActuallyActive ? (
                                 <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 font-bold whitespace-nowrap">
                                   Đang thuê
-                                </span>
-                              ) : (t.daysSinceLeave || 0) < 30 ? (
-                                <span
-                                  className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 font-semibold whitespace-nowrap"
-                                  title={`Số ngày phòng về 0: ${t.daysSinceLeave || 0}/30 ngày. Đủ 1 tháng (30 ngày) mới hiện nút xóa.`}
-                                >
-                                  🔒 Đợi {30 - (t.daysSinceLeave || 0)} ngày hiện nút xóa
                                 </span>
                               ) : (
                                 <button
                                   onClick={() => setConfirmDeleteTenant(t)}
-                                  title={`Đủ điều kiện xóa: Khách không còn thuê phòng trong 1 tháng (${t.daysSinceLeave} ngày >= 30 ngày)`}
+                                  title="Khách đã trả phòng. Bấm để xóa vĩnh viễn hồ sơ khách thuê."
                                   className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 border border-rose-300 rounded-lg text-xs font-bold transition-all btn-press cursor-pointer flex items-center gap-1 shadow-2xs"
                                 >
                                   <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                                  <span>Xóa</span>
+                                  <span>Xóa hồ sơ</span>
                                 </button>
                               )}
                             </>

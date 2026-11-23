@@ -413,7 +413,7 @@ try {
               packageName: newSaasInvoice.packageName,
               packageCode: newSaasInvoice.packageCode,
               billingCycle: newSaasInvoice.billingCycle,
-              amount: newSaasInvoice.amount,
+              amount: amountNum,
               dueDate: newSaasInvoice.dueDate
             });
             setShowAddSaasModal(false);
