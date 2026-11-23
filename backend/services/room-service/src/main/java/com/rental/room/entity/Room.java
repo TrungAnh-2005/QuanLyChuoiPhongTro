@@ -8,6 +8,7 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -38,6 +39,9 @@ public class Room {
     @Column(nullable = false)
     private Double area;
 
+    @Column(name = "image_url", length = 1000)
+    private String imageUrl;
+
     @Column(name = "max_occupants", nullable = false)
     @Builder.Default
     private Integer maxOccupants = 2;
@@ -46,6 +50,12 @@ public class Room {
     @Column(nullable = false, length = 30)
     @Builder.Default
     private RoomStatus status = RoomStatus.AVAILABLE;
+
+    // Booking identity is retained after check-in to make cross-service retries safe.
+    private Long holdRequestId;
+    private Long holdTenantId;
+    private Instant holdExpiresAt;
+    private Long maintenanceRequestId;
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(

@@ -1,4 +1,4 @@
-﻿package com.rental.contract.repository;
+package com.rental.contract.repository;
 
 import com.rental.contract.entity.MoveOutSettlement;
 import org.springframework.data.jpa.repository.JpaRepository;

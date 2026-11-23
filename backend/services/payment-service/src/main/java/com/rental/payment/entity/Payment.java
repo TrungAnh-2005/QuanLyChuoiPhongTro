@@ -21,6 +21,9 @@ public class Payment {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "payment_code", length = 50)
+    private String paymentCode;
+
     @Column(nullable = false)
     private Long invoiceId;
 
@@ -56,6 +59,9 @@ public class Payment {
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
+        if (this.paymentCode == null) {
+            this.paymentCode = "PAY-" + System.currentTimeMillis();
+        }
         if (this.paymentDate == null) {
             this.paymentDate = LocalDateTime.now();
         }

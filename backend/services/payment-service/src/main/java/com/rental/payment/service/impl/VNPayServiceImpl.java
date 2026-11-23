@@ -22,6 +22,7 @@ public class VNPayServiceImpl implements VNPayService {
 
     @Override
     public VNPayPaymentResponse createPaymentUrl(VNPayPaymentRequest request, String clientIp) {
+        if(vnPayConfig.getVnpHashSecret()==null || vnPayConfig.getVnpHashSecret().isBlank() || vnPayConfig.getVnpTmnCode()==null || vnPayConfig.getVnpTmnCode().isBlank()) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,"Chưa cấu hình VNPay ở backend");
         String vnp_Version = "2.1.0";
         String vnp_Command = "pay";
         String vnp_TxnRef = request.getInvoiceId() + "_" + System.currentTimeMillis();
@@ -106,7 +107,7 @@ public class VNPayServiceImpl implements VNPayService {
 
     @Override
     public boolean verifyPayment(Map<String, String> params) {
-        if (!params.containsKey("vnp_SecureHash")) {
+        if (vnPayConfig.getVnpHashSecret()==null || vnPayConfig.getVnpHashSecret().isBlank() || !params.containsKey("vnp_SecureHash")) {
             return false;
         }
 

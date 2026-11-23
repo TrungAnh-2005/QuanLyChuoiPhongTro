@@ -8,6 +8,7 @@ import java.util.List;
 
 public interface ContractService {
     ContractResponse createContract(CreateContractRequest request);
+    ContractResponse createReservedContract(com.rental.contract.entity.RoomRequest reservation);
     ContractResponse terminateContract(Long id);
     ContractResponse renewContract(Long id, RenewContractRequest request);
     List<ContractResponse> getAllContracts();

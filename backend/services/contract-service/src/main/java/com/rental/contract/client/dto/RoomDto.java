@@ -18,4 +18,7 @@ public class RoomDto {
     private Double area;
     private Integer maxOccupants;
     private String status;
+    private Long holdRequestId;
+    private java.time.Instant holdExpiresAt;
+    private Long maintenanceRequestId;
 }

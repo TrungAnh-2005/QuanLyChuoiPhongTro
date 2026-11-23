@@ -1,4 +1,4 @@
-﻿package com.rental.tenant.repository;
+package com.rental.tenant.repository;
 
 import com.rental.tenant.entity.RoommateRequest;
 import org.springframework.data.jpa.repository.JpaRepository;

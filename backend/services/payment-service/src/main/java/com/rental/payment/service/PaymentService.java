@@ -8,7 +8,4 @@ import java.util.List;
 
 public interface PaymentService {
     PaymentResponse createPayment(CreatePaymentRequest request);
-    List<PaymentResponse> getPayments(Long invoiceId, PaymentStatus status);
-    PaymentResponse getPaymentById(Long id);
-    List<PaymentResponse> getPaymentsByInvoiceId(Long invoiceId);
 }

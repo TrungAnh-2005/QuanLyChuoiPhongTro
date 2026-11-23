@@ -18,4 +18,14 @@ public class BoardingHouseResponse {
     private String managerPhone;
     private int totalBuildings;
     private LocalDateTime createdAt;
+
+    private Long ownerId;
+    private String code;
+    private String managerName;
+    private String managerUsername;
+    private String createdBy;
+    private String status;
+    private String imageUrl;
+    private Integer totalFloors;
+    private Integer totalRooms;
 }

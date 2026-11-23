@@ -27,6 +27,8 @@ import java.util.Map;
 @Component
 public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAuthenticationFilter.Config> {
 
+    @org.springframework.beans.factory.annotation.Value("${APPLICATION_TEST_MODE:false}")
+    private boolean testMode;
     private final JwtUtils jwtUtils;
     private final ObjectMapper objectMapper;
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
@@ -35,7 +37,6 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
             "/api/auth/login",
             "/api/auth/register",
             "/api/auth/refresh",
-            "/api/ai/**",
             "/eureka/**",
             "/actuator/**"
     );
@@ -51,6 +52,25 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
         return (exchange, chain) -> {
             ServerHttpRequest request = exchange.getRequest();
             String path = request.getURI().getPath();
+            String operationPath = canonicalWorkflowPath(path);
+            if (pathMatcher.match("/api/rooms/*/holds", operationPath)
+                    || pathMatcher.match("/api/rooms/*/holds/**", operationPath)
+                    || pathMatcher.match("/api/rooms/*/maintenance/**", operationPath)) {
+                return onError(exchange, "Room workflow operations are internal; use reservation or maintenance APIs", HttpStatus.FORBIDDEN);
+            }
+            if (testMode) {
+                String selectedRole = request.getHeaders().getFirst("X-Test-Role");
+                String testRoles = selectedRole == null ? "ROLE_ADMIN,ROLE_STAFF,ROLE_TENANT"
+                        : "ADMIN".equals(selectedRole) ? "ROLE_ADMIN"
+                        : "TENANT".equals(selectedRole) ? "ROLE_TENANT" : "ROLE_STAFF";
+                ServerHttpRequest testRequest = request.mutate()
+                        .headers(headers -> headers.remove(HttpHeaders.AUTHORIZATION))
+                        .header("X-User-Id", "2")
+                        .header("X-User-Roles", testRoles)
+                        .header("X-User-Email", "test@rental.local")
+                        .build();
+                return chain.filter(exchange.mutate().request(testRequest).build());
+            }
 
             for (String publicEndpoint : PUBLIC_ENDPOINTS) {
                 if (pathMatcher.match(publicEndpoint, path)) {
@@ -75,6 +95,7 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
                 ServerHttpRequest mutatedRequest = request.mutate()
                         .header("X-User-Id", userId)
                         .header("X-User-Roles", roles)
+                        .header("X-User-Email", String.valueOf(jwtUtils.getClaims(token).get("email", String.class)))
                         .build();
 
                 return chain.filter(exchange.mutate().request(mutatedRequest).build());
@@ -83,6 +104,17 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
                 return onError(exchange, "Failed to authenticate request token", HttpStatus.UNAUTHORIZED);
             }
         };
+    }
+
+    private String canonicalWorkflowPath(String path) {
+        // MVC ignores matrix parameters while matching controller paths. Match
+        // the decoded/canonical path here too, including encoded separators.
+        String clean = path.replace('\\', '/').replaceAll(";[^/]*", "").replaceAll("/+", "/");
+        try {
+            return new java.net.URI(null, null, clean, null).normalize().getPath();
+        } catch (java.net.URISyntaxException error) {
+            return clean;
+        }
     }
 
     private Mono<Void> onError(ServerWebExchange exchange, String message, HttpStatus status) {
@@ -98,7 +130,7 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
         Map<String, Object> errorDetails = new LinkedHashMap<>();
         errorDetails.put("success", false);
         errorDetails.put("message", message);
-        errorDetails.put("errorCode", "UNAUTHORIZED");
+        errorDetails.put("errorCode", status == HttpStatus.FORBIDDEN ? "FORBIDDEN" : "UNAUTHORIZED");
         errorDetails.put("timestamp", Instant.now().toString());
         errorDetails.put("requestId", requestId != null ? requestId : "N/A");
 

@@ -6,10 +6,8 @@ import com.rental.meter.entity.MeterType;
 import java.util.List;
 
 public interface MeterService {
-    MeterResponse createMeter(CreateMeterRequest request);
+    List<MeterReadingResponse> getAllReadings();
     MeterReadingResponse recordReading(RecordMeterReadingRequest request);
     MeterReadingResponse getLatestReading(Long roomId, MeterType meterType);
     List<MeterReadingResponse> getReadingsByRoom(Long roomId);
-    List<MeterResponse> getMetersByRoom(Long roomId);
-    MeterSmartReadingResponse scanAndCalculateReading(MeterSmartReadingRequest request);
 }

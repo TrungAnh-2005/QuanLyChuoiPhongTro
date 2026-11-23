@@ -91,11 +91,8 @@ replay_pid*
 # ==========================================
 docs/
 tests/
-    
+!frontend/tests/
+frontend/tests/*
+!frontend/tests/staff-review-flow.test.mjs
+!frontend/tests/*.test.mjs
 
-# ==========================================
-# 9. Stitch & Local MCP Credentials
-# ==========================================
-.agents/skills/stitch/
-.stitch-mcp/
-*stitch*

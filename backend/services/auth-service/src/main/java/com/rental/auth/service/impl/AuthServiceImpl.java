@@ -89,6 +89,9 @@ public class AuthServiceImpl implements AuthService {
             targetRoleName = roleUpper.startsWith("ROLE_") ? roleUpper : "ROLE_" + roleUpper;
         }
 
+        if (!Set.of("ROLE_TENANT", "ROLE_STAFF").contains(targetRoleName)) {
+            throw new AppException("Unsupported registration role", HttpStatus.BAD_REQUEST, "INVALID_ROLE");
+        }
         final String roleNameToFind = targetRoleName;
         Role role = roleRepository.findByName(roleNameToFind)
                 .orElseGet(() -> roleRepository.save(Role.builder().name(roleNameToFind).build()));
@@ -136,20 +139,6 @@ public class AuthServiceImpl implements AuthService {
                 .expiresIn(jwtTokenProvider.getJwtExpiration() / 1000)
                 .user(mapToUserResponse(user))
                 .build();
-    }
-
-    @Override
-    @Transactional
-    public void changePassword(String username, ChangePasswordRequest request) {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new AppException("User not found", HttpStatus.NOT_FOUND, "USER_NOT_FOUND"));
-
-        if (!passwordEncoder.matches(request.getOldPassword(), user.getPassword())) {
-            throw new AppException("Current password is incorrect", HttpStatus.BAD_REQUEST, "INVALID_CURRENT_PASSWORD");
-        }
-
-        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
-        userRepository.save(user);
     }
 
     @Override

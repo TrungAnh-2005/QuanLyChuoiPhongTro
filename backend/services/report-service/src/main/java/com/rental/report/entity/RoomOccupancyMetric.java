@@ -21,6 +21,9 @@ public class RoomOccupancyMetric {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "boarding_house_id")
+    private Long boardingHouseId;
+
     @Column(nullable = false)
     private Long totalRooms;
 
@@ -36,8 +39,11 @@ public class RoomOccupancyMetric {
     @Column(nullable = false)
     private Double occupancyRate;
 
-    @Column(nullable = false)
+    @Column(name = "metric_date")
     private LocalDate metricDate;
+
+    @Column(name = "record_date")
+    private LocalDate recordDate;
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -47,6 +53,9 @@ public class RoomOccupancyMetric {
         this.createdAt = LocalDateTime.now();
         if (this.metricDate == null) {
             this.metricDate = LocalDate.now();
+        }
+        if (this.recordDate == null) {
+            this.recordDate = this.metricDate;
         }
     }
 }

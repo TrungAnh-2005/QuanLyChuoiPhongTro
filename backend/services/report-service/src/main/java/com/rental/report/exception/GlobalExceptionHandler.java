@@ -64,4 +64,8 @@ public class GlobalExceptionHandler {
         String requestId = request.getHeader("X-Request-Id");
         return (requestId != null && !requestId.isBlank()) ? requestId : UUID.randomUUID().toString();
     }
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    public ResponseEntity<java.util.Map<String,Object>> handleHttpStatus(org.springframework.web.server.ResponseStatusException error) {
+        return ResponseEntity.status(error.getStatusCode()).body(java.util.Map.of("success",false,"message",error.getReason()!=null?error.getReason():"Yêu cầu không hợp lệ"));
+    }
 }

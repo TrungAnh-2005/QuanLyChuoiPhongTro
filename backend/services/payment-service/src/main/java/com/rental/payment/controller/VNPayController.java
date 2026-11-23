@@ -17,6 +17,7 @@ import java.util.Map;
 public class VNPayController {
 
     private final VNPayService vnPayService;
+    private final com.rental.payment.service.VerifiedPaymentRecorder recorder;
 
     @PostMapping("/create-url")
     public ResponseEntity<VNPayPaymentResponse> createPaymentUrl(
@@ -32,6 +33,7 @@ public class VNPayController {
         String responseCode = allParams.get("vnp_ResponseCode");
         boolean isSuccess = valid && "00".equals(responseCode);
 
+        if (isSuccess) recorder.record(Long.valueOf(allParams.get("vnp_TxnRef").split("_")[0]),new java.math.BigDecimal(allParams.get("vnp_Amount")).divide(java.math.BigDecimal.valueOf(100)),"VNPAY-"+allParams.get("vnp_TransactionNo"),com.rental.payment.entity.PaymentMethod.VNPAY);
         return ResponseEntity.ok(Map.of(
                 "success", isSuccess,
                 "verifiedChecksum", valid,

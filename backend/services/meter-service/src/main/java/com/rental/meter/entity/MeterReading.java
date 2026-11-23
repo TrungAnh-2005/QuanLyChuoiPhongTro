@@ -56,9 +56,10 @@ public class MeterReading {
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @LastModifiedDate
+    @Builder.Default
     @Column(name = "closed", nullable = false)
     private Boolean closed = false;
+    @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 }

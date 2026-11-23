@@ -1,4 +1,4 @@
-﻿services:
+services:
   # ==========================================================
   # MySQL 8.0 - Cá»¥m cÆ¡ sá»Ÿ dá»¯ liá»‡u riÃªng biá»‡t theo tá»«ng service
   # ==========================================================
@@ -14,14 +14,16 @@
     ports:
       - "${MYSQL_PORT:-3306}:3306"
     volumes:
-      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+      - ./docker/mysql/init/01-init-databases.sql:/docker-entrypoint-initdb.d/01-init-databases.sql:ro
+      - ./docker/mysql/init/03-notifications.sql:/docker-entrypoint-initdb.d/03-notifications.sql:ro
+      - ./docker/mysql/init/04-workflow-resources.sql:/docker-entrypoint-initdb.d/04-workflow-resources.sql:ro
       - mysql_data:/var/lib/mysql
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
       - --default-authentication-plugin=mysql_native_password
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      test: ["CMD-SHELL", 'mysqladmin ping -h localhost -u root -p"$$MYSQL_ROOT_PASSWORD"']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -63,6 +65,7 @@
     ports:
       - "${EUREKA_SERVER_PORT:-8761}:8761"
     environment:
+      JAVA_OPTS: ${JAVA_OPTS:--Xms32m -Xmx128m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC -XX:ActiveProcessorCount=2}
       SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8761
     healthcheck:
@@ -85,6 +88,8 @@
     ports:
       - "${GATEWAY_PORT:-8080}:8080"
     environment:
+      APPLICATION_TEST_MODE: ${APPLICATION_TEST_MODE:-false}
+      JAVA_OPTS: ${JAVA_OPTS:--Xms32m -Xmx128m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC -XX:ActiveProcessorCount=2}
       SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8080
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
@@ -104,6 +109,7 @@
   # Auth & User Service (Port 8081)
   # ==========================================================
   auth-service:
+    profiles: ["accounts"]
     build:
       context: ./backend
       dockerfile: services/auth-service/Dockerfile
@@ -112,6 +118,7 @@
     ports:
       - "8081:8081"
     environment:
+      JAVA_OPTS: ${JAVA_OPTS:--Xms32m -Xmx128m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC -XX:ActiveProcessorCount=2}
       SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8081
       MYSQL_HOST: mysql
@@ -146,6 +153,7 @@
     ports:
       - "8082:8082"
     environment:
+      JAVA_OPTS: ${JAVA_OPTS:--Xms32m -Xmx128m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC -XX:ActiveProcessorCount=2}
       SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8082
       MYSQL_HOST: mysql
@@ -178,6 +186,7 @@
     ports:
       - "8083:8083"
     environment:
+      JAVA_OPTS: ${JAVA_OPTS:--Xms32m -Xmx128m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC -XX:ActiveProcessorCount=2}
       SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8083
       MYSQL_HOST: mysql
@@ -210,6 +219,7 @@
     ports:
       - "8084:8084"
     environment:
+      JAVA_OPTS: ${JAVA_OPTS:--Xms32m -Xmx128m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC -XX:ActiveProcessorCount=2}
       SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8084
       MYSQL_HOST: mysql
@@ -248,6 +258,7 @@
     ports:
       - "8085:8085"
     environment:
+      JAVA_OPTS: ${JAVA_OPTS:--Xms32m -Xmx128m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC -XX:ActiveProcessorCount=2}
       SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8085
       MYSQL_HOST: mysql
@@ -280,6 +291,7 @@
     ports:
       - "8086:8086"
     environment:
+      JAVA_OPTS: ${JAVA_OPTS:--Xms32m -Xmx128m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC -XX:ActiveProcessorCount=2}
       SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8086
       MYSQL_HOST: mysql
@@ -318,6 +330,7 @@
     ports:
       - "8087:8087"
     environment:
+      JAVA_OPTS: ${JAVA_OPTS:--Xms32m -Xmx128m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC -XX:ActiveProcessorCount=2}
       SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8087
       MYSQL_HOST: mysql
@@ -329,6 +342,17 @@
       RABBITMQ_PORT: 5672
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-rental_rabbit}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-rental_rabbit_secret}
+      SEPAY_API_KEY: ${SEPAY_API_KEY:-}
+      VNPAY_TMN_CODE: ${VNPAY_TMN_CODE:-}
+      VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET:-}
+      VNPAY_PAY_URL: ${VNPAY_PAY_URL:-}
+      VNPAY_RETURN_URL: ${VNPAY_RETURN_URL:-}
+      MOMO_PARTNER_CODE: ${MOMO_PARTNER_CODE:-}
+      MOMO_ACCESS_KEY: ${MOMO_ACCESS_KEY:-}
+      MOMO_SECRET_KEY: ${MOMO_SECRET_KEY:-}
+      MOMO_ENDPOINT: ${MOMO_ENDPOINT:-}
+      MOMO_REDIRECT_URL: ${MOMO_REDIRECT_URL:-}
+      MOMO_IPN_URL: ${MOMO_IPN_URL:-}
     depends_on:
       mysql:
         condition: service_healthy
@@ -356,6 +380,7 @@
     ports:
       - "8088:8088"
     environment:
+      JAVA_OPTS: ${JAVA_OPTS:--Xms32m -Xmx128m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC -XX:ActiveProcessorCount=2}
       SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8088
       MYSQL_HOST: mysql
@@ -395,6 +420,7 @@
     ports:
       - "8090:8090"
     environment:
+      JAVA_OPTS: ${JAVA_OPTS:--Xms32m -Xmx128m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC -XX:ActiveProcessorCount=2}
       SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8090
       MYSQL_HOST: mysql
@@ -433,6 +459,7 @@
     ports:
       - "8091:8091"
     environment:
+      JAVA_OPTS: ${JAVA_OPTS:--Xms32m -Xmx128m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC -XX:ActiveProcessorCount=2}
       SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8091
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-server:8761/eureka/
@@ -452,6 +479,29 @@
   # ==========================================================
   # Frontend Web UI (React + Vite + Tailwind CSS)
   # ==========================================================
+  notification-service:
+    build:
+      context: ./backend
+      dockerfile: services/notification-service/Dockerfile
+    restart: unless-stopped
+    environment:
+      JAVA_OPTS: ${JAVA_OPTS:--Xms32m -Xmx128m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC -XX:ActiveProcessorCount=2}
+      SPRING_PROFILES_ACTIVE: docker
+      MYSQL_USER: ${MYSQL_USER:-rental_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-rental_secret}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8089/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rental-network
+
   frontend:
     build:
       context: ./frontend
@@ -468,11 +518,11 @@
 
 networks:
   rental-network:
-    name: rental-network
+    name: ${RENTAL_NETWORK_NAME:-rental-network}
     driver: bridge
 
 volumes:
   mysql_data:
-    name: rental_mysql_data
+    name: ${MYSQL_VOLUME_NAME:-rental_mysql_data}
   rabbitmq_data:
-    name: rental_rabbitmq_data
+    name: ${RABBITMQ_VOLUME_NAME:-rental_rabbitmq_data}

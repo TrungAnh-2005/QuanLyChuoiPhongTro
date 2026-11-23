@@ -23,11 +23,6 @@ public class ReportController {
         return ResponseEntity.ok(reportService.getRevenueChart(year));
     }
 
-    @GetMapping("/revenue-chart")
-    public ResponseEntity<RevenueChartResponse> getRevenueChart(@RequestParam(required = false) Integer year) {
-        return ResponseEntity.ok(reportService.getRevenueChart(year));
-    }
-
     @GetMapping("/occupancy")
     public ResponseEntity<OccupancyChartResponse> getOccupancyChart() {
         return ResponseEntity.ok(reportService.getOccupancyChart());

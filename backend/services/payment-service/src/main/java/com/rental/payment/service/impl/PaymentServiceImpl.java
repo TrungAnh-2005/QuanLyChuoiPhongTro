@@ -34,6 +34,7 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         Payment payment = Payment.builder()
+                .paymentCode("PAY-" + System.currentTimeMillis())
                 .invoiceId(request.getInvoiceId())
                 .amount(request.getAmount())
                 .paymentMethod(request.getPaymentMethod())
@@ -59,41 +60,6 @@ public class PaymentServiceImpl implements PaymentService {
         paymentEventPublisher.publishPaymentCompleted(event);
 
         return mapToResponse(savedPayment);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<PaymentResponse> getPayments(Long invoiceId, PaymentStatus status) {
-        List<Payment> payments;
-        if (invoiceId != null && status != null) {
-            payments = paymentRepository.findByInvoiceIdAndStatus(invoiceId, status);
-        } else if (invoiceId != null) {
-            payments = paymentRepository.findByInvoiceId(invoiceId);
-        } else if (status != null) {
-            payments = paymentRepository.findByStatus(status);
-        } else {
-            payments = paymentRepository.findAll();
-        }
-
-        return payments.stream()
-                .map(this::mapToResponse)
-                .collect(Collectors.toList());
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public PaymentResponse getPaymentById(Long id) {
-        Payment payment = paymentRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Payment not found with id: " + id));
-        return mapToResponse(payment);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<PaymentResponse> getPaymentsByInvoiceId(Long invoiceId) {
-        return paymentRepository.findByInvoiceId(invoiceId).stream()
-                .map(this::mapToResponse)
-                .collect(Collectors.toList());
     }
 
     private PaymentResponse mapToResponse(Payment payment) {

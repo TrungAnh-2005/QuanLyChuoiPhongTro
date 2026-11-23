@@ -8,6 +8,8 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.Instant;
+import java.util.List;
 
 @Data
 @Builder
@@ -15,6 +17,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class RoomResponse {
     private Long id;
+    private Long boardingHouseId;
     private Long floorId;
     private Integer floorNumber;
     private String buildingName;
@@ -24,5 +27,10 @@ public class RoomResponse {
     private Double area;
     private Integer maxOccupants;
     private RoomStatus status;
+    private Long holdRequestId;
+    private Instant holdExpiresAt;
+    private Long maintenanceRequestId;
+    private List<AmenityDto> amenities;
+    private String imageUrl;
     private LocalDateTime createdAt;
 }

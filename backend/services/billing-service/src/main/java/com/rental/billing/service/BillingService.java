@@ -7,8 +7,5 @@ import java.util.List;
 
 public interface BillingService {
     InvoiceResponse generateMonthlyInvoice(GenerateMonthlyInvoiceRequest request);
-    InvoiceResponse createInvoice(CreateInvoiceRequest request);
     List<InvoiceResponse> getInvoices(InvoiceStatus status, Long tenantId, Integer month, Integer year);
-    InvoiceResponse getInvoiceById(Long id);
-    InvoiceResponse updateInvoiceStatus(Long id, InvoiceStatus status);
 }

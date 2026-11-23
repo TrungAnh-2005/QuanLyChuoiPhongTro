@@ -1,4 +1,4 @@
-﻿package com.rental.auth.repository;
+package com.rental.auth.repository;
 
 import com.rental.auth.entity.LandlordProfile;
 import org.springframework.data.jpa.repository.JpaRepository;

@@ -33,17 +33,7 @@
     </properties>
 
     <modules>
-        <!-- Modules sẽ được kích hoạt tuần tự qua từng Phase -->
-        <!-- <module>discovery-service</module> -->
-        <!-- <module>common-library</module> -->
-        <!-- <module>gateway-service</module> -->
-        <!-- <module>auth-service</module> -->
-        <!-- <module>property-service</module> -->
-        <!-- <module>contract-service</module> -->
-        <!-- <module>utility-service</module> -->
-        <!-- <module>billing-service</module> -->
-        <!-- <module>maintenance-service</module> -->
-        <!-- <module>notification-service</module> -->
+        <module>backend</module>
     </modules>
 
     <dependencyManagement>

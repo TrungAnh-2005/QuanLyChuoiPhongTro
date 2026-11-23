@@ -8,7 +8,7 @@ import java.util.List;
 public interface BoardingHouseService {
     BoardingHouseResponse createBoardingHouse(CreateBoardingHouseRequest request);
     List<BoardingHouseResponse> getAllBoardingHouses();
-    BoardingHouseResponse getBoardingHouseById(Long id);
     BoardingHouseResponse updateBoardingHouse(Long id, CreateBoardingHouseRequest request);
+    BoardingHouseResponse approveBoardingHouse(Long id);
     void deleteBoardingHouse(Long id);
 }

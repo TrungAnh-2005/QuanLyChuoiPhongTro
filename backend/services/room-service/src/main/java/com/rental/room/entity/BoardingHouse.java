@@ -44,4 +44,14 @@ public class BoardingHouse {
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    private Long ownerId;
+    private String code;
+    private String managerName;
+    private String managerUsername;
+    private String createdBy;
+    private String status;
+    private String imageUrl;
+    private Integer totalFloors;
+    private Integer totalRooms;
 }

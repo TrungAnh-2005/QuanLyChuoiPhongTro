@@ -39,4 +39,7 @@ public class UpdateRoomRequest {
     private RoomStatus status;
 
     private Set<Long> amenityIds;
+
+    private Set<String> amenities;
+    private String imageUrl;
 }

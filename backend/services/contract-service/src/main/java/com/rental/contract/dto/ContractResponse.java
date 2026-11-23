@@ -27,6 +27,10 @@ public class ContractResponse {
     private BigDecimal depositAmount;
     private Integer paymentCycle;
     private String terms;
+    private boolean signedElectronically;
+    private LocalDateTime signedAt;
+    private boolean depositPaid;
+    private LocalDateTime depositPaidAt;
     private ContractStatus status;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

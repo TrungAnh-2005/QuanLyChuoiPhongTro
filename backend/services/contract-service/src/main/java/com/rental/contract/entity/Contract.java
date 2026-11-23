@@ -51,6 +51,10 @@ public class Contract {
 
     @Column(columnDefinition = "TEXT")
     private String terms;
+    private boolean signedElectronically;
+    private LocalDateTime signedAt;
+    private boolean depositPaid;
+    private LocalDateTime depositPaidAt;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)

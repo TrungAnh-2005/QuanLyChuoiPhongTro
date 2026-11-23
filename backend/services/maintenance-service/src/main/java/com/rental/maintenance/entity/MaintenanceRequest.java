@@ -21,11 +21,21 @@ public class MaintenanceRequest {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "ticket_code", length = 50)
+    private String ticketCode;
+
     @Column(nullable = false)
     private Long roomId;
 
-    @Column(nullable = false)
     private Long tenantId;
+
+    @Builder.Default
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private Boolean blocksRental = false;
+
+    @Column(length = 50)
+    @Builder.Default
+    private String category = "OTHER";
 
     @Column(nullable = false, length = 150)
     private String title;
@@ -71,11 +81,20 @@ public class MaintenanceRequest {
         if (this.requestedDate == null) {
             this.requestedDate = LocalDateTime.now();
         }
+        if (this.ticketCode == null) {
+            this.ticketCode = "SC-" + System.currentTimeMillis();
+        }
+        if (this.category == null) {
+            this.category = "OTHER";
+        }
         if (this.priority == null) {
             this.priority = MaintenancePriority.MEDIUM;
         }
         if (this.status == null) {
             this.status = MaintenanceStatus.PENDING;
+        }
+        if (this.blocksRental == null) {
+            this.blocksRental = false;
         }
     }
 

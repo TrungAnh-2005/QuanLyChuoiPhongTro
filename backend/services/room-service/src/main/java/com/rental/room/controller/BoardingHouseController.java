@@ -1,9 +1,10 @@
-﻿package com.rental.room.controller;
+package com.rental.room.controller;
 
 import com.rental.room.dto.ApiResponse;
 import com.rental.room.dto.BoardingHouseResponse;
 import com.rental.room.dto.CreateBoardingHouseRequest;
 import com.rental.room.service.BoardingHouseService;
+import com.rental.room.exception.AppException;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -11,9 +12,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Arrays;
 
 @RestController
-@RequestMapping({"/api/boarding-houses", "/api/properties"})
+@RequestMapping("/api/properties")
 @RequiredArgsConstructor
 public class BoardingHouseController {
 
@@ -21,8 +23,9 @@ public class BoardingHouseController {
 
     @PostMapping
     public ResponseEntity<ApiResponse<BoardingHouseResponse>> createBoardingHouse(
-            @Valid @RequestBody CreateBoardingHouseRequest request
+            @Valid @RequestBody CreateBoardingHouseRequest request, @RequestHeader("X-User-Id") Long userId
     ) {
+        request.setOwnerId(userId);
         BoardingHouseResponse response = boardingHouseService.createBoardingHouse(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response, "Boarding house created successfully"));
     }
@@ -33,16 +36,10 @@ public class BoardingHouseController {
         return ResponseEntity.ok(ApiResponse.success(response, "Get all boarding houses successfully"));
     }
 
-    @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<BoardingHouseResponse>> getBoardingHouseById(@PathVariable Long id) {
-        BoardingHouseResponse response = boardingHouseService.getBoardingHouseById(id);
-        return ResponseEntity.ok(ApiResponse.success(response, "Get boarding house detail successfully"));
-    }
-
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<BoardingHouseResponse>> updateBoardingHouse(
             @PathVariable Long id,
-            @Valid @RequestBody CreateBoardingHouseRequest request
+            @Valid @RequestBody CreateBoardingHouseRequest request, @RequestHeader("X-User-Id") Long userId
     ) {
         BoardingHouseResponse response = boardingHouseService.updateBoardingHouse(id, request);
         return ResponseEntity.ok(ApiResponse.success(response, "Boarding house updated successfully"));
@@ -52,6 +49,16 @@ public class BoardingHouseController {
     public ResponseEntity<ApiResponse<Void>> deleteBoardingHouse(@PathVariable Long id) {
         boardingHouseService.deleteBoardingHouse(id);
         return ResponseEntity.ok(ApiResponse.success(null, "Boarding house deleted successfully"));
+    }
+
+    @PatchMapping("/{id}/approval")
+    public ResponseEntity<ApiResponse<BoardingHouseResponse>> approveBoardingHouse(
+            @PathVariable Long id, @RequestHeader(value = "X-User-Roles", defaultValue = "") String roles) {
+        boolean admin = Arrays.stream(roles.split(",")).map(String::trim).anyMatch("ROLE_ADMIN"::equals);
+        if (!admin) {
+            throw new AppException("Chỉ Admin được phê duyệt cơ sở nhà trọ.", HttpStatus.FORBIDDEN, "ADMIN_REQUIRED");
+        }
+        return ResponseEntity.ok(ApiResponse.success(boardingHouseService.approveBoardingHouse(id), "Đã phê duyệt cơ sở"));
     }
 }
 

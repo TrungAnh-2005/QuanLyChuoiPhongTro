@@ -20,24 +20,9 @@ public class PaymentController {
     private final PaymentService paymentService;
 
     @PostMapping
-    public ResponseEntity<PaymentResponse> createPayment(@Valid @RequestBody CreatePaymentRequest request) {
+    public ResponseEntity<PaymentResponse> createPayment(@Valid @RequestBody CreatePaymentRequest request, @RequestHeader("X-User-Roles") String roles) {
+        if(!roles.contains("ROLE_ADMIN") && !roles.contains("ROLE_STAFF")) throw new org.springframework.web.server.ResponseStatusException(HttpStatus.FORBIDDEN,"Chủ trọ cần xác nhận giao dịch thủ công");
         return ResponseEntity.status(HttpStatus.CREATED).body(paymentService.createPayment(request));
     }
 
-    @GetMapping
-    public ResponseEntity<List<PaymentResponse>> getPayments(
-            @RequestParam(required = false) Long invoiceId,
-            @RequestParam(required = false) PaymentStatus status) {
-        return ResponseEntity.ok(paymentService.getPayments(invoiceId, status));
-    }
-
-    @GetMapping("/{id}")
-    public ResponseEntity<PaymentResponse> getPaymentById(@PathVariable Long id) {
-        return ResponseEntity.ok(paymentService.getPaymentById(id));
-    }
-
-    @GetMapping("/invoice/{invoiceId}")
-    public ResponseEntity<List<PaymentResponse>> getPaymentsByInvoiceId(@PathVariable Long invoiceId) {
-        return ResponseEntity.ok(paymentService.getPaymentsByInvoiceId(invoiceId));
-    }
 }
