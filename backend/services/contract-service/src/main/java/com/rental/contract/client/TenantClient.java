@@ -14,6 +14,9 @@ import java.util.Map;
 @FeignClient(name = "tenant-service")
 public interface TenantClient {
 
+    @GetMapping("/api/tenants")
+    ApiResponse<List<TenantDto>> getTenants();
+
     @GetMapping("/api/tenants/{id}")
     ApiResponse<TenantDto> getTenantById(@PathVariable("id") Long id);
 

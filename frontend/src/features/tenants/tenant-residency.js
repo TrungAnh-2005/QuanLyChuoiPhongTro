@@ -5,7 +5,8 @@ const normalized = value => String(value || '').trim().toLowerCase();
 
 function findTenant(user, tenants) {
   if (!user) return null;
-  const linked = tenants.find(tenant => sameId(tenant.id, user.tenantId) || sameId(tenant.userId, user.id));
+  if (user.tenantId != null) return tenants.find(tenant => sameId(tenant.id, user.tenantId)) || null;
+  const linked = tenants.find(tenant => sameId(tenant.userId, user.id));
   if (linked) return linked;
   if (normalized(user.email)) return tenants.find(tenant => normalized(tenant.email) === normalized(user.email)) || null;
   if (user.phone) return tenants.find(tenant => tenant.phone === user.phone) || null;

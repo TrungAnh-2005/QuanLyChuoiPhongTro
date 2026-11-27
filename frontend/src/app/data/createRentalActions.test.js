@@ -4,6 +4,7 @@ import api from '../../shared/api/client.js';
 import { createRentalActions } from './createRentalActions.js';
 import { selectRentalView } from './selectRentalView.js';
 import { initial } from './resources.js';
+import { selectTenantResidency } from '../../features/tenants/tenant-residency.js';
 
 const storage = () => { const entries = new Map(); return { getItem: key => entries.get(key) ?? null, setItem: (key, value) => entries.set(key, String(value)), removeItem: key => entries.delete(key) }; };
 globalThis.localStorage = storage();
@@ -111,6 +112,30 @@ test('checkout requests retain active contract and explicit forfeiture details',
   assert.equal(calls.at(-1).body.contractId, 301);
   assert.equal(calls.at(-1).body.forfeitDeposit, true);
   assert.equal(calls.at(-1).body.moveOutDate, '2026-11-30');
+});
+
+test('the linked test tenant can leave and register again without a profile email', async () => {
+  const user = { id: 2, tenantId: 201, role: 'TENANT', fullName: 'Test tenant' };
+  const state = {
+    tenants: [{ id: 202, userId: 2, fullName: 'Resident' }, { id: 201, fullName: 'Resident' }],
+    contracts: [{ id: 301, roomId: 101, tenantId: 202, status: 'ACTIVE' }],
+    roomMembers: [{ contractId: 301, roomId: 101, tenantId: 201, status: 'ACTIVE' }],
+  };
+  const { actions, calls, refreshes, view } = setup(state, user);
+  assert.equal(selectTenantResidency({ ...view, user }).hasActiveRental, true);
+  await actions.leaveRoom('P.101', user.fullName, { roomId: 101, contractId: 301, reason: 'Moving' });
+  assert.deepEqual(calls.at(-1), { method: 'post', url: '/contracts/301/leave', body: {
+    tenantId: 201, successorTenantId: null, reason: 'Moving',
+  } });
+  assert.equal(refreshes(), 1);
+
+  const afterLeave = setup({ ...state, roomMembers: [{ ...state.roomMembers[0], status: 'MOVED_OUT' }] }, user);
+  const { currentTenant, hasActiveRental } = selectTenantResidency({ ...afterLeave.view, user });
+  assert.equal(hasActiveRental, false);
+  await afterLeave.actions.submitRoomRequest({ type: 'RENT', tenantId: currentTenant.id, targetRoomId: 102 });
+  assert.equal(afterLeave.calls[0].url, '/contracts/requests');
+  assert.equal(afterLeave.calls[0].body.tenantId, 201);
+  assert.equal(afterLeave.calls[0].body.targetRoomId, 102);
 });
 
 test('cross-feature house deletion audit delegates to the audit command', async () => {

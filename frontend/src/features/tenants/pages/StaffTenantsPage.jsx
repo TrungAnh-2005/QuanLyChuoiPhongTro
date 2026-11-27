@@ -836,16 +836,7 @@ return (
                                 <Edit3 className="w-3.5 h-3.5" />
                               </button>
 
-                              {/* QUY ĐỊNH NÚT XÓA:
-                                  1. Nếu khách đang thuê (roomCount > 0): KHÔNG hiện nút xóa -> badge "Đang thuê".
-                                  2. Nếu khách không thuê phòng (roomCount === 0) nhưng < 30 ngày: KHÔNG hiện nút xóa -> badge đếm ngược "🔒 Đợi X ngày hiện nút xóa".
-                                  3. Chỉ khi roomCount === 0 VÀ ngày rời phòng >= 30 ngày (1 tháng): MỚI HIỆN NÚT XÓA ĐỎ NỔI BẬT!
-                              */}
-                              {roomCount > 0 ? (
-                                <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 font-bold whitespace-nowrap">
-                                  Đang thuê
-                                </span>
-                              ) : (t.daysSinceLeave || 0) < 30 ? (
+                              {roomCount === 0 && ((t.daysSinceLeave || 0) < 30 ? (
                                 <span
                                   className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 font-semibold whitespace-nowrap"
                                   title={`Số ngày phòng về 0: ${t.daysSinceLeave || 0}/30 ngày. Đủ 1 tháng (30 ngày) mới hiện nút xóa.`}
@@ -861,7 +852,7 @@ return (
                                   <Trash2 className="w-3.5 h-3.5 text-rose-600" />
                                   <span>Xóa</span>
                                 </button>
-                              )}
+                              ))}
                             </>
                           )}
                         </div>

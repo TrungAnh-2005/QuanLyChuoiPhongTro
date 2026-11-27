@@ -2,10 +2,11 @@ package com.rental.contract.controller;
 
 import com.rental.contract.client.BillingClient;
 import com.rental.contract.client.TenantClient;
+import com.rental.contract.client.dto.TenantDto;
 import com.rental.contract.entity.ContractStatus;
 import com.rental.contract.repository.ContractRepository;
 import com.rental.contract.service.ContractService;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -16,12 +17,21 @@ import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/contracts")
-@RequiredArgsConstructor
 public class PersonalLeaveController {
     private final ContractRepository contracts;
     private final ContractService contractService;
     private final TenantClient tenants;
     private final BillingClient billing;
+    private final boolean testMode;
+
+    public PersonalLeaveController(ContractRepository contracts, ContractService contractService, TenantClient tenants,
+                                   BillingClient billing, @Value("${APPLICATION_TEST_MODE:false}") boolean testMode) {
+        this.contracts = contracts;
+        this.contractService = contractService;
+        this.tenants = tenants;
+        this.billing = billing;
+        this.testMode = testMode;
+    }
 
     public record LeaveRequest(Long tenantId, Long successorTenantId, String reason) {}
 
@@ -35,7 +45,7 @@ public class PersonalLeaveController {
         }
         var tenant = tenants.getTenantById(body.tenantId()).getData();
         boolean manager = roles.contains("ROLE_ADMIN") || roles.contains("ROLE_STAFF");
-        if (!manager && (tenant.getEmail() == null || !tenant.getEmail().equalsIgnoreCase(email))) {
+        if (!manager && !isActingTenant(tenant, email, roles)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn chỉ được rời phòng của mình");
         }
         var contract = contracts.findForLeave(id)
@@ -67,5 +77,16 @@ public class PersonalLeaveController {
         }
         ownMember.ifPresent(m -> tenants.updateMember(m.id(), Map.of("status", "MOVED_OUT", "roleInRoom", "MEMBER"), "ROLE_STAFF"));
         return Map.of("success", true, "data", id);
+    }
+
+    private boolean isActingTenant(TenantDto tenant, String email, String roles) {
+        if (tenant == null || tenant.getId() == null) return false;
+        if (testMode && "ROLE_TENANT".equals(roles) && "test@rental.local".equals(email)) {
+            // The frontend test picker selects the same lowest-ID tenant from this list.
+            return tenants.getTenants().getData().stream()
+                    .map(TenantDto::getId).filter(Objects::nonNull).min(Long::compareTo)
+                    .filter(tenant.getId()::equals).isPresent();
+        }
+        return tenant.getEmail() != null && tenant.getEmail().equalsIgnoreCase(email);
     }
 }

@@ -221,6 +221,7 @@ services:
     environment:
       JAVA_OPTS: ${JAVA_OPTS:--Xms32m -Xmx128m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC -XX:ActiveProcessorCount=2}
       SPRING_PROFILES_ACTIVE: docker
+      APPLICATION_TEST_MODE: ${APPLICATION_TEST_MODE:-false}
       SERVER_PORT: 8084
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306

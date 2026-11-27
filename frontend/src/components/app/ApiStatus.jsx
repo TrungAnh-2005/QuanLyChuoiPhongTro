@@ -9,6 +9,19 @@ export default function ApiStatus() {
   const { testMode, user, switchRole } = useAuth();
   const [message, setMessage] = useState('');
   const [dismissedError, setDismissedError] = useState('');
+  const switchTestRole = role => {
+    const tenant = role === 'TENANT' && tenants.reduce((selected, row) => (
+      !selected || Number(row.id) < Number(selected.id) ? row : selected
+    ), null);
+    switchRole(role, tenant ? {
+      id: tenant.id,
+      tenantId: tenant.id,
+      fullName: tenant.fullName,
+      email: tenant.email,
+      room: tenant.room,
+      rooms: tenant.rooms,
+    } : {});
+  };
   const notifications = [...mutationNotifications];
   const externalError = message || (error !== dismissedError ? error : '');
   if (externalError && !notifications.some(row => row.state === 'error' && row.message === externalError)) {
@@ -92,20 +105,7 @@ export default function ApiStatus() {
                 <select
                   aria-label="Chọn màn hình kiểm thử"
                   value={user?.role || 'STAFF'}
-                  onChange={(e) =>
-                    switchRole(
-                      e.target.value,
-                      e.target.value === 'TENANT' && tenants[0]
-                        ? {
-                            id: tenants[0].id,
-                            fullName: tenants[0].fullName,
-                            email: tenants[0].email,
-                            room: tenants[0].room,
-                            rooms: tenants[0].rooms
-                          }
-                        : {}
-                    )
-                  }
+                  onChange={event => switchTestRole(event.target.value)}
                   className="w-full bg-white border border-amber-300 text-slate-800 text-xs font-semibold rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs cursor-pointer"
                 >
                   <option value="STAFF">Quản lý phòng trọ (STAFF)</option>

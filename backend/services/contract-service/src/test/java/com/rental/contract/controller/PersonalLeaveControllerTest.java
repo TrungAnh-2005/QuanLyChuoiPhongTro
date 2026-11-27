@@ -24,7 +24,7 @@ class PersonalLeaveControllerTest {
     private final ContractService contracts = mock(ContractService.class);
     private final TenantClient tenants = mock(TenantClient.class);
     private final BillingClient billing = mock(BillingClient.class);
-    private final PersonalLeaveController controller = new PersonalLeaveController(repository, contracts, tenants, billing);
+    private final PersonalLeaveController controller = new PersonalLeaveController(repository, contracts, tenants, billing, false);
     private Contract contract;
 
     @BeforeEach
@@ -46,6 +46,41 @@ class PersonalLeaveControllerTest {
         verifyNoInteractions(contracts);
         verify(repository, never()).save(any());
         assertEquals(1L, contract.getTenantId());
+    }
+
+    @Test
+    void testTenantCanLeaveUsingTheGatewayIdentityForTheLowestTenantId() {
+        var testController = new PersonalLeaveController(repository, contracts, tenants, billing, true);
+        stubTestTenants();
+
+        testController.leave(10L, new PersonalLeaveController.LeaveRequest(1L, 2L, null), "test@rental.local", "ROLE_TENANT");
+
+        verify(tenants).updateMember(101L, Map.of("status", "MOVED_OUT", "roleInRoom", "MEMBER"), "ROLE_STAFF");
+        assertEquals(2L, contract.getTenantId());
+    }
+
+    @Test
+    void testIdentityCannotActAsOtherTenants() {
+        var testController = new PersonalLeaveController(repository, contracts, tenants, billing, true);
+        stubTestTenants();
+
+        var error = assertThrows(ResponseStatusException.class, () -> testController.leave(10L,
+                new PersonalLeaveController.LeaveRequest(2L, null, null), "test@rental.local", "ROLE_TENANT"));
+        assertEquals(403, error.getStatusCode().value());
+        verifyNoInteractions(repository, billing);
+    }
+
+    @Test
+    void testIdentityDoesNotApplyOutsideTestMode() {
+        var error = assertThrows(ResponseStatusException.class, () -> controller.leave(10L,
+                new PersonalLeaveController.LeaveRequest(1L, 2L, null), "test@rental.local", "ROLE_TENANT"));
+        assertEquals(403, error.getStatusCode().value());
+        verifyNoInteractions(repository, billing);
+    }
+
+    private void stubTestTenants() {
+        when(tenants.getTenants()).thenReturn(ApiResponse.success(List.of(
+                TenantDto.builder().id(2L).build(), TenantDto.builder().id(1L).build())));
     }
 
     @Test

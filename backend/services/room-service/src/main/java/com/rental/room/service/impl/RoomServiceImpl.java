@@ -169,7 +169,7 @@ public class RoomServiceImpl implements RoomService {
             }
             String name = value.trim();
             selected.add(amenityRepository.findByName(name)
-                    .orElseGet(() -> amenityRepository.save(Amenity.builder().name(name).build())));
+                    .orElseGet(() -> amenityRepository.save(Amenity.builder().name(name).icon("check").build())));
         }
         return selected;
     }

@@ -4,7 +4,7 @@ import { useTenantResidency } from '../../tenants/useTenantResidency';
 import { useReservationRefresh } from '../../rooms/useReservationRefresh.js';
 import LeaveRoomModal from '../../../components/dashboard/LeaveRoomModal.jsx';
 import CheckoutRequestModal from '../../../components/dashboard/CheckoutRequestModal.jsx';
-import { useState, useMemo, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Home, Users, Receipt, CheckCircle2, Clock, CreditCard, Wrench, ShieldCheck, X, LogOut, UserPlus, FileText, Sparkles, ChevronRight, Shield, ArrowRight } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
@@ -29,7 +29,7 @@ import PaymentModal from '../../../components/payments/PaymentModal';
 
 export default function UserDashboard() {
   const { user } = useAuth();
-  const { currentTenant: linkedTenant } = useTenantResidency();
+  const { currentTenant: linkedTenant, activeContracts } = useTenantResidency();
   const {
     invoices = [],
     allInvoices = [],
@@ -57,6 +57,9 @@ export default function UserDashboard() {
   const [leaveReason, setLeaveReason] = useState('');
   const [agreedForfeitLeave, setAgreedForfeitLeave] = useState(false);
   const [leaveSuccess, setLeaveSuccess] = useState(false);
+  const [leaveSubmitting, setLeaveSubmitting] = useState(false);
+  const [leaveError, setLeaveError] = useState('');
+  const leaveInFlight = useRef(false);
 
   const [checkoutModal, setCheckoutModal] = useState(null);
   const [checkoutReason, setCheckoutReason] = useState('');
@@ -100,17 +103,19 @@ export default function UserDashboard() {
   const myPendingRentalRequest = tenantRoomRequests(roomRequests, myTenant?.id).find(request => isRentalRequest(request) && ['HOLDING', 'PENDING'].includes(request.status));
   useReservationRefresh(myPendingRentalRequest?.status === 'HOLDING');
 
-  const myMembership = useMemo(() => roomMembers.find(m =>
-    m.tenantId === myTenant?.id && m.status === 'ACTIVE'
-      && contracts.some(c => c.id === m.contractId && c.status === 'ACTIVE')
-  ), [roomMembers, myTenant, contracts]);
-
-  const myRentalContract = useMemo(() => contracts.find(c => c.status === 'ACTIVE'
-    && (c.tenantId === myTenant?.id || c.id === myMembership?.contractId)
-  ), [contracts, myTenant, myMembership]);
+  const myRentalContract = activeContracts[0];
 
   const myRoomNumber = isContractPending ? null : myRentalContract?.roomNumber || null;
   const isRepresentative = Boolean(myRentalContract && myRentalContract.tenantId === myTenant?.id);
+
+  const openLeave = useCallback(roomNumber => {
+    setLeaveModal(roomNumber);
+    setAgreedForfeitLeave(false);
+    setLeaveReason('');
+    setSelectedSuccessor('');
+    setLeaveSuccess(false);
+    setLeaveError('');
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -122,18 +127,12 @@ export default function UserDashboard() {
         setCheckoutReason('');
         setCheckoutSuccess(false);
       } else {
-        setLeaveModal(myRoomNumber);
-        setAgreedForfeitLeave(false);
-        setLeaveReason('');
-        setLeaveSuccess(false);
+        openLeave(myRoomNumber);
       }
     } else if (action === 'leave' && myRoomNumber) {
-      setLeaveModal(myRoomNumber);
-      setAgreedForfeitLeave(false);
-      setLeaveReason('');
-      setLeaveSuccess(false);
+      openLeave(myRoomNumber);
     }
-  }, [myRoomNumber, isRepresentative]);
+  }, [myRoomNumber, isRepresentative, openLeave]);
 
   const selectedCheckoutRoomObj = useMemo(() => {
     if (!checkoutModal) return null;
@@ -189,25 +188,28 @@ export default function UserDashboard() {
   }, [myRoomNumber, roomRequests, user]);
 
   const handleSendLeave = async (e) => {
-try {
-
     e.preventDefault();
-    if (!leaveModal || !agreedForfeitLeave || hasUnpaidBillsForLeave) return;
-    const roomNumber = typeof leaveModal === 'string' ? leaveModal : leaveModal.number;
+    if (leaveInFlight.current || !leaveModal || !myRentalContract || !agreedForfeitLeave || hasUnpaidBillsForLeave) return;
     if (isRepresentative && otherRoommates.length > 0 && !selectedSuccessor) return;
-    const res = await leaveRoom(roomNumber, user?.fullName, {
-      roomId: myRentalContract?.roomId,
-      successorTenantId: selectedSuccessor ? Number(selectedSuccessor) : null,
-      reason: leaveReason
-    });
-    if (res?.success) {
-      setLeaveSuccess(true);
-    } else {
-      alert(res?.message || 'Không thể rời phòng do chưa hoàn tất nghĩa vụ tài chính.');
-    }
 
-} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
-};
+    leaveInFlight.current = true;
+    setLeaveSubmitting(true);
+    setLeaveError('');
+    try {
+      await leaveRoom(myRentalContract.roomNumber, user?.fullName, {
+        roomId: myRentalContract.roomId,
+        contractId: myRentalContract.id,
+        successorTenantId: selectedSuccessor ? Number(selectedSuccessor) : null,
+        reason: leaveReason,
+      });
+      setLeaveSuccess(true);
+    } catch (error) {
+      setLeaveError(error.message || 'Không thể rời phòng.');
+    } finally {
+      leaveInFlight.current = false;
+      setLeaveSubmitting(false);
+    }
+  };
 
   const handleSendCheckout = async (e) => {
     e.preventDefault();
@@ -351,6 +353,32 @@ try {
     return invoices.find((inv) => inv.room === myRoomNumber && (!inv.houseCode || inv.houseCode === currentRoomObj?.houseCode)) || null;
   }, [invoices, myRoomNumber, currentRoomObj, isContractPending]);
 
+  const leaveDialog = (
+    <LeaveRoomModal
+      agreedForfeitLeave={agreedForfeitLeave}
+      handleSendLeave={handleSendLeave}
+      hasUnpaidBillsForLeave={hasUnpaidBillsForLeave}
+      isRepresentative={isRepresentative}
+      leaveError={leaveError}
+      leaveModal={leaveModal}
+      leaveSubmitting={leaveSubmitting}
+      leaveReason={leaveReason}
+      leaveSuccess={leaveSuccess}
+      myRoomNumber={myRoomNumber}
+      otherRoommates={otherRoommates}
+      payInvoice={payInvoice}
+      selectedSuccessor={selectedSuccessor}
+      setAgreedForfeitLeave={setAgreedForfeitLeave}
+      setLeaveModal={setLeaveModal}
+      setLeaveReason={setLeaveReason}
+      setLeaveSuccess={setLeaveSuccess}
+      setPaySuccessToast={setPaySuccessToast}
+      setSelectedSuccessor={setSelectedSuccessor}
+      totalUnpaidForLeave={totalUnpaidForLeave}
+      unpaidInvoicesForLeave={unpaidInvoicesForLeave}
+    />
+  );
+
   // =========================================================================
   // 1A. GIAO DIỆN BẮT BUỘC: NỘP TIỀN CỌC & KÝ HỢP ĐỒNG ĐIỆN TỬ (ONBOARDING GATE)
   // =========================================================================
@@ -366,6 +394,7 @@ try {
   if (!myRoomNumber) {
     return (
       <div className="space-y-6 page-enter">
+        {leaveSuccess && leaveDialog}
         {myPendingRentalRequest && <section className="bento-card p-5 border border-amber-200 space-y-3">
           <h2 className="font-bold text-slate-900">{myPendingRentalRequest.status === 'HOLDING' ? 'Phòng đang đặt cọc' : 'Yêu cầu thuê phòng đang chờ duyệt'}</h2>
           <HoldDepositDetails request={myPendingRentalRequest} />
@@ -545,12 +574,7 @@ try {
             </Link>
             <button
               type="button"
-              onClick={() => {
-                setLeaveModal(myRoomNumber);
-                setAgreedForfeitLeave(false);
-                setLeaveReason('');
-                setLeaveSuccess(false);
-              }}
+              onClick={() => openLeave(myRoomNumber)}
               className="btn-press px-4 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded-2xl text-xs border border-amber-200/80 transition-all flex items-center gap-2 cursor-pointer shadow-xs"
               title="Cá nhân dọn ra ngoài, không bắt buộc bạn cùng phòng phải trả theo"
             >
@@ -940,28 +964,7 @@ try {
         invoice={payingInvoice || undefined}
       />
 
-      {/* Modal Rời Phòng Cá Nhân (Dọn ra ngoài) */}
-      <LeaveRoomModal
-          agreedForfeitLeave={agreedForfeitLeave}
-          handleSendLeave={handleSendLeave}
-          hasUnpaidBillsForLeave={hasUnpaidBillsForLeave}
-          isRepresentative={isRepresentative}
-          leaveModal={leaveModal}
-          leaveReason={leaveReason}
-          leaveSuccess={leaveSuccess}
-          myRoomNumber={myRoomNumber}
-          otherRoommates={otherRoommates}
-          payInvoice={payInvoice}
-          selectedSuccessor={selectedSuccessor}
-          setAgreedForfeitLeave={setAgreedForfeitLeave}
-          setLeaveModal={setLeaveModal}
-          setLeaveReason={setLeaveReason}
-          setLeaveSuccess={setLeaveSuccess}
-          setPaySuccessToast={setPaySuccessToast}
-          setSelectedSuccessor={setSelectedSuccessor}
-          totalUnpaidForLeave={totalUnpaidForLeave}
-          unpaidInvoicesForLeave={unpaidInvoicesForLeave}
-        />
+      {leaveDialog}
 
       {/* Modal Trả Toàn Bộ Phòng (HĐ) - Đại diện ký hợp đồng */}
       <CheckoutRequestModal

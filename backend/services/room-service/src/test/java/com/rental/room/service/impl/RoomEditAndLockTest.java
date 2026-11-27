@@ -56,6 +56,25 @@ class RoomEditAndLockTest {
         verify(rooms, never()).save(any());
     }
 
+    @Test void creatingRoomWithNewAmenitySavesAnIconForTheExistingDatabaseSchema() throws Exception {
+        Room existing = room(RoomStatus.AVAILABLE);
+        when(floors.findById(30L)).thenReturn(Optional.of(existing.getFloor()));
+        when(amenities.findByName("WiFi")).thenReturn(Optional.empty());
+        when(amenities.save(any(Amenity.class))).thenAnswer(call -> {
+            Amenity amenity = call.getArgument(0);
+            assertNotNull(amenity.getIcon(), "amenities.icon is NOT NULL in the database");
+            return amenity;
+        });
+        var request = json.readValue("""
+                {"floorId":30,"roomNumber":"P.102","basePrice":3500000,"area":25,"amenities":["WiFi"]}
+                """, CreateRoomRequest.class);
+
+        var response = service.createRoom(request);
+
+        assertEquals("WiFi", response.getAmenities().getFirst().getName());
+        assertEquals("check", response.getAmenities().getFirst().getIcon());
+    }
+
     @Test void managedRoomStatesCannotBeClearedByGenericStatusOrDelete() {
         for (RoomStatus status : List.of(RoomStatus.HOLDING, RoomStatus.MAINTENANCE)) {
             Room managed = room(status);

@@ -5,7 +5,7 @@ npm install
 npm run dev
 ```
 
-Mở http://localhost:5173. `frontend/.env` đã bật `VITE_TEST_MODE=true`: vào thẳng màn hình quản lý, không đăng nhập. Bộ chọn ở góc dưới chuyển màn hình quản lý/khách thuê/quản trị; màn hình khách thuê dùng khách thuê đầu tiên trong database để kiểm thử.
+Mở http://localhost:5173. `frontend/.env` đã bật `VITE_TEST_MODE=true` để vào thẳng màn hình quản lý. Bộ chọn ở góc dưới chuyển vai trò và dùng hồ sơ khách thuê có ID thấp nhất khi chọn Tenant. Contract service dùng cùng hồ sơ khi kiểm thử thao tác rời phòng với `APPLICATION_TEST_MODE=true`.
 
 Tất cả request nghiệp vụ đi qua `/api` và được Vite proxy tới `GATEWAY_URL` (mặc định http://localhost:8080). Gateway cần bật `APPLICATION_TEST_MODE=true` tương ứng. Account/JWT/phân quyền được để lại giai đoạn sau; `auth-service` không cần chạy trong bản test.
 

@@ -5,15 +5,20 @@ import { X } from 'lucide-react';
 import { AlertTriangle } from 'lucide-react';
 import { Zap } from 'lucide-react';
 
-export default function LeaveRoomModal({ agreedForfeitLeave, handleSendLeave, hasUnpaidBillsForLeave, isRepresentative, leaveModal, leaveReason, leaveSuccess, myRoomNumber, otherRoommates, payInvoice, selectedSuccessor, setAgreedForfeitLeave, setLeaveModal, setLeaveReason, setLeaveSuccess, setPaySuccessToast, setSelectedSuccessor, totalUnpaidForLeave, unpaidInvoicesForLeave }) {
+export default function LeaveRoomModal({ agreedForfeitLeave, handleSendLeave, hasUnpaidBillsForLeave, isRepresentative, leaveError, leaveModal, leaveReason, leaveSubmitting, leaveSuccess, myRoomNumber, otherRoommates, payInvoice, selectedSuccessor, setAgreedForfeitLeave, setLeaveModal, setLeaveReason, setLeaveSuccess, setPaySuccessToast, setSelectedSuccessor, totalUnpaidForLeave, unpaidInvoicesForLeave }) {
+  const close = () => {
+    if (leaveSubmitting) return;
+    setLeaveModal(null);
+    setLeaveSuccess(false);
+    setAgreedForfeitLeave(false);
+    setLeaveReason('');
+  };
+  const canSubmit = !leaveSubmitting && agreedForfeitLeave && !hasUnpaidBillsForLeave
+    && (!isRepresentative || otherRoommates.length === 0 || !!selectedSuccessor);
+
   return (<Modal
         isOpen={!!leaveModal}
-        onClose={() => {
-          setLeaveModal(null);
-          setLeaveSuccess(false);
-          setAgreedForfeitLeave(false);
-          setLeaveReason('');
-        }}
+        onClose={close}
         maxWidth="max-w-md"
       >
         {leaveModal && (
@@ -27,7 +32,7 @@ export default function LeaveRoomModal({ agreedForfeitLeave, handleSendLeave, ha
                   Đã Rời Phòng Thành Công!
                 </h3>
                 <p className="text-xs text-slate-500 mb-4 max-w-xs mx-auto">
-                  Bạn đã rút tên khỏi <strong className="text-emerald-700">Phòng {typeof leaveModal === 'string' ? leaveModal : leaveModal?.number}</strong>. Cổng khách thuê đã được cập nhật về trạng thái chưa thuê phòng.
+                  Bạn đã rút tên khỏi <strong className="text-emerald-700">Phòng {typeof leaveModal === 'string' ? leaveModal : leaveModal?.number}</strong>. Danh sách phòng đang thuê đã được cập nhật.
                 </p>
 
                 <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 mb-5 text-left text-xs space-y-2">
@@ -49,12 +54,7 @@ export default function LeaveRoomModal({ agreedForfeitLeave, handleSendLeave, ha
 
                 <button
                   type="button"
-                  onClick={() => {
-                    setLeaveModal(null);
-                    setLeaveSuccess(false);
-                    setAgreedForfeitLeave(false);
-                    setLeaveReason('');
-                  }}
+                  onClick={close}
                   className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-md btn-press cursor-pointer"
                 >
                   Đóng Thông Báo
@@ -78,7 +78,8 @@ export default function LeaveRoomModal({ agreedForfeitLeave, handleSendLeave, ha
                   </div>
                   <button
                     type="button"
-                    onClick={() => setLeaveModal(null)}
+                    disabled={leaveSubmitting}
+                    onClick={close}
                     className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 btn-press-ghost cursor-pointer"
                   >
                     <X className="w-5 h-5" />
@@ -150,7 +151,7 @@ try {
                   </div>
                 )}
 
-                <form onSubmit={handleSendLeave} className="space-y-4 text-xs">
+                <form onSubmit={handleSendLeave} aria-busy={leaveSubmitting} className="space-y-4 text-xs">
                   {isRepresentative && otherRoommates.length > 0 ? (
                     <div className="p-3.5 bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-300 rounded-2xl space-y-2">
                       <div className="flex items-center gap-2 font-bold text-purple-950">
@@ -211,24 +212,26 @@ try {
                     </label>
                   </div>
 
+                  {leaveError && <p role="alert" className="text-rose-700 font-semibold">{leaveError}</p>}
                   <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
                     <button
                       type="button"
-                      onClick={() => setLeaveModal(null)}
+                      disabled={leaveSubmitting}
+                      onClick={close}
                       className="px-4 py-2 text-slate-600 hover:bg-slate-100 font-bold rounded-xl transition-colors btn-press-ghost"
                     >
                       Hủy bỏ
                     </button>
                     <button
                       type="submit"
-                      disabled={!agreedForfeitLeave || hasUnpaidBillsForLeave || (isRepresentative && otherRoommates.length > 0 && !selectedSuccessor)}
+                      disabled={!canSubmit}
                       className={`px-5 py-2.5 font-bold rounded-xl shadow-md transition-all btn-press flex items-center gap-1.5 cursor-pointer ${
-                        agreedForfeitLeave && !hasUnpaidBillsForLeave && (!isRepresentative || otherRoommates.length === 0 || selectedSuccessor)
+                        canSubmit
                           ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/30'
                           : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                       }`}
                     >
-                      <span>{isRepresentative && otherRoommates.length > 0 ? 'Bàn Giao HĐ & Rời Phòng' : 'Xác Nhận Rời Phòng'}</span>
+                      <span>{leaveSubmitting ? 'Đang xử lý…' : isRepresentative && otherRoommates.length > 0 ? 'Bàn Giao HĐ & Rời Phòng' : 'Xác Nhận Rời Phòng'}</span>
                     </button>
                   </div>
                 </form>

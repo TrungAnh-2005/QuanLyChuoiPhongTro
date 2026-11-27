@@ -1,3 +1,5 @@
+import { selectTenantResidency } from '../../tenants/tenant-residency.js';
+
 // Commands consume current state through the app's composition boundary.
 export function createContractsCommands({ api, create, data, find, findRoommateSponsor, isoDate, missingSponsorMessage, normalizeGender, patch, refreshData, remove, request, room, tenantId, user, view }) {
   return {
@@ -57,14 +59,13 @@ settleMoveOut: async (id,input={}) => {
       await refreshData();return {success:true,data:result};
     },
 leaveRoom: (number, _name, input = {}) => {
-      const tenant = view.tenants.find(t => t.email && t.email === user?.email)
-        || view.tenants.find(t => t.fullName === user?.fullName);
-      if (!tenant) throw new Error('Không tìm thấy hồ sơ khách thuê của bạn');
+      const { currentTenant, activeContracts } = selectTenantResidency({ ...view, user });
+      if (!currentTenant) throw new Error('Không tìm thấy hồ sơ khách thuê của bạn');
       const target = input.roomId ? find(view.rooms, input.roomId) : room(number);
-      const contract = view.contracts.find(c => c.roomId === target.id && c.status === 'ACTIVE'
-        && (c.tenantId === tenant.id || view.roomMembers.some(m => m.contractId === c.id && m.tenantId === tenant.id && m.status === 'ACTIVE')));
+      const contract = activeContracts.find(c => String(c.roomId) === String(target.id)
+        && (input.contractId == null || String(c.id) === String(input.contractId)));
       if (!contract) throw new Error('Không tìm thấy hợp đồng đang thuê của bạn');
-      return request('post', `/contracts/${contract.id}/leave`, { tenantId: tenant.id, successorTenantId: input.successorTenantId || null, reason: input.reason || '' });
+      return request('post', `/contracts/${contract.id}/leave`, { tenantId: currentTenant.id, successorTenantId: input.successorTenantId || null, reason: input.reason || '' });
     },
 signContractElectronically: id => request('post',`/contracts/${find(view.contracts,id).id}/sign`,{}),
 payDepositAndSignContract: (id,options={}) => request('post',`/contracts/${find(view.contracts,id).id}/confirm-deposit`,options)

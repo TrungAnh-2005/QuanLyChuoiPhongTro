@@ -1,4 +1,5 @@
 import RoomCard from '../../../components/rooms/RoomCard.jsx';
+import { roomBelongsToProperty } from '../../properties/property.catalog.js';
 import { filterManagedProperties } from '../../properties/property.rules.js';
 import RoomFormModal from '../../../components/rooms/RoomFormModal.jsx';
 import ResidentRequestsModal from '../../../components/rooms/ResidentRequestsModal.jsx';
@@ -6,7 +7,7 @@ import RoomMembersModal from '../../../components/rooms/RoomMembersModal.jsx';
 import RoomQuotaModal from '../../../components/rooms/RoomQuotaModal.jsx';
 import RoomMaintenanceModal from '../../../components/rooms/RoomMaintenanceModal.jsx';
 import { useReservationRefresh } from '../useReservationRefresh.js';
-import { parseFloorNum } from '../room.presentation.js';
+import { groupRoomsByProperty } from '../room.presentation.js';
 
 import { healBoardingHousesList } from '../../properties/property.repair.js';
 
@@ -27,7 +28,7 @@ export default function StaffRoomsPage() {
   const {boardingHouses:apiBoardingHouses=[]}=useData() || {};
 
   const { user } = useAuth();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const rawParam = searchParams.get('house') || 'ALL';
 
   const {
@@ -97,10 +98,17 @@ export default function StaffRoomsPage() {
 
   const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
 
-  const [selectedHouse, setSelectedHouse] = useState(() => {
-    if (rawParam !== 'ALL' && staffHouseCodes.includes(rawParam)) return rawParam;
-    return 'ALL';
-  });
+  const selectedProperty = staffManageableHouses.find(house => house.code === rawParam);
+  const selectedHouse = selectedProperty?.code || 'ALL';
+
+  const setSelectedHouse = (code) => {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      if (code === 'ALL') next.delete('house');
+      else next.set('house', code);
+      return next;
+    });
+  };
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('ALL');
@@ -131,36 +139,26 @@ export default function StaffRoomsPage() {
   // Lọc phòng thuộc quyền quản lý
   const staffRooms = useMemo(() => {
     if (user?.role === 'ADMIN') return rooms;
-    return rooms.filter((r) => staffHouseCodes.includes(r.houseCode));
-  }, [rooms, staffHouseCodes, user?.role]);
+    return rooms.filter(room => staffManageableHouses.some(house => roomBelongsToProperty(room, house)));
+  }, [rooms, staffManageableHouses, user?.role]);
   useReservationRefresh(staffRooms.some(room => room.status === 'HOLDING'));
   const manageableRequests = useMemo(() => roomRequests.filter(req => user?.role === 'ADMIN' || staffHouseCodes.includes(req.houseCode)), [roomRequests, staffHouseCodes, user?.role]);
   const managerRequests = requestRoomFilter ? manageableRequests.filter(req => String(req.targetRoomId) === String(requestRoomFilter.id)) : manageableRequests;
 
   const filteredRooms = useMemo(() => {
-    return staffRooms.filter((r) => {
-      if (selectedHouse !== 'ALL' && r.houseCode !== selectedHouse) return false;
-      if (filterStatus !== 'ALL' && r.status !== filterStatus) return false;
-      if (searchTerm) {
-        const q = searchTerm.toLowerCase();
-        const matchNum = r.number && r.number.toLowerCase().includes(q);
-        const matchHouse = r.house && r.house.toLowerCase().includes(q);
-        if (!matchNum && !matchHouse) return false;
-      }
-      return true;
+    const query = searchTerm.trim().toLowerCase();
+    return staffRooms.filter(room => {
+      if (selectedProperty && !roomBelongsToProperty(room, selectedProperty)) return false;
+      if (filterStatus !== 'ALL' && room.status !== filterStatus) return false;
+      return !query || [room.number, room.house, room.houseCode]
+        .some(value => String(value ?? '').toLowerCase().includes(query));
     });
-  }, [staffRooms, selectedHouse, filterStatus, searchTerm]);
+  }, [staffRooms, selectedProperty, filterStatus, searchTerm]);
 
-  // Nhóm theo tầng
-  const groupedByFloor = useMemo(() => {
-    const map = new Map();
-    filteredRooms.forEach((r) => {
-      const fl = r.floor || 'Tầng 1';
-      if (!map.has(fl)) map.set(fl, []);
-      map.get(fl).push(r);
-    });
-    return Array.from(map.entries()).sort((a, b) => parseFloorNum(a[0]) - parseFloorNum(b[0]));
-  }, [filteredRooms]);
+  const propertyGroups = useMemo(
+    () => groupRoomsByProperty(filteredRooms, staffManageableHouses),
+    [filteredRooms, staffManageableHouses],
+  );
 
   const pendingRequestsCount = useMemo(() => {
     const reqCount = (roomRequests || []).filter((req) => {
@@ -271,11 +269,13 @@ try {
           { code: 'ALL', label: `🏢 Toàn Bộ Cơ Sở (${staffRooms.length})` },
           ...staffManageableHouses.map((h) => ({
             code: h.code,
-            label: `🏠 ${h.name} (${rooms.filter((r) => r.houseCode === h.code).length})`
+            label: `🏠 ${h.name} (${staffRooms.filter(room => roomBelongsToProperty(room, h)).length})`
           }))
         ].map((house) => (
           <button
             key={house.code}
+            type="button"
+            aria-pressed={selectedHouse === house.code}
             onClick={() => setSelectedHouse(house.code)}
             className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
               selectedHouse === house.code
@@ -317,7 +317,8 @@ try {
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Tìm theo số phòng..."
+            aria-label="Tìm theo số phòng hoặc cơ sở"
+            placeholder="Tìm phòng hoặc cơ sở..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:bg-white focus:border-purple-500 font-medium"
@@ -325,46 +326,64 @@ try {
         </div>
       </div>
 
-      {/* Floor by Floor Grid */}
+      {/* Rooms grouped by property and floor */}
       <div className="space-y-6">
-        {groupedByFloor.length === 0 ? (
-          <div className="bg-white border border-slate-200 rounded-3xl p-10 text-center text-slate-400 text-sm">
-            Chưa có phòng nào phù hợp với bộ lọc trong cơ sở này.
+        {propertyGroups.length === 0 ? (
+          <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-slate-600 text-sm">
+            {searchTerm.trim() || filterStatus !== 'ALL'
+              ? 'Không có phòng phù hợp với bộ lọc.'
+              : selectedProperty ? `${selectedProperty.name} chưa có phòng.` : 'Chưa có phòng để hiển thị.'}
           </div>
         ) : (
-          groupedByFloor.map(([floorName, floorRooms]) => (
-            <div key={floorName} className="space-y-3">
-              <div className="flex items-center gap-2 text-xs font-black text-slate-700 uppercase tracking-wider">
-                <span className="w-2.5 h-2.5 rounded-full bg-purple-600"></span>
-                <span>{floorName} ({floorRooms.length} Phòng)</span>
-              </div>
+          propertyGroups.map(({ key, code, name, roomCount, floors }) => (
+            <section key={key} className="rounded-2xl border border-slate-200 bg-slate-50/70">
+              <header className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-t-2xl border-b border-slate-200 bg-white px-4 py-3.5 sm:px-5">
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-purple-50 text-purple-700">
+                  <Building2 className="size-5" aria-hidden="true" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h2 className="wrap-break-word text-base font-bold text-slate-900">{name}</h2>
+                  {code && code !== name && <p className="text-xs text-slate-600">{code}</p>}
+                </div>
+                <span className="shrink-0 text-sm font-medium text-slate-600">{roomCount} phòng</span>
+              </header>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {floorRooms.map((room) => {
-                  const occupantIds = new Set([
-                    ...roomMembers.filter(m => m.roomId === room.id && m.status !== 'MOVED_OUT').map(m => m.tenantId),
-                    ...contracts.filter(c => c.roomId === room.id && c.status === 'ACTIVE').map(c => c.tenantId),
-                  ]);
-                  const occupantsCount = occupantIds.size;
-                  const occupied = hasRoomOccupants(room, contracts, roomMembers);
+              <div className="space-y-5 p-3 sm:p-5">
+                {floors.map(([floorName, floorRooms]) => (
+                  <div key={floorName} className="space-y-3">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                      {floorName}
+                      <span className="text-xs font-medium text-slate-600">· {floorRooms.length} phòng</span>
+                    </h3>
 
-                  return (
-                    <RoomCard
-                      key={room.id}
-                      handleDeleteRoom={handleDeleteRoom}
-                      handleToggleRoomLock={handleToggleRoomLock}
-                      occupantsCount={occupantsCount}
-                      occupied={occupied}
-                      room={room}
-                      onEdit={room => setRoomEditor({ room })}
-                      setSelectedRoomForMembers={setSelectedRoomForMembers}
-                      onMaintenance={setMaintenanceRoom}
-                      onManageHold={target => { setRequestRoomFilter(target); setShowRequestsManager(true); }}
-                    />
-                  );
-                })}
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                      {floorRooms.map((room) => {
+                        const occupantIds = new Set([
+                          ...roomMembers.filter(m => m.roomId === room.id && m.status !== 'MOVED_OUT').map(m => m.tenantId),
+                          ...contracts.filter(c => c.roomId === room.id && c.status === 'ACTIVE').map(c => c.tenantId),
+                        ]);
+                        const occupied = hasRoomOccupants(room, contracts, roomMembers);
+
+                        return (
+                          <RoomCard
+                            key={room.id}
+                            handleDeleteRoom={handleDeleteRoom}
+                            handleToggleRoomLock={handleToggleRoomLock}
+                            occupantsCount={occupantIds.size}
+                            occupied={occupied}
+                            room={room}
+                            onEdit={room => setRoomEditor({ room })}
+                            setSelectedRoomForMembers={setSelectedRoomForMembers}
+                            onMaintenance={setMaintenanceRoom}
+                            onManageHold={target => { setRequestRoomFilter(target); setShowRequestsManager(true); }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
+            </section>
           ))
         )}
       </div>
