@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { filterManagedProperties } from '../../properties/property.rules.js';
 import { Link } from 'react-router-dom';
 import {
   Home,
@@ -64,28 +65,7 @@ export default function StaffDashboard() {
   const { user } = useAuth();
   const { invoices = [], tickets = [], rooms = [], tenants = [], revenueReport } = useData();
 
-  const staffManageableHouses = useMemo(() => {
-    try {
-      const saved = JSON.stringify(apiBoardingHouses);
-      const dynamicHouses = saved ? JSON.parse(saved) : [];
-      const u = (user?.username || '').toLowerCase();
-      const isZeroSandbox = true;
-      return dynamicHouses.filter((h) => { if(user?.isTestMode) return true;
-        const created = (h.createdBy || '').toLowerCase();
-        const manager = (h.managerUsername || '').toLowerCase();
-        if (created && created === u) return true;
-        if (manager && manager === u) return true;
-        if (user?.houseCode && h.code === user.houseCode) return true;
-        if (!isZeroSandbox) {
-          if (u === 'staff' && (h.code === 'CS-01' || !h.createdBy)) return true;
-          if (u === 'staff2' && h.code === 'CS-02') return true;
-        }
-        return false;
-      });
-    } catch {
-      return [];
-    }
-  }, [user,apiBoardingHouses]);
+  const staffManageableHouses = useMemo(() => filterManagedProperties(apiBoardingHouses, user), [apiBoardingHouses, user]);
 
   const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
 

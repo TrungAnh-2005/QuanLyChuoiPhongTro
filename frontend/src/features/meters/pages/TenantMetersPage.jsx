@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 import { useData } from '../../../shared/data/RentalDataContext';
-import MeterDisputeModal from '../components/MeterDisputeModal';
+import MeterDisputeModal from '../../../components/meters/MeterDisputeModal';
 
 export default function UserMetersPage() {
   const { user, tenantRooms } = useAuth();

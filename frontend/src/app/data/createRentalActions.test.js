@@ -43,6 +43,25 @@ test('room price updates retain amenities, image and the resolved floor', async 
   assert.equal(refreshes(), 1);
 });
 
+test('creating a room rejects an equivalent room number in the same property before any API call', async () => {
+  const { actions, calls, refreshes } = setup();
+  await assert.rejects(actions.addRoom({ number: 'Phòng 101', houseCode: 'CS-1' }), /Số phòng .* đã tồn tại/);
+  assert.deepEqual(calls, []);
+  assert.equal(refreshes(), 0);
+});
+
+test('creating a room allows the same room number in a different property', async () => {
+  const { actions, calls, refreshes } = setup({
+    boardingHouses: [{ id: 1, code: 'CS-1' }, { id: 2, code: 'CS-2' }],
+    rooms: [{ id: 101, boardingHouseId: 2, roomNumber: 'P.101', basePrice: 3500000 }],
+  });
+  await actions.addRoom({ number: 'P.101', houseCode: 'CS-1', floor: 'Tầng 1', price: 3500000, area: 25 });
+  assert.deepEqual(calls.at(-1), { method: 'post', url: '/rooms', body: {
+    roomNumber: 'P.101', basePrice: 3500000, area: 25, floorId: 13, maxOccupants: 2,
+  } });
+  assert.equal(refreshes(), 1);
+});
+
 test('house creation always requests approval and only admin uses the approval endpoint', async () => {
   const staff = setup();
   await staff.actions.addBoardingHouse({ name: 'New house', status: 'ACTIVE' });

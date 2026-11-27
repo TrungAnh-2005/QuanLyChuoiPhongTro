@@ -10,7 +10,6 @@ import {
   Droplets,
   Armchair,
   Trash2,
-  X,
   Search,
   ChevronRight,
   ChevronDown,
@@ -21,7 +20,9 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 import { useData } from '../../../shared/data/RentalDataContext';
-import Modal from '../../../shared/ui/Modal';
+import Modal from '../../../components/shared/Modal';
+import MaintenancePhotoPreview from '../../../components/maintenance/MaintenancePhotoPreview';
+import MaintenanceRequestModal from '../../../components/maintenance/MaintenanceRequestModal';
 
 const CATEGORIES = [
   { id: 'ELECTRICITY', label: 'Hệ thống Điện (Đèn, điều hòa, quạt, ổ cắm)', shortLabel: 'Hệ thống Điện', icon: Zap, color: 'text-amber-700 bg-amber-50 border-amber-200' },
@@ -614,94 +615,14 @@ export default function StaffMaintenancePage() {
       </div>
 
       {/* Modal Tạo Phiếu Báo Hỏng Kèm Ảnh (Staff) */}
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} maxWidth="max-w-md">
-        <h2 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">
-          <Wrench className="w-5 h-5 text-purple-600" />
-          <span>Tạo Phiếu Sửa Chữa Mới</span>
-        </h2>
-        <form onSubmit={handleCreateTicket} className="space-y-3.5 text-xs">
-          <div>
-            <label className="block font-bold text-slate-700 mb-1">
-              Số phòng hoặc khu vực sự cố *
-            </label>
-            <input
-              type="text"
-              required
-              placeholder="Ví dụ: P.101 hoặc Khu vực chung"
-              value={newTicket.room}
-              onChange={(e) => setNewTicket({ ...newTicket, room: e.target.value })}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold"
-            />
-          </div>
-
-          <div>
-            <label className="block font-bold text-slate-700 mb-1">Danh mục thiết bị gặp sự cố *</label>
-            <select
-              value={newTicket.category}
-              onChange={(e) => setNewTicket({ ...newTicket, category: e.target.value })}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold"
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block font-bold text-slate-700 mb-1">Mô tả chi tiết hỏng hóc *</label>
-            <textarea
-              rows={3}
-              required
-              placeholder="Ví dụ: Vòi xịt bồn cầu bị rỉ nước liên tục, chảy tràn ra sàn..."
-              value={newTicket.issue}
-              onChange={(e) => setNewTicket({ ...newTicket, issue: e.target.value })}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:bg-white focus:border-purple-500"
-            />
-          </div>
-
-          <div>
-            <label className="block font-bold text-slate-700 mb-1">Mức độ ưu tiên</label>
-            <select
-              value={newTicket.priority}
-              onChange={(e) => setNewTicket({ ...newTicket, priority: e.target.value })}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-semibold"
-            >
-              <option value="LOW">Thấp (Đèn mờ, rèm lỏng...)</option>
-              <option value="MEDIUM">Bình thường (Cửa kẹt, quạt kêu...)</option>
-              <option value="HIGH">Khẩn cấp (Chập điện, vỡ ống nước, hỏng khóa chính...)</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block font-bold text-slate-700 mb-1">Hình ảnh bằng chứng hiện trường</label>
-            <input
-              type="text"
-              value={newTicket.imageUrl}
-              onChange={(e) => setNewTicket({ ...newTicket, imageUrl: e.target.value })}
-              placeholder="Dán link ảnh hoặc chọn ảnh mẫu..."
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[11px]"
-            />
-          </div>
-
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setShowModal(false)}
-              className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
-            >
-              Hủy
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2.5 font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl shadow-md btn-press cursor-pointer"
-            >
-              Tạo Phiếu Sửa Chữa
-            </button>
-          </div>
-        </form>
-      </Modal>
+      <MaintenanceRequestModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        onSubmit={handleCreateTicket}
+        newTicket={newTicket}
+        setNewTicket={setNewTicket}
+        categories={CATEGORIES}
+      />
 
       {/* Modal Phân Công Kỹ Thuật Viên & Nghiệm Thu Cho Staff */}
       <Modal isOpen={!!assignModal} onClose={() => setAssignModal(null)} maxWidth="max-w-md">
@@ -806,23 +727,7 @@ export default function StaffMaintenancePage() {
       </Modal>
 
       {/* Modal Xem Ảnh Phóng To */}
-      {selectedPhoto && (
-        <div
-          onClick={() => setSelectedPhoto(null)}
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 cursor-pointer"
-        >
-          <div className="relative max-w-xl max-h-[85vh] bg-slate-900 rounded-2xl overflow-hidden shadow-2xl p-2">
-            <button
-              type="button"
-              onClick={() => setSelectedPhoto(null)}
-              className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-black cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <img src={selectedPhoto} alt="Ảnh sự cố" className="w-full h-auto rounded-xl object-contain max-h-[80vh]" />
-          </div>
-        </div>
-      )}
+      <MaintenancePhotoPreview photo={selectedPhoto} onClose={() => setSelectedPhoto(null)} />
     </div>
   );
 }

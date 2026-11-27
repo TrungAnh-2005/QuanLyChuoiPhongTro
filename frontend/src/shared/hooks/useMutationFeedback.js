@@ -1,6 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
 
 const labels = {
+  addRoom: ['Đang thêm phòng…', 'Đã thêm phòng mới'],
+  updateRoom: ['Đang cập nhật phòng…', 'Đã cập nhật thông tin phòng'],
   submitRoomRequest: ['Đang gửi yêu cầu…', 'Đã gửi yêu cầu, chờ quản lý xét duyệt'],
   approveRoomRequest: ['Đang phê duyệt yêu cầu…', 'Đã phê duyệt yêu cầu'],
   rejectRoomRequest: ['Đang từ chối yêu cầu…', 'Đã từ chối yêu cầu'],

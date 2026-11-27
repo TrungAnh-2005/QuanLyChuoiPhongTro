@@ -8,8 +8,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 import { useData } from '../../../shared/data/RentalDataContext';
-import PaymentModal from '../../payments/components/PaymentModal';
-import Modal from '../../../shared/ui/Modal';
+import PaymentModal from '../../../components/payments/PaymentModal';
+import Modal from '../../../components/shared/Modal';
 
 export default function UserInvoicesPage() {
   const { user, tenantRooms } = useAuth();

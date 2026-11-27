@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { filterManagedProperties } from '../../properties/property.rules.js';
 import {
   Receipt,
   CheckCircle,
@@ -15,9 +16,9 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 import { useData } from '../../../shared/data/RentalDataContext';
-import Modal from '../../../shared/ui/Modal';
-import BuySaasPackageModal from '../../subscriptions/components/BuySaasPackageModal';
-import TrialExpiryBanner from '../../subscriptions/components/TrialExpiryBanner';
+import Modal from '../../../components/shared/Modal';
+import BuySaasPackageModal from '../../../components/subscriptions/BuySaasPackageModal';
+import TrialExpiryBanner from '../../../components/subscriptions/TrialExpiryBanner';
 
 const isZeroSandbox = true;
 
@@ -73,27 +74,7 @@ export default function StaffInvoicesPage({ forcedTab }) {
   const isTrialOrNone = landlordPackageCode === 'NONE' || currentLandlord?.status === 'TRIAL';
 
   // Lọc cơ sở mà Staff quản lý
-  const staffManageableHouses = useMemo(() => {
-    try {
-      const saved = JSON.stringify(apiBoardingHouses);
-      const dynamicHouses = saved ? JSON.parse(saved) : [];
-      const u = (user?.username || '').toLowerCase();
-      return dynamicHouses.filter((h) => { if(user?.isTestMode) return true;
-        const created = (h.createdBy || '').toLowerCase();
-        const manager = (h.managerUsername || '').toLowerCase();
-        if (created && created === u) return true;
-        if (manager && manager === u) return true;
-        if (user?.houseCode && h.code === user.houseCode) return true;
-        if (!isZeroSandbox) {
-          if (u === 'staff' && (h.code === 'CS-01' || !h.createdBy)) return true;
-          if (u === 'staff2' && h.code === 'CS-02') return true;
-        }
-        return false;
-      });
-    } catch {
-      return [];
-    }
-  }, [user,apiBoardingHouses]);
+  const staffManageableHouses = useMemo(() => filterManagedProperties(apiBoardingHouses, user), [apiBoardingHouses, user]);
 
   const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
 

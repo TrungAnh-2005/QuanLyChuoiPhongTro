@@ -1,19 +1,18 @@
-import ManualTenantModal from '../components/ManualTenantModal.jsx';
-import EditTenantModal from '../components/EditTenantModal.jsx';
-import TenantDetailsModal from '../components/TenantDetailsModal.jsx';
-import ArchiveTenantModal from '../components/ArchiveTenantModal.jsx';
-import ResetTenantPasswordModal from '../components/ResetTenantPasswordModal.jsx';
-import ResidenceStatusModal from '../components/ResidenceStatusModal.jsx';
+import ManualTenantModal from '../../../components/tenants/ManualTenantModal.jsx';
+import EditTenantModal from '../../../components/tenants/EditTenantModal.jsx';
+import TenantDetailsModal from '../../../components/tenants/TenantDetailsModal.jsx';
+import ArchiveTenantModal from '../../../components/tenants/ArchiveTenantModal.jsx';
+import ResetTenantPasswordModal from '../../../components/tenants/ResetTenantPasswordModal.jsx';
+import ResidenceStatusModal from '../../../components/tenants/ResidenceStatusModal.jsx';
 import { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Users, Plus, Search, MapPin, ShieldCheck, Key, X, CheckCircle2, Edit3, Trash2, AlertCircle, Sparkles, Building2, Download, Clock } from 'lucide-react';
 import { useData } from '../../../shared/data/RentalDataContext';
 import { useAuth } from '../../auth/AuthContext';
 
-import UpgradePromptModal from '../../subscriptions/components/UpgradePromptModal';
-import BuySaasPackageModal from '../../subscriptions/components/BuySaasPackageModal';
-import PaymentModal from '../../payments/components/PaymentModal';
-import CreateTenantModal from '../components/CreateTenantModal';
+import UpgradePromptModal from '../../../components/subscriptions/UpgradePromptModal';
+import SaasPackageCheckout from '../../../components/subscriptions/SaasPackageCheckout';
+import CreateTenantModal from '../../../components/tenants/CreateTenantModal';
 
 const DEFAULT_FACILITIES = [
   { code: 'CS-01', name: 'Nhà Trọ Cầu Giấy - Cơ Sở 1', shortName: 'Cơ Sở 1 - Cầu Giấy' },
@@ -36,12 +35,8 @@ export default function TenantsPage() {
     addRoomMember,
     updateTemporaryResidence,
     landlords = [],
-    createSaasInvoice,
-    paySaasInvoice,
-    updateLandlordPackage
   } = useData();
   const [pwdResetToast, setPwdResetToast] = useState(null);
-  const [payingSaasInvoice, setPayingSaasInvoice] = useState(null);
   const { user } = useAuth();
   const isStaffOrAdmin = user?.role === 'ADMIN' || user?.role === 'STAFF';
 
@@ -1355,66 +1350,18 @@ try {
       />
 
       {/* Modal Mua Gói Bản Quyền SaaS */}
-      <BuySaasPackageModal
+      <SaasPackageCheckout
         isOpen={showBuyPackageModal}
         onClose={() => setShowBuyPackageModal(false)}
         currentLandlord={currentLandlord}
-        initialPackageCode="ENTERPRISE"
-        onConfirmPurchase={async (planData) => {
-try {
-
-          setShowBuyPackageModal(false);
-          const targetLandlordId = currentLandlord?.id || (user?.username === 'staff2' ? 2 : 1);
-          const newInv = {
-            id: `SAAS-${Date.now()}`,
-            code: `HD-SAAS-2026-${Date.now().toString().slice(-4)}`,
-            landlordId: targetLandlordId,
-            landlordUsername: user?.username || (targetLandlordId === 2 ? 'staff2' : 'staff'),
-            landlordName: currentLandlord?.fullName || user?.fullName || 'Quản lý cơ sở',
-            landlordPhone: currentLandlord?.phone || user?.phone || '0900.000.000',
-            packageName: planData.packageName,
-            packageCode: planData.packageCode,
-            billingCycle: planData.billingCycle,
-            period: `${planData.months} Tháng`,
-            amount: planData.amount,
-            total: planData.amount,
-            dueDate: new Date(Date.now() + 7 * 86400000).toLocaleDateString('vi-VN'),
-            status: 'UNPAID',
-            isSaas: true
-          };
-          const createdInv = createSaasInvoice ? await createSaasInvoice(newInv) : newInv;
-          setPayingSaasInvoice(createdInv || newInv);
-
-} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
-}}
-      />
-
-      {/* Modal Cổng Thanh Toán SePay VietQR / VNPay / MoMo Cho Gói SaaS */}
-      <PaymentModal
-        isOpen={!!payingSaasInvoice}
-        onClose={() => setPayingSaasInvoice(null)}
-        onSuccess={async (inv, payMethod) => {
-try {
-
-          const methodLabel = payMethod === 'VNPAY' ? 'Cổng VNPay' : (payMethod === 'MOMO' ? 'Ví MoMo' : 'VietQR / SePay');
-          if (paySaasInvoice) {
-            await paySaasInvoice(inv.id, methodLabel);
-          }
-          const targetLandlordId = currentLandlord?.id || (user?.username === 'staff2' ? 2 : 1);
-          if (updateLandlordPackage) {
-            await updateLandlordPackage(targetLandlordId, inv.packageCode || 'ENTERPRISE');
-          }
-          setPayingSaasInvoice(null);
+        onPaid={(_, methodLabel) => {
           setPwdResetToast({
             type: 'SUCCESS',
             title: 'Nộp Cước Thành Công',
             message: `🎉 Nộp cước SaaS qua ${methodLabel} thành công! Đã kích hoạt toàn bộ tính năng AI OCR CCCD.`
           });
           setTimeout(() => setPwdResetToast(null), 4000);
-
-} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
-}}
-        invoice={payingSaasInvoice || undefined}
+        }}
       />
 
       <ResidenceStatusModal

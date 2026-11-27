@@ -12,11 +12,11 @@ import {
   X
 } from 'lucide-react';
 import { useData } from '../../../shared/data/RentalDataContext';
-import Modal from '../../../shared/ui/Modal';
-import HoldDepositDetails from '../components/HoldDepositDetails.jsx';
+import Modal from '../../../components/shared/Modal';
+import HoldDepositDetails from '../../../components/rooms/HoldDepositDetails.jsx';
 import { tenantRoomRequests, isRentalRequest, roomStatusLabel, requestStatusLabel } from '../room.rules.js';
 import { useTenantResidency } from '../../tenants/useTenantResidency';
-import TenantBuildingRooms from '../components/TenantBuildingRooms';
+import TenantBuildingRooms from '../../../components/rooms/TenantBuildingRooms';
 import { useReservationRefresh } from '../useReservationRefresh.js';
 
 export default function TenantRoomsPage() {

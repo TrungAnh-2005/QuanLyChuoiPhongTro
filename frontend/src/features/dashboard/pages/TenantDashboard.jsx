@@ -1,9 +1,9 @@
-import HoldDepositDetails from '../../rooms/components/HoldDepositDetails.jsx';
+import HoldDepositDetails from '../../../components/rooms/HoldDepositDetails.jsx';
 import { tenantRoomRequests, isRentalRequest } from '../../rooms/room.rules.js';
 import { useTenantResidency } from '../../tenants/useTenantResidency';
 import { useReservationRefresh } from '../../rooms/useReservationRefresh.js';
-import LeaveRoomModal from '../components/LeaveRoomModal.jsx';
-import CheckoutRequestModal from '../components/CheckoutRequestModal.jsx';
+import LeaveRoomModal from '../../../components/dashboard/LeaveRoomModal.jsx';
+import CheckoutRequestModal from '../../../components/dashboard/CheckoutRequestModal.jsx';
 import { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Home, Users, Receipt, CheckCircle2, Clock, CreditCard, Wrench, ShieldCheck, X, LogOut, UserPlus, FileText, Sparkles, ChevronRight, Shield, ArrowRight } from 'lucide-react';
@@ -23,9 +23,9 @@ function getRoomImage(room) {
   return '/assets/images/room_studio_1.jpg';
 }
 
-import ResidentContractModal from '../../contracts/components/ResidentContractModal';
-import RoommateRequestModal from '../../contracts/components/RoommateRequestModal';
-import PaymentModal from '../../payments/components/PaymentModal';
+import ResidentContractModal from '../../../components/contracts/ResidentContractModal';
+import RoommateRequestModal from '../../../components/contracts/RoommateRequestModal';
+import PaymentModal from '../../../components/payments/PaymentModal';
 
 export default function UserDashboard() {
   const { user } = useAuth();

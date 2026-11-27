@@ -3,18 +3,10 @@ import {
   BarChart3,
   Download,
   ArrowUpRight,
-  Calendar,
   ShieldCheck
 } from 'lucide-react';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer
-} from 'recharts';
+import ReportPeriodFilter from '../../../components/reports/ReportPeriodFilter';
+import RevenueReportChart from '../../../components/reports/RevenueReportChart';
 import { useData } from '../../../shared/data/RentalDataContext';
 
 export default function AdminReportsPage() {
@@ -70,33 +62,7 @@ export default function AdminReportsPage() {
         </div>
       )}
 
-      {/* Bộ Lọc Thời Gian */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
-        <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
-          <Calendar className="w-4 h-4 text-indigo-600" />
-          <span>Khoảng thời gian báo cáo:</span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {[
-            { id: '9_MONTHS', label: '9 Tháng Gần Nhất' },
-            { id: 'Q3_2026', label: 'Quý 3/2026' },
-            { id: 'Q2_2026', label: 'Quý 2/2026' },
-            { id: 'SEP_2026', label: 'Tháng 09/2026' }
-          ].map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTimeRange(t.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                timeRange === t.id
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
-                  : 'text-slate-600 hover:text-indigo-700 hover:bg-slate-100'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <ReportPeriodFilter value={timeRange} onChange={setTimeRange} />
 
       {/* Admin SaaS KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -156,64 +122,13 @@ export default function AdminReportsPage() {
       </div>
 
       {/* Main Chart */}
-      <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs card-interactive">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-2">
-          <div>
-            <h2 className="text-base font-bold text-slate-900">
-              Xu Hướng Doanh Thu SaaS & Dòng Tiền GMV Toàn Sàn (Triệu VNĐ)
-            </h2>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Số liệu doanh thu phần mềm SaaS & dòng tiền thanh toán toàn sàn qua cổng điện tử
-            </p>
-          </div>
-          <div className="flex items-center gap-4 text-xs font-bold">
-            <span className="flex items-center gap-1.5 text-indigo-700">
-              <span className="w-3 h-3 rounded bg-indigo-600"></span>
-              <span>Doanh thu phần mềm SaaS</span>
-            </span>
-            <span className="flex items-center gap-1.5 text-blue-600">
-              <span className="w-3 h-3 rounded bg-blue-600"></span>
-              <span>Dòng tiền GMV toàn sàn</span>
-            </span>
-          </div>
-        </div>
-
-        <div className="h-80 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={chartData}
-              margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-              <XAxis dataKey="month" stroke="#64748b" fontSize={12} tickLine={false} />
-              <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}Tr`} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#ffffff',
-                  borderColor: '#cbd5e1',
-                  borderRadius: '0.75rem',
-                  color: '#0f172a',
-                  fontSize: '12px',
-                  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
-                }}
-                formatter={(val, name) => [`${val} Triệu VNĐ`, name]}
-              />
-              <Bar
-                dataKey="revenue"
-                fill="#4f46e5"
-                radius={[6, 6, 0, 0]}
-                name="Doanh thu phần mềm SaaS"
-              />
-              <Bar
-                dataKey="profit"
-                fill="#2563eb"
-                radius={[6, 6, 0, 0]}
-                name="Dòng tiền GMV toàn sàn"
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+      <RevenueReportChart
+        data={chartData}
+        title="Xu Hướng Doanh Thu SaaS & Dòng Tiền GMV Toàn Sàn"
+        description="Số liệu doanh thu phần mềm SaaS & dòng tiền thanh toán toàn sàn qua cổng điện tử"
+        revenueLabel="Doanh thu phần mềm SaaS"
+        comparisonLabel="Dòng tiền GMV toàn sàn"
+      />
     </div>
   );
 }

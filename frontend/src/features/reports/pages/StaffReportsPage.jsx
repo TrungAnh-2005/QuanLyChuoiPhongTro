@@ -1,21 +1,14 @@
 import { useState, useMemo } from 'react';
+import { filterManagedProperties } from '../../properties/property.rules.js';
 import {
   BarChart3,
   Download,
-  Calendar,
   Building2,
   AlertTriangle,
   CheckCircle2
 } from 'lucide-react';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer
-} from 'recharts';
+import ReportPeriodFilter from '../../../components/reports/ReportPeriodFilter';
+import RevenueReportChart from '../../../components/reports/RevenueReportChart';
 import { useAuth } from '../../auth/AuthContext';
 import { useData } from '../../../shared/data/RentalDataContext';
 
@@ -24,33 +17,12 @@ export default function StaffReportsPage() {
 
   const { user } = useAuth();
   const { rooms = [], invoices = [], revenueReport } = useData();
-  const isZeroSandbox = true;
 
   const [selectedFacility, setSelectedFacility] = useState('ALL');
   const [timeRange, setTimeRange] = useState('9_MONTHS');
   const [pdfToast, setPdfToast] = useState(false);
 
-  const staffManageableHouses = useMemo(() => {
-    try {
-      const saved = JSON.stringify(apiBoardingHouses);
-      const dynamicHouses = saved ? JSON.parse(saved) : [];
-      const u = (user?.username || '').toLowerCase();
-      return dynamicHouses.filter((h) => { if(user?.isTestMode) return true;
-        const created = (h.createdBy || '').toLowerCase();
-        const manager = (h.managerUsername || '').toLowerCase();
-        if (created && created === u) return true;
-        if (manager && manager === u) return true;
-        if (user?.houseCode && h.code === user.houseCode) return true;
-        if (!isZeroSandbox) {
-          if (u === 'staff' && (h.code === 'CS-01' || !h.createdBy)) return true;
-          if (u === 'staff2' && h.code === 'CS-02') return true;
-        }
-        return false;
-      });
-    } catch {
-      return [];
-    }
-  }, [user, isZeroSandbox,apiBoardingHouses]);
+  const staffManageableHouses = useMemo(() => filterManagedProperties(apiBoardingHouses, user), [apiBoardingHouses, user]);
 
   const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
 
@@ -134,33 +106,7 @@ export default function StaffReportsPage() {
         </div>
       )}
 
-      {/* Bộ Lọc Thời Gian */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
-        <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
-          <Calendar className="w-4 h-4 text-purple-600" />
-          <span>Khoảng thời gian báo cáo:</span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {[
-            { id: '9_MONTHS', label: '9 Tháng Gần Nhất' },
-            { id: 'Q3_2026', label: 'Quý 3/2026' },
-            { id: 'Q2_2026', label: 'Quý 2/2026' },
-            { id: 'SEP_2026', label: 'Tháng 09/2026' }
-          ].map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTimeRange(t.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                timeRange === t.id
-                  ? 'bg-purple-600 text-white shadow-md shadow-purple-600/25'
-                  : 'text-slate-600 hover:text-purple-700 hover:bg-slate-100'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <ReportPeriodFilter value={timeRange} onChange={setTimeRange} color="purple" />
 
       {/* Facility Selector */}
       <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -232,64 +178,14 @@ export default function StaffReportsPage() {
       </div>
 
       {/* Main Chart */}
-      <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs card-interactive">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-2">
-          <div>
-            <h2 className="text-base font-bold text-slate-900">
-              Doanh Thu & Lợi Nhuận Cơ Sở: {facilities.find((f) => f.code === selectedFacility)?.name || 'Cơ sở của tôi'} (Triệu VNĐ)
-            </h2>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Số liệu doanh thu tiền thuê phòng và lợi nhuận thực tế thu được của cơ sở
-            </p>
-          </div>
-          <div className="flex items-center gap-4 text-xs font-bold">
-            <span className="flex items-center gap-1.5 text-purple-700">
-              <span className="w-3 h-3 rounded bg-purple-600"></span>
-              <span>Doanh thu phòng</span>
-            </span>
-            <span className="flex items-center gap-1.5 text-blue-600">
-              <span className="w-3 h-3 rounded bg-blue-600"></span>
-              <span>Lợi nhuận ròng</span>
-            </span>
-          </div>
-        </div>
-
-        <div className="h-80 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={chartData}
-              margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-              <XAxis dataKey="month" stroke="#64748b" fontSize={12} tickLine={false} />
-              <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}Tr`} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#ffffff',
-                  borderColor: '#cbd5e1',
-                  borderRadius: '0.75rem',
-                  color: '#0f172a',
-                  fontSize: '12px',
-                  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
-                }}
-                formatter={(val, name) => [`${val} Triệu VNĐ`, name]}
-              />
-              <Bar
-                dataKey="revenue"
-                fill="#7c3aed"
-                radius={[6, 6, 0, 0]}
-                name="Doanh thu phòng"
-              />
-              <Bar
-                dataKey="profit"
-                fill="#2563eb"
-                radius={[6, 6, 0, 0]}
-                name="Lợi nhuận ròng"
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+      <RevenueReportChart
+        data={chartData}
+        title={`Doanh Thu & Lợi Nhuận Cơ Sở: ${facilities.find(facility => facility.code === selectedFacility)?.name || 'Cơ sở của tôi'}`}
+        description="Số liệu doanh thu tiền thuê phòng và lợi nhuận thực tế thu được của cơ sở"
+        revenueLabel="Doanh thu phòng"
+        comparisonLabel="Lợi nhuận ròng"
+        color="purple"
+      />
     </div>
   );
 }

@@ -18,8 +18,8 @@ import {
   Filter
 } from 'lucide-react';
 import { useData } from '../../../shared/data/RentalDataContext';
-import Modal from '../../../shared/ui/Modal';
-import CreateLandlordAiModal from '../components/CreateLandlordAiModal';
+import Modal from '../../../components/shared/Modal';
+import CreateLandlordAiModal from '../../../components/landlords/CreateLandlordAiModal';
 import { checkKycTrialAbuse, registerKycTrial } from '../../subscriptions/package.rules';
 
 export default function AdminLandlordsPage() {

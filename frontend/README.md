@@ -26,9 +26,14 @@ Xem [hướng dẫn backend](../backend/README.md), [API](../backend/API.md) và
 ```text
 src/
   app/                 # Khởi tạo, providers, routes và điều phối dữ liệu
-    components/        # UI điều phối toàn ứng dụng như ApiStatus
     data/              # Loader, ghép dữ liệu các nghiệp vụ và lắp các command
-  features/            # Mỗi thư mục sở hữu một nghiệp vụ
+  components/          # Component giao diện được tách thành file riêng
+    app/               # UI cấp ứng dụng như ApiStatus
+    layouts/           # AppLayout, Sidebar, Navbar
+    shared/            # Modal, Loading, Toast và CSS đi kèm
+    rooms/             # Ví dụ RoomCard, RoomFormModal
+    tenants/           # Ví dụ CreateTenantModal, TenantDetailsModal
+  features/            # Màn hình, API và logic theo nghiệp vụ
     auth/
     rooms/
     properties/
@@ -46,12 +51,10 @@ src/
     system/
     notifications/
     ai/
-  layouts/             # AppLayout, Sidebar, Navbar
   shared/
     api/               # Axios client, xác thực request và refresh token
     data/              # Hợp đồng RentalDataContext/useData
     hooks/             # Hook dùng chung như phản hồi mutation
-    ui/                # Modal, Loading, Toast không phụ thuộc nghiệp vụ
     utils/             # Hàm chuyển đổi dữ liệu cơ bản
   styles/              # CSS toàn cục, token và animation
 ```
@@ -59,14 +62,15 @@ src/
 Mỗi feature chỉ tạo những file cần dùng:
 
 - `pages/`: màn hình ghép component, state tương tác và điều hướng.
-- `components/`: card, form và modal thuộc nghiệp vụ. Các form được tách nhận props rõ ràng từ trang để giữ state khi đóng/mở hoặc refresh.
 - `api/*.commands.js`: thao tác nghiệp vụ và request; dependencies được truyền từ `app/data/createRentalActions.js` để không import ngược tầng app.
 - `*.mapper.js`: đổi dữ liệu backend thành model hiển thị và payload gửi đi.
 - `*.rules.js`: quy tắc thuần, ví dụ kiểm tra người ở trước khi khóa phòng.
 - `*.config.js`: lựa chọn form, ảnh mặc định và cấu hình hiển thị.
 - `*.test.js`: unit test đặt cạnh phần code được kiểm tra.
 
-`app` có thể lắp ghép các feature. Feature dùng `shared` và phần nghiệp vụ liên quan, không import `app`/`layouts` hoặc import trực tiếp một page khác. `shared` không import feature. Không tạo lại các thư mục chung `src/pages`, `src/services`, `src/components`.
+Đặt card, form và modal theo nghiệp vụ ở `src/components/<nghiệp-vụ>/`. Ví dụ, màn hình quản lý phòng ở `features/rooms/pages/StaffRoomsPage.jsx` dùng `components/rooms/RoomFormModal.jsx`. Các component dùng chung giữa các nghiệp vụ nằm ở `components/shared/`.
+
+`app` có thể lắp ghép các feature. Feature và component nghiệp vụ dùng `shared` và logic của nghiệp vụ liên quan. Ranh giới import vẫn áp dụng theo nhóm: `components/shared/` thuộc tầng `shared`, `components/app/` thuộc tầng `app`, và `components/layouts/` thuộc tầng layout. Feature chỉ dùng trang khác thông qua routing.
 
 `useData` được giữ làm hợp đồng chung. `DataProvider` chỉ lắp dữ liệu và phản hồi mutation; `useRentalLoader` giữ nguyên cơ chế tải/refresh hiện tại, `selectRentalView` ghép các quan hệ phòng–cơ sở–khách–hợp đồng–hóa đơn. Đợt tổ chức lại này không thay đổi lịch gọi API hay cơ chế cache. Dữ liệu cơ sở cũ được xử lý tại `features/properties/property.repair.js`; không sao chép hàm sửa dữ liệu vào từng page.
 

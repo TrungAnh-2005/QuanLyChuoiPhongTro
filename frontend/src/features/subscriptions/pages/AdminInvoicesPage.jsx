@@ -13,7 +13,7 @@ import {
   Crown
 } from 'lucide-react';
 import { useData } from '../../../shared/data/RentalDataContext';
-import Modal from '../../../shared/ui/Modal';
+import Modal from '../../../components/shared/Modal';
 
 export default function AdminSaasInvoicesPage() {
   const {

@@ -1,4 +1,5 @@
-import WorkflowReviewPanel from '../../contracts/components/WorkflowReviewPanel';
+import WorkflowReviewPanel from '../../../components/contracts/WorkflowReviewPanel';
+import { filterManagedProperties } from '../../properties/property.rules.js';
 import { useState, useMemo } from 'react';
 import {
   Zap,
@@ -20,12 +21,11 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 import { useData } from '../../../shared/data/RentalDataContext';
-import Modal from '../../../shared/ui/Modal';
-import UpgradePromptModal from '../../subscriptions/components/UpgradePromptModal';
-import BuySaasPackageModal from '../../subscriptions/components/BuySaasPackageModal';
-import PaymentModal from '../../payments/components/PaymentModal';
-import MeterAiScannerModal from '../components/MeterAiScannerModal';
-import TrialExpiryBanner from '../../subscriptions/components/TrialExpiryBanner';
+import Modal from '../../../components/shared/Modal';
+import UpgradePromptModal from '../../../components/subscriptions/UpgradePromptModal';
+import SaasPackageCheckout from '../../../components/subscriptions/SaasPackageCheckout';
+import MeterAiScannerModal from '../../../components/meters/MeterAiScannerModal';
+import TrialExpiryBanner from '../../../components/subscriptions/TrialExpiryBanner';
 import { getTrialStatus } from '../../subscriptions/package.rules';
 
 export default function StaffMetersPage() {
@@ -44,12 +44,8 @@ export default function StaffMetersPage() {
     updateUtilityPrices,
     invoices = [],
     landlords = [],
-    createSaasInvoice,
-    paySaasInvoice,
-    updateLandlordPackage
   } = useData();
 
-  const [payingSaasInvoice, setPayingSaasInvoice] = useState(null);
 
   const currentLandlord = useMemo(() => {
     return (
@@ -153,22 +149,9 @@ try {
     }
   }, [isZeroSandbox,apiBoardingHouses]);
 
-  const staffManageableHouses = useMemo(() => {
-    if (user?.role !== 'STAFF') return dynamicHouses;
-    const u = (user?.username || '').toLowerCase();
-    return dynamicHouses.filter((h) => { if(user?.isTestMode) return true;
-      const created = (h.createdBy || '').toLowerCase();
-      const manager = (h.managerUsername || '').toLowerCase();
-      if (created && created === u) return true;
-      if (manager && manager === u) return true;
-      if (user?.houseCode && h.code === user.houseCode) return true;
-      if (!isZeroSandbox) {
-        if (u === 'staff' && (h.code === 'CS-01' || !h.createdBy)) return true;
-        if (u === 'staff2' && h.code === 'CS-02') return true;
-      }
-      return false;
-    });
-  }, [dynamicHouses, user, isZeroSandbox]);
+  const staffManageableHouses = useMemo(() => (
+    user?.role === 'STAFF' ? filterManagedProperties(dynamicHouses, user) : dynamicHouses
+  ), [dynamicHouses, user]);
 
   const staffHouseCodes = useMemo(() => {
     return staffManageableHouses.map((h) => h.code);
@@ -807,65 +790,17 @@ try {
       />
 
       {/* Modal Mua Gói */}
-      <BuySaasPackageModal
+      <SaasPackageCheckout
         isOpen={showBuyPackageModal}
         onClose={() => setShowBuyPackageModal(false)}
         currentLandlord={currentLandlord}
-        initialPackageCode="ENTERPRISE"
-        onConfirmPurchase={async (planData) => {
-try {
-
-          setShowBuyPackageModal(false);
-          const targetLandlordId = currentLandlord?.id || (user?.username === 'staff2' ? 2 : 1);
-          const newInv = {
-            id: `SAAS-${Date.now()}`,
-            code: `HD-SAAS-2026-${Date.now().toString().slice(-4)}`,
-            landlordId: targetLandlordId,
-            landlordUsername: user?.username || (targetLandlordId === 2 ? 'staff2' : 'staff'),
-            landlordName: currentLandlord?.fullName || user?.fullName || 'Quản lý cơ sở',
-            landlordPhone: currentLandlord?.phone || user?.phone || '0900.000.000',
-            packageName: planData.packageName,
-            packageCode: planData.packageCode,
-            billingCycle: planData.billingCycle,
-            period: `${planData.months} Tháng`,
-            amount: planData.amount,
-            total: planData.amount,
-            dueDate: new Date(Date.now() + 7 * 86400000).toLocaleDateString('vi-VN'),
-            status: 'UNPAID',
-            isSaas: true
-          };
-          const createdInv = createSaasInvoice ? await createSaasInvoice(newInv) : newInv;
-          setPayingSaasInvoice(createdInv || newInv);
-
-} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
-}}
-      />
-
-      {/* Modal Thanh Toán Gói SaaS */}
-      <PaymentModal
-        isOpen={!!payingSaasInvoice}
-        onClose={() => setPayingSaasInvoice(null)}
-        onSuccess={async (inv, payMethod) => {
-try {
-
-          const methodLabel = payMethod === 'VNPAY' ? 'Cổng VNPay' : payMethod === 'MOMO' ? 'Ví MoMo' : 'VietQR / SePay';
-          if (paySaasInvoice) {
-            await paySaasInvoice(inv.id, methodLabel);
-          }
-          const targetLandlordId = currentLandlord?.id || (user?.username === 'staff2' ? 2 : 1);
-          if (updateLandlordPackage) {
-            await updateLandlordPackage(targetLandlordId, inv.packageCode || 'ENTERPRISE');
-          }
-          setPayingSaasInvoice(null);
+        onPaid={(_, methodLabel) => {
           setSaveToast({
             type: 'SUCCESS',
             message: `🎉 Nộp cước SaaS qua ${methodLabel} thành công! Đã kích hoạt toàn bộ tính năng AI Vision OCR.`
           });
           setTimeout(() => setSaveToast(null), 4000);
-
-} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
-}}
-        invoice={payingSaasInvoice || undefined}
+        }}
       />
       <WorkflowReviewPanel type="disputes" />
     </div>

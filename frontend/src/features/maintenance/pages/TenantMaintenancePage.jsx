@@ -8,12 +8,12 @@ import {
   Zap,
   Droplets,
   Armchair,
-  Trash2,
-  X
+  Trash2
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 import { useData } from '../../../shared/data/RentalDataContext';
-import Modal from '../../../shared/ui/Modal';
+import MaintenancePhotoPreview from '../../../components/maintenance/MaintenancePhotoPreview';
+import MaintenanceRequestModal from '../../../components/maintenance/MaintenanceRequestModal';
 
 const CATEGORIES = [
   { id: 'ELECTRICITY', label: 'Hệ thống Điện (Đèn, điều hòa, quạt, ổ cắm)', icon: Zap, color: 'text-amber-600 bg-amber-50 border-amber-200' },
@@ -269,136 +269,18 @@ try {
       </div>
 
       {/* Modal Tạo Phiếu Báo Hỏng Kèm Ảnh */}
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} maxWidth="max-w-md">
-        <h2 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">
-          <Wrench className="w-5 h-5 text-purple-600" />
-          <span>Gửi Báo Hỏng Thiết Bị (Kèm Ảnh)</span>
-        </h2>
-        <form onSubmit={handleCreateTicket} className="space-y-3.5 text-xs">
-          <div>
-            <label className="block font-bold text-slate-700 mb-1">
-              Vị trí / Phòng gặp sự cố *
-            </label>
-            <select
-              value={newTicket.room}
-              onChange={(e) => setNewTicket({ ...newTicket, room: e.target.value })}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:bg-white focus:border-purple-500 cursor-pointer"
-            >
-              {myRentedRooms.map((rm) => (
-                <option key={rm} value={rm}>
-                  Phòng {rm} (Phòng bạn đang thuê)
-                </option>
-              ))}
-              <option value="Khu vực chung">
-                Khu vực sinh hoạt chung (Nhà xe, Sân phơi, Cổng chính)
-              </option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block font-bold text-slate-700 mb-1">Danh mục thiết bị gặp sự cố *</label>
-            <select
-              value={newTicket.category}
-              onChange={(e) => setNewTicket({ ...newTicket, category: e.target.value })}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold"
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block font-bold text-slate-700 mb-1">Mô tả chi tiết hỏng hóc *</label>
-            <textarea
-              rows={3}
-              required
-              placeholder="Ví dụ: Vòi xịt bồn cầu bị rỉ nước liên tục, chảy tràn ra sàn..."
-              value={newTicket.issue}
-              onChange={(e) => setNewTicket({ ...newTicket, issue: e.target.value })}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:bg-white focus:border-purple-500"
-            />
-          </div>
-
-          <div>
-            <label className="block font-bold text-slate-700 mb-1">Mức độ ưu tiên</label>
-            <select
-              value={newTicket.priority}
-              onChange={(e) => setNewTicket({ ...newTicket, priority: e.target.value })}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-semibold"
-            >
-              <option value="LOW">Thấp (Đèn mờ, rèm lỏng...)</option>
-              <option value="MEDIUM">Bình thường (Cửa kẹt, quạt kêu...)</option>
-              <option value="HIGH">Khẩn cấp (Chập điện, vỡ ống nước, hỏng khóa chính...)</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block font-bold text-slate-700 mb-1">Hình ảnh bằng chứng hiện trường</label>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={newTicket.imageUrl}
-                onChange={(e) => setNewTicket({ ...newTicket, imageUrl: e.target.value })}
-                placeholder="Dán link ảnh hoặc chọn ảnh mẫu..."
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[11px]"
-              />
-            </div>
-            <div className="flex gap-2 mt-2">
-              {[
-                { label: 'Ảnh vòi nước', url: 'https://images.unsplash.com/photo-1585338107529-13afc5f02586?w=600&auto=format&fit=crop' },
-                { label: 'Ảnh điều hòa', url: 'https://images.unsplash.com/photo-1621905251918-48416bd8575a?w=600&auto=format&fit=crop' },
-                { label: 'Ảnh chập điện', url: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=600&auto=format&fit=crop' }
-              ].map((sample) => (
-                <button
-                  key={sample.label}
-                  type="button"
-                  onClick={() => setNewTicket({ ...newTicket, imageUrl: sample.url })}
-                  className="px-2 py-1 bg-slate-100 hover:bg-purple-50 hover:text-purple-700 text-[10px] font-bold rounded-lg border border-slate-200 cursor-pointer"
-                >
-                  + {sample.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setShowModal(false)}
-              className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
-            >
-              Hủy
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2.5 font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl shadow-md btn-press cursor-pointer"
-            >
-              Gửi Yêu Cầu Sửa Chữa
-            </button>
-          </div>
-        </form>
-      </Modal>
+      <MaintenanceRequestModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        onSubmit={handleCreateTicket}
+        newTicket={newTicket}
+        setNewTicket={setNewTicket}
+        categories={CATEGORIES}
+        rentedRooms={myRentedRooms}
+      />
 
       {/* Modal Xem Ảnh Phóng To */}
-      {selectedPhoto && (
-        <div
-          onClick={() => setSelectedPhoto(null)}
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 cursor-pointer"
-        >
-          <div className="relative max-w-xl max-h-[85vh] bg-slate-900 rounded-2xl overflow-hidden shadow-2xl p-2">
-            <button
-              onClick={() => setSelectedPhoto(null)}
-              className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-black cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <img src={selectedPhoto} alt="Ảnh sự cố" className="w-full h-auto rounded-xl object-contain max-h-[80vh]" />
-          </div>
-        </div>
-      )}
+      <MaintenancePhotoPreview photo={selectedPhoto} onClose={() => setSelectedPhoto(null)} />
     </div>
   );
 }

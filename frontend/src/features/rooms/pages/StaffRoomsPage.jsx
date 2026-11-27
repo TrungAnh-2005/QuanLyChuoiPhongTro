@@ -1,12 +1,12 @@
-import RoomCard from '../components/RoomCard.jsx';
-import RoomFormModal from '../components/RoomFormModal.jsx';
-import ResidentRequestsModal from '../components/ResidentRequestsModal.jsx';
-import RoomMembersModal from '../components/RoomMembersModal.jsx';
-import RoomQuotaModal from '../components/RoomQuotaModal.jsx';
-import RoomMaintenanceModal from '../components/RoomMaintenanceModal.jsx';
+import RoomCard from '../../../components/rooms/RoomCard.jsx';
+import { filterManagedProperties } from '../../properties/property.rules.js';
+import RoomFormModal from '../../../components/rooms/RoomFormModal.jsx';
+import ResidentRequestsModal from '../../../components/rooms/ResidentRequestsModal.jsx';
+import RoomMembersModal from '../../../components/rooms/RoomMembersModal.jsx';
+import RoomQuotaModal from '../../../components/rooms/RoomQuotaModal.jsx';
+import RoomMaintenanceModal from '../../../components/rooms/RoomMaintenanceModal.jsx';
 import { useReservationRefresh } from '../useReservationRefresh.js';
 import { parseFloorNum } from '../room.presentation.js';
-import { isDuplicateRoom } from '../room.rules.js';
 
 import { healBoardingHousesList } from '../../properties/property.repair.js';
 
@@ -16,8 +16,8 @@ import { Plus, Search, Building2, FileText, CheckCircle2 } from "lucide-react";
 import { useAuth } from '../../auth/AuthContext';
 import { useData } from '../../../shared/data/RentalDataContext';
 
-import MoveOutSettlementModal from '../../contracts/components/MoveOutSettlementModal';
-import TrialExpiryBanner from '../../subscriptions/components/TrialExpiryBanner';
+import MoveOutSettlementModal from '../../../components/contracts/MoveOutSettlementModal';
+import TrialExpiryBanner from '../../../components/subscriptions/TrialExpiryBanner';
 
 import { isRoomLocked, hasRoomOccupants } from '../room.rules.js';
 
@@ -92,20 +92,7 @@ export default function StaffRoomsPage() {
   // Lọc cơ sở mà Staff có thẩm quyền
   const staffManageableHouses = useMemo(() => {
     const approvedHouses = storedBoardingHouses.filter(house => house.status !== 'PENDING_APPROVAL');
-    if (user?.isTestMode || user?.role === 'ADMIN') return approvedHouses;
-    const u = (user?.username || '').toLowerCase();
-    return approvedHouses.filter((h) => { if(user?.isTestMode) return true;
-      const created = (h.createdBy || '').toLowerCase();
-      const manager = (h.managerUsername || '').toLowerCase();
-      if (created && created === u) return true;
-      if (manager && manager === u) return true;
-      if (user?.houseCode && h.code === user.houseCode) return true;
-      if (!isZeroSandbox) {
-        if (u === 'staff' && (h.code === 'CS-01' || !h.createdBy)) return true;
-        if (u === 'staff2' && h.code === 'CS-02') return true;
-      }
-      return false;
-    });
+    return user?.role === 'ADMIN' ? approvedHouses : filterManagedProperties(approvedHouses, user);
   }, [storedBoardingHouses, user]);
 
   const staffHouseCodes = useMemo(() => staffManageableHouses.map((h) => h.code), [staffManageableHouses]);
@@ -119,8 +106,8 @@ export default function StaffRoomsPage() {
   const [filterStatus, setFilterStatus] = useState('ALL');
 
   // Modals state
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [editingRoom, setEditingRoom] = useState(null);
+  const [roomEditor, setRoomEditor] = useState(null);
+  const editingRoom = roomEditor?.room;
   const [showRequestsManager, setShowRequestsManager] = useState(false);
   const [requestRoomFilter, setRequestRoomFilter] = useState(null);
   const [maintenanceRoom, setMaintenanceRoom] = useState(null);
@@ -140,21 +127,6 @@ export default function StaffRoomsPage() {
     } catch { /* ApiStatus shows the failed mutation and its server message. */ }
     finally { reviewInFlight.current = false; setReviewingRequest(null); }
   };
-
-  // Form thêm / sửa phòng
-  const [roomFormData, setRoomFormData] = useState({
-    number: '',
-    houseCode: staffHouseCodes[0] || 'CS-01',
-    floor: 'Tầng 1',
-    price: 3500000,
-    area: 25,
-    maxOccupants: 2,
-    status: 'AVAILABLE',
-    amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'],
-    image: '/assets/images/room_studio_1.jpg'
-  });
-
-  useEffect(()=>{ if(staffHouseCodes.length && !staffHouseCodes.includes(roomFormData.houseCode)) setRoomFormData(previous=>({...previous,houseCode:staffHouseCodes[0]})); },[staffHouseCodes,roomFormData.houseCode]);
 
   // Lọc phòng thuộc quyền quản lý
   const staffRooms = useMemo(() => {
@@ -206,50 +178,8 @@ export default function StaffRoomsPage() {
       setQuotaExceededModal(true);
       return;
     }
-    setRoomFormData({
-      number: '',
-      houseCode: selectedHouse !== 'ALL' ? selectedHouse : staffHouseCodes[0] || 'CS-01',
-      floor: 'Tầng 1',
-      price: 3500000,
-      area: 25,
-      maxOccupants: 2,
-      status: 'AVAILABLE',
-      amenities: ['WiFi', 'Điều hòa', 'Nóng lạnh'],
-      image: '/assets/images/room_studio_1.jpg'
-    });
-    setShowAddModal(true);
+    setRoomEditor({ room: null, houseCode: selectedHouse });
   };
-
-  const handleSaveRoom = async (e) => {
-try {
-
-    e.preventDefault();
-    if (!roomFormData.number) return;
-
-    if (editingRoom) {
-      if (updateRoom) {
-        await updateRoom(editingRoom.id, roomFormData);
-      }
-      setEditingRoom(null);
-      setActionToast(`Đã cập nhật thông tin phòng ${roomFormData.number} thành công!`);
-    } else {
-      if (isDuplicateRoom(rooms, roomFormData.number, roomFormData.houseCode)) {
-        alert(`Số phòng ${roomFormData.number} đã tồn tại trong cơ sở này!`);
-        return;
-      }
-      const newRoomObj = {
-        ...roomFormData,
-        id: `room-${Date.now()}`,
-        occupants: 0
-      };
-      if (addRoom) await addRoom(newRoomObj);
-      setShowAddModal(false);
-      setActionToast(`Đã thêm mới phòng ${roomFormData.number} vào hệ thống!`);
-    }
-    setTimeout(() => setActionToast(null), 3500);
-
-} catch (error) { window.dispatchEvent(new CustomEvent("rental:api-error", {detail:error.message})); return {success:false,error:error.message}; }
-};
 
   const handleDeleteRoom = async (roomId, roomNumber) => {
 try {
@@ -419,18 +349,18 @@ try {
                   const occupied = hasRoomOccupants(room, contracts, roomMembers);
 
                   return (
-                    <RoomCard key={room.id}
-          handleDeleteRoom={handleDeleteRoom}
-          handleToggleRoomLock={handleToggleRoomLock}
-          occupantsCount={occupantsCount}
-          occupied={occupied}
-          room={room}
-          setEditingRoom={setEditingRoom}
-          setRoomFormData={setRoomFormData}
-          setSelectedRoomForMembers={setSelectedRoomForMembers}
-          onMaintenance={setMaintenanceRoom}
-          onManageHold={target => { setRequestRoomFilter(target); setShowRequestsManager(true); }}
-        />
+                    <RoomCard
+                      key={room.id}
+                      handleDeleteRoom={handleDeleteRoom}
+                      handleToggleRoomLock={handleToggleRoomLock}
+                      occupantsCount={occupantsCount}
+                      occupied={occupied}
+                      room={room}
+                      onEdit={room => setRoomEditor({ room })}
+                      setSelectedRoomForMembers={setSelectedRoomForMembers}
+                      onMaintenance={setMaintenanceRoom}
+                      onManageHold={target => { setRequestRoomFilter(target); setShowRequestsManager(true); }}
+                    />
                   );
                 })}
               </div>
@@ -440,17 +370,14 @@ try {
       </div>
 
       {/* Modal Thêm / Sửa Phòng */}
-      {(showAddModal || editingRoom) && (
+      {roomEditor && (
         <RoomFormModal
           editingRoom={editingRoom}
           editingRoomOccupied={editingRoom ? hasRoomOccupants(editingRoom, contracts, roomMembers) : false}
-          handleSaveRoom={handleSaveRoom}
+          initialHouseCode={roomEditor.houseCode}
+          onSave={editingRoom ? input => updateRoom(editingRoom.id, input) : addRoom}
+          onClose={() => setRoomEditor(null)}
           onStartMaintenance={setMaintenanceRoom}
-          roomFormData={roomFormData}
-          setEditingRoom={setEditingRoom}
-          setRoomFormData={setRoomFormData}
-          setShowAddModal={setShowAddModal}
-          showAddModal={showAddModal}
           staffManageableHouses={staffManageableHouses}
         />
       )}
